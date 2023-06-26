@@ -1,0 +1,5 @@
+cd server/src/main/webapp/WEB-INF/rails && yarn run webpack-watch
+
+build server docker image
+./gradlew serverGenericZip
+./gradlew -PdockerBuildLocalZip :docker:gocd-server:alpine-3.18:docker
