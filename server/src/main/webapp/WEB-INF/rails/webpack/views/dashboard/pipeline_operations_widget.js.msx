@@ -209,6 +209,11 @@ export const PipelineOperationsWidget = {
         {flashMessage}
         <ul class="pipeline_operations">
           <li>
+            <f.button onclick={!pipeline.triggerDisabled() && vnode.state.trigger.bind(vnode.state, pipeline)}
+                      class={`pipeline_btn play ${(pipeline.triggerDisabled() ? 'disabled' : '')}`}
+                      tooltipText={triggerButtonsTooltipText} aria-label={playTitlenLabel} title={playTitlenLabel}/>
+          </li>
+          <li>
             <f.button
               onclick={!pipeline.triggerDisabled() && vnode.state.showTriggerWithOptionsPopup.bind(vnode.state, pipeline)}
               class={`pipeline_btn play_with_options ${(pipeline.triggerDisabled() ? 'disabled' : '')}`}
@@ -220,7 +225,7 @@ export const PipelineOperationsWidget = {
                       aria-label={pausedTitlenLabel} title={pausedTitlenLabel}/>
           </li>
         </ul>
-        <a href={pipeline.historyPath} class="pipeline_history">Deployment History</a>
+        <a href={pipeline.historyPath} class="pipeline_history">History</a>
         {pipelinePauseMessage}
       </div>
     );
