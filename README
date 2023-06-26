@@ -1,5 +1,14 @@
 cd server/src/main/webapp/WEB-INF/rails && yarn run webpack-watch
 
 build server docker image
-./gradlew serverGenericZip
+# ./gradlew serverGenericZip
 ./gradlew -PdockerBuildLocalZip :docker:gocd-server:alpine-3.18:docker
+
+docker tag gocd-server:v23.2.0-16798 us-west1-docker.pkg.dev/dicd-team-devinfra-cd/gocd/server:v23.2.0-16798
+docker tag us-west1-docker.pkg.dev/dicd-team-devinfra-cd/gocd/server:v23.2.0-16798 us-west1-docker.pkg.dev/dicd-joshuali-3-cd/gocd/server:v23.2.0-16798
+
+# dev
+docker push us-west1-docker.pkg.dev/dicd-joshuali-3-cd/gocd/server:v23.2.0-16798
+
+# prod
+docker push us-west1-docker.pkg.dev/dicd-team-devinfra-cd/gocd/server:v23.2.0-16798
