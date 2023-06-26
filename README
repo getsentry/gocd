@@ -1,14 +1,19 @@
+https://developer.gocd.org/current/
+
+# fastest dev loop for compile errors
 cd server/src/main/webapp/WEB-INF/rails && yarn run webpack-watch
 
-build server docker image
+# build server docker image
 # ./gradlew serverGenericZip
 ./gradlew -PdockerBuildLocalZip :docker:gocd-server:alpine-3.18:docker
 
 docker tag gocd-server:v23.2.0-16798 us-west1-docker.pkg.dev/dicd-team-devinfra-cd/gocd/server:v23.2.0-16798
-docker tag us-west1-docker.pkg.dev/dicd-team-devinfra-cd/gocd/server:v23.2.0-16798 us-west1-docker.pkg.dev/dicd-joshuali-3-cd/gocd/server:v23.2.0-16798
+docker tag gocd-server:v23.2.0-16798 us-west1-docker.pkg.dev/dicd-joshuali-3-cd/gocd/server:latest
 
 # dev
-docker push us-west1-docker.pkg.dev/dicd-joshuali-3-cd/gocd/server:v23.2.0-16798
+# for the fastest UI testing workflow, we overwrite latest, then you just delete server pods to get them to recreate
+# if you want to go even faster we'd need to run gocd locally, but for simple changes this is bearable
+docker push us-west1-docker.pkg.dev/dicd-joshuali-3-cd/gocd/server:latest
 
 # prod
 docker push us-west1-docker.pkg.dev/dicd-team-devinfra-cd/gocd/server:v23.2.0-16798
