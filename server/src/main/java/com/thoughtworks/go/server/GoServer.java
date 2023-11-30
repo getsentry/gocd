@@ -25,6 +25,8 @@ import java.io.File;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 
+import io.sentry.Sentry;
+
 public class GoServer {
     private static final Logger LOG = LoggerFactory.getLogger(GoServer.class);
 
@@ -52,6 +54,12 @@ public class GoServer {
     }
 
     protected void startServer() throws Exception {
+        // https://sentry.sentry.io/projects/gocd-server/?project=4506316961021953
+        Sentry.init(options -> {
+          options.setDsn("https://b63622b1741c6496203875592e0856ef@o1.ingest.sentry.io/4506316961021953");
+          options.setTracesSampleRate(1.0);
+        });
+
         server = configureServer();
         server.start();
         if (!server.hasStarted()) {

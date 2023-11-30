@@ -38,6 +38,15 @@ buildscript {
   }
 }
 
+plugins {
+  id "io.sentry.jvm.gradle" version "3.14.0"
+}
+
+sentry {
+  org = "sentry"
+  projectName = "gocd-server"
+}
+
 repositories {
   maven { url 'https://jitpack.io' } // Needed for spring-test-junit5
 }
