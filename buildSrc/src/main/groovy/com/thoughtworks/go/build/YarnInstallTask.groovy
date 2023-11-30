@@ -57,7 +57,7 @@ class YarnInstallTask extends DefaultTask {
       execTask.errorOutput = System.err
       execTask.workingDir = this.getWorkingDir()
 
-      execTask.commandLine = [OperatingSystem.current().isWindows() ? "yarn.cmd" : "yarn", "install", "--mutex", "network"]
+      execTask.commandLine = [OperatingSystem.current().isWindows() ? "yarn.cmd" : "yarn", "install"]
     }
   }
 }
