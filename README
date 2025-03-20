@@ -1,6 +1,21 @@
 https://developer.gocd.org/current/
 
-brew install openjdk@17
+`brew install node@20 yarn openjdk@17`
+
+note: node@20 is important because later versions of node don't work as they disallow directory imports... this is probably fixed if we update gocd
+
+make sure docker-buildx is also installed:
+`brew install docker-buildx`
+
+and in `~/.config/docker.json`:
+
+```
+{
+	"cliPluginsExtraDirs": [
+	    "/opt/homebrew/lib/docker/cli-plugins"
+	]
+}
+```
 
 # fastest dev loop for compile errors
 cd server/src/main/webapp/WEB-INF/rails && yarn run webpack-watch
@@ -9,7 +24,11 @@ cd server/src/main/webapp/WEB-INF/rails && yarn run webpack-watch
 # template: buildSrc/src/main/resources/gocd-docker-server/Dockerfile.server.ftl
 # output: docker/gocd-server/target/alpine-3.18/docker-gocd-server/Dockerfile
 # ./gradlew serverGenericZip
-./gradlew -PdockerBuildLocalZip :docker:gocd-server:alpine-3.18:docker
+
+
+```
+PATH=/opt/homebrew/opt/openjdk@17/bin:/opt/homebrew/opt/node@20/bin:$PATH ./gradlew -PdockerBuildLocalZip :docker:gocd-server:alpine-3.18:docker
+```
 
 # dev
 # for the fastest UI testing workflow, overwrite latest, then you just delete server pods to get them to recreate
