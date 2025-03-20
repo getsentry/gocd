@@ -92,9 +92,9 @@ RUN \
 </#list>
   mkdir -p /go-server /go-working-dir /godata
 
-ADD docker-entrypoint.sh /
-ADD docker-entrypoint.d /docker-entrypoint.d
-ADD cron /cron
+COPY docker-entrypoint.sh /
+COPY docker-entrypoint.d /docker-entrypoint.d
+COPY cron /cron
 
 # gocd doesn't have the ability to delete old artifacts by date
 # which can result in running low on inodes if there are lots of pipelines
@@ -108,8 +108,8 @@ COPY --from=gocd-server-unzip /go-server /go-server
 COPY --chown=go:root logback-include.xml /go-server/config/logback-include.xml
 COPY --chown=go:root install-gocd-plugins git-clone-config /usr/local/sbin/
 
-RUN chown -R go:root /docker-entrypoint.d /go-working-dir /godata /docker-entrypoint.sh && \
-    chmod -R g=u /docker-entrypoint.d /go-working-dir /godata /docker-entrypoint.sh
+RUN chown -R go:root /docker-entrypoint.d /go-working-dir /godata /cron /docker-entrypoint.sh && \
+    chmod -R g=u /docker-entrypoint.d /go-working-dir /godata /cron /docker-entrypoint.sh
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 
