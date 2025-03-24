@@ -24,16 +24,16 @@ main() {
     # /godata/artifacts/pipelines/example/9388/deploy-primary/1/deploy/cruise-output/console.log
     # and just having /godata/artifacts/pipelines/example/9388 makes things go a lot faster
     dt="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-    /bin/busybox find /godata/artifacts/pipelines/ -maxdepth 2 -type d -mtime +30 -print > "{tmpdir}/dirs.txt"
-    /bin/busybox tar c -z -f "${dt}.tgz" -T "{tmpdir}/dirs.txt"
+    /bin/busybox find /godata/artifacts/pipelines/ -maxdepth 2 -type d -mtime +30 -print > "${tmpdir}/dirs.txt"
+    /bin/busybox tar c -z -f "${dt}.tgz" -T "${tmpdir}/dirs.txt"
 
     # gsutil is deprecated: https://cloud.google.com/storage/docs/gsutil#should-you-use
     : "Uploading to GCS bucket ${dest}."
     gcloud storage cp "${dt}.tgz" "${dest}/${dt}.tgz" && rm "${dt}.tgz"
 
     : "Deleting from disk:"
-    xargs rm -rv < "{tmpdir}/dirs.txt"
-    rm -rf "tmpdir"
+    xargs rm -rv < "${tmpdir}/dirs.txt"
+    rm -rf "$tmpdir"
 }
 
 main "$@"
