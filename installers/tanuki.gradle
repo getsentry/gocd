@@ -23,7 +23,9 @@ private File destFile(String url) {
 }
 
 task downloadTanukiDeltaPack(type: DownloadFile) {
-  def srcUrl = System.getenv("TANUKI_WRAPPER_URL") ?: "https://nexus.gocd.io/repository/s3-mirrors/local/tanuki/wrapper-delta-pack-${project.versions.tanuki}.tar.gz"
+  // upstream (nexus.gocd.io) no longer mirrors this
+  // sha256: 37cc32b74004c14651c5039d5e6491e1c0912570cf7706aa772a66c6ed69cbe6
+  def srcUrl = "https://storage.googleapis.com/sentry-dev-infra-assets/gocd/wrapper-delta-pack-3.5.54.tar.gz"
   src srcUrl
   dest destFile(srcUrl)
   checksum project.versions.tanukiSha256sum
