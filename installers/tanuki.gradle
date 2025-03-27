@@ -23,7 +23,7 @@ private File destFile(String url) {
 }
 
 task downloadTanukiDeltaPack(type: DownloadFile) {
-  def srcUrl = "sentry-dev-infra-build-assets/gocd/wrapper-delta-pack-${project.versions.tanuki}-st.tar.gz"
+  def srcUrl = "https://storage.googleapis.com/sentry-dev-infra-build-assets/gocd/wrapper-delta-pack-${project.versions.tanuki}.tar.gz"
   // def srcUrl = "https://download.tanukisoftware.com/wrapper/${project.versions.tanuki.split("-").first()}/wrapper-delta-pack-${project.versions.tanuki}.tar.gz"
   src srcUrl
   dest destFile(srcUrl)

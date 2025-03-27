@@ -29,7 +29,7 @@ Distro.values().each { distro ->
   }
 }
 
-dynamicProjectForPath(':docker:gocd-server', Distro.wolfi.projectName(Distro.wolfi.getVersion('latest')) as String)
+dynamicProjectForPath(':docker:gocd-server', Distro.debian.projectName(Distro.debian.getVersion('12')) as String)
 
 def dynamicProjectForPath(String parentPath, String subProjectName) {
   def subProjectPath = "$parentPath:$subProjectName"

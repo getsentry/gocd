@@ -20,9 +20,7 @@ cd server/src/main/webapp/WEB-INF/rails && yarn run webpack-watch
 
 # build server docker image
 # template: buildSrc/src/main/resources/gocd-docker-server/Dockerfile.server.ftl
-# output: docker/gocd-server/target/wolfi-latest/docker-gocd-server/Dockerfile
-
-
+# output: docker/gocd-server/target/debian-12/docker-gocd-server/Dockerfile
 ```
-PATH=/opt/homebrew/opt/openjdk@21/bin:/opt/homebrew/opt/node@22/bin:$PATH ./gradlew -PdockerBuildLocalZip :docker:gocd-server:wolfi-latest:docker
+PATH=/opt/homebrew/opt/openjdk@21/bin:/opt/homebrew/opt/node@22/bin:$PATH ./gradlew -PdockerBuildLocalZip -PdockerBuildIgnoreLocalArch :docker:gocd-server:debian-12:docker
 ```

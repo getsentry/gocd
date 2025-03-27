@@ -244,7 +244,7 @@ class BuildDockerImageTask extends DefaultTask {
     if (imageType == ImageType.agent) {
       return distro.isContinuousRelease() ? "gocd-agent-${distro.name()}" : "gocd-agent-${distro.name()}-${distroVersion.version}"
     } else if (imageType == ImageType.server) {
-      return distro == Distro.wolfi ? "gocd-server" : "gocd-server-${distro.name()}-${distroVersion.version}"
+      return distro == Distro.debian ? "gocd-server" : "gocd-server-${distro.name()}-${distroVersion.version}"
     }
   }
 
