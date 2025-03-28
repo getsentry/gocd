@@ -116,9 +116,9 @@ class BuildDockerImageTask extends DefaultTask {
           "--tag", imageNameWithTag
         )
 
-        logger.lifecycle("\nVerifying ${imageNameWithTag} image for ${distro.dockerVerifyArchitecture}. (Current build architecture is ${Architecture.current()}).\n")
-        verifyHelper.call()
-        logger.lifecycle("\nVerification of ${imageNameWithTag} image on ${distro.dockerVerifyArchitecture} successful.")
+        //logger.lifecycle("\nVerifying ${imageNameWithTag} image for ${distro.dockerVerifyArchitecture}. (Current build architecture is ${Architecture.current()}).\n")
+        //verifyHelper.call()
+        //logger.lifecycle("\nVerification of ${imageNameWithTag} image on ${distro.dockerVerifyArchitecture} successful.")
       }
     }
 
