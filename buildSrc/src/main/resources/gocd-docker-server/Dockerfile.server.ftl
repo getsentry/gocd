@@ -102,5 +102,3 @@ RUN chown -R go:root /docker-entrypoint.d /go-working-dir /godata /docker-entryp
     chmod -R g=u /docker-entrypoint.d /go-working-dir /godata /docker-entrypoint.sh
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
-
-USER go
