@@ -78,6 +78,11 @@ public class ArtifactsService implements ArtifactUrlReader {
     public boolean saveFile(File dest, InputStream stream, boolean shouldUnzip, int attempt) {
         String destPath = dest.getAbsolutePath();
         try {
+            // Validate that the destination file is within the artifacts directory to prevent path traversal
+            if (!FileUtil.isSubdirectoryOf(artifactsDirHolder.getArtifactsDir(), dest)) {
+                throw new IllegalPathException("Attempted path traversal in file save: " + destPath);
+            }
+
             LOGGER.trace("Saving file [{}]", destPath);
             if (shouldUnzip) {
                 zipUtil.unzip(new ZipInputStream(IOUtils.buffer(stream, bufferSize)), dest);
@@ -106,6 +111,11 @@ public class ArtifactsService implements ArtifactUrlReader {
     public boolean saveOrAppendFile(File dest, InputStream stream) {
         String destPath = dest.getAbsolutePath();
         try {
+            // Validate that the destination file is within the artifacts directory to prevent path traversal
+            if (!FileUtil.isSubdirectoryOf(artifactsDirHolder.getArtifactsDir(), dest)) {
+                throw new IllegalPathException("Attempted path traversal in file append: " + destPath);
+            }
+
             LOGGER.trace("Appending file [{}]", destPath);
             try (FileOutputStream out = FileUtils.openOutputStream(dest, true)) {
                 IOUtils.copy(stream, out, bufferSize);
@@ -113,6 +123,9 @@ public class ArtifactsService implements ArtifactUrlReader {
             LOGGER.trace("File [{}] appended.", destPath);
             return true;
         } catch (IOException e) {
+            LOGGER.error("Failed to save the file to : [{}]", destPath, e);
+            return false;
+        } catch (IllegalPathException e) {
             LOGGER.error("Failed to save the file to : [{}]", destPath, e);
             return false;
         }
