@@ -88,6 +88,24 @@ public class ConsoleService {
 
     public boolean updateConsoleLog(File dest, InputStream in) {
         File parentFile = dest.getParentFile();
+
+        // Validate that the destination file path doesn't escape the parent directory
+        // This prevents path traversal attacks
+        try {
+            File canonicalDest = dest.getCanonicalFile();
+            File canonicalParent = parentFile.getCanonicalFile();
+
+            // Ensure the destination file is within its parent directory
+            if (!canonicalDest.getPath().startsWith(canonicalParent.getPath() + File.separator) &&
+                !canonicalDest.equals(canonicalParent)) {
+                LOGGER.error("Invalid console log path detected - file escapes parent directory: [{}]", dest.getAbsolutePath());
+                return false;
+            }
+        } catch (IOException e) {
+            LOGGER.error("Failed to validate console log path: [{}]", dest.getAbsolutePath(), e);
+            return false;
+        }
+
         //noinspection ResultOfMethodCallIgnored
         parentFile.mkdirs();
 
