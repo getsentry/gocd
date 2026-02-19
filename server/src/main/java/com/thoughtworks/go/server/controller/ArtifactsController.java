@@ -135,6 +135,9 @@ public class ArtifactsController {
         if (!headerConstraint.isSatisfied(request)) {
             return ResponseCodeView.create(HttpServletResponse.SC_BAD_REQUEST, "Missing required header 'Confirm'");
         }
+        if (filePath.contains("..")) {
+            return FileModelAndView.forbiddenUrl(filePath);
+        }
         if (!isValidStageCounter(stageCounter)) {
             return buildNotFound(pipelineName, pipelineCounter, stageName, stageCounter, buildName);
         }
