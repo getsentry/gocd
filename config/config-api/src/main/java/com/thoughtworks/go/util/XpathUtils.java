@@ -90,6 +90,12 @@ public class XpathUtils {
         try {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            // Disable DOCTYPE declarations to prevent XXE attacks
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            // Disable external general entities
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            // Disable external parameter entities
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             return factory;
         } catch (ParserConfigurationException e) {
             throw new RuntimeException(e);
