@@ -954,6 +954,14 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         protected XmlPartialSaver(ConfigElementImplementationRegistry registry) {
             this.registry = registry;
             reader = new SAXReader();
+            try {
+                // Securely configure the SAXReader to prevent XXE attacks
+                reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+                reader.setFeature("http://xml.org/sax/features/external-general-entities", false);
+                reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            } catch (org.xml.sax.SAXNotRecognizedException | org.xml.sax.SAXNotSupportedException e) {
+                throw new RuntimeException("Failed to configure SAXReader securely against XXE vulnerabilities", e);
+            }
             reader.setEntityResolver((publicId, systemId) -> new InputSource(new StringReader("")));
         }
 
