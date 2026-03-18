@@ -135,6 +135,12 @@ public class ZipUtil {
         }
         try {
             outputFile.getParentFile().mkdirs();
+            // Perform canonical path validation to prevent path traversal
+            String destDirPath = toDir.getCanonicalPath();
+            String outputFilePath = outputFile.getCanonicalPath();
+            if (!outputFilePath.startsWith(destDirPath + File.separator)) {
+                throw new IllegalPathException(String.format("File %s is outside extraction target directory", outputFilePath));
+            }
             try (FileOutputStream os = new FileOutputStream(outputFile)) {
                 IOUtils.copy(entryInputStream, os, BUFFER_SIZE);
                 if (zipEntryHandler != null) {
