@@ -26,11 +26,14 @@ export function el(tag: HTMLElement | string, options: any, children: Child | Ch
       const maybeEvent = key.toLowerCase().match(EVENT_HANDLER_ATTR);
       const value = options[key];
 
-      if (maybeEvent && isHandlerAttrValue(value)) {
+      if (maybeEvent) {
         const [, evt] = maybeEvent!;
-        const handler = "string" === typeof value ? new Function("event", value).bind(n) : value;
-
-        n.addEventListener(evt, handler);
+        // Only allow function references as event handlers to prevent code injection
+        if ("function" === typeof value) {
+          n.addEventListener(evt, value);
+        } else {
+          console.warn(`Ignoring non-function event handler for ${key}. Only function references are allowed.`);
+        }
       } else {
         n.setAttribute(key, value);
       }
@@ -78,10 +81,6 @@ export function isHtmlElement(el: any): el is HTMLElement {
 
 export function isChildNode(el: any): el is ChildNode {
   return "function" === typeof (el as ChildNode).remove;
-}
-
-function isHandlerAttrValue(value: any): value is (Function | string) { // tslint:disable-line ban-types
-  return "function" === typeof value || "string" === typeof value;
 }
 
 function appendTo(el: Node, child?: Node) {
