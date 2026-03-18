@@ -26,7 +26,7 @@ export function el(tag: HTMLElement | string, options: any, children: Child | Ch
       const maybeEvent = key.toLowerCase().match(EVENT_HANDLER_ATTR);
       const value = options[key];
 
-      if (maybeEvent && isHandlerAttrValue(value)) {
+      if (maybeEvent) {
         const [, evt] = maybeEvent!;
         // Only allow function references as event handlers to prevent code injection
         if ("function" === typeof value) {
