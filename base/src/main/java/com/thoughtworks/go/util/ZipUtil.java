@@ -145,6 +145,10 @@ public class ZipUtil {
                 if (zipEntryHandler != null) {
                     FileInputStream stream = null;
                     try {
+                        // Sanity check: ensure outputFile is within toDir to prevent directory traversal
+                        if (!outputFile.getCanonicalPath().startsWith(toDir.getCanonicalPath() + File.separator)) {
+                            throw new IOException("Directory traversal attempt detected: " + outputFile.getAbsolutePath());
+                        }
                         stream = new FileInputStream(outputFile);
                         zipEntryHandler.handleEntry(entry, stream);
                     } finally {
