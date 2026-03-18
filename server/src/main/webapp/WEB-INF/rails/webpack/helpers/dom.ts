@@ -28,9 +28,15 @@ export function el(tag: HTMLElement | string, options: any, children: Child | Ch
 
       if (maybeEvent && isHandlerAttrValue(value)) {
         const [, evt] = maybeEvent!;
-        const handler = "string" === typeof value ? new Function("event", value).bind(n) : value;
-
-        n.addEventListener(evt, handler);
+        // Disallow string event handlers to prevent code injection.
+        // Only allow function references as event handlers.
+        if (typeof value === "function") {
+          n.addEventListener(evt, value);
+        }
+        // Optionally, you may warn or ignore if a string is encountered:
+        // else {
+        //   console.warn(`Ignoring string event handler for event "${evt}". Only function references are allowed.`);
+        // }
       } else {
         n.setAttribute(key, value);
       }
@@ -80,8 +86,8 @@ export function isChildNode(el: any): el is ChildNode {
   return "function" === typeof (el as ChildNode).remove;
 }
 
-function isHandlerAttrValue(value: any): value is (Function | string) { // tslint:disable-line ban-types
-  return "function" === typeof value || "string" === typeof value;
+function isHandlerAttrValue(value: any): value is Function { // tslint:disable-line ban-types
+  return "function" === typeof value;
 }
 
 function appendTo(el: Node, child?: Node) {
