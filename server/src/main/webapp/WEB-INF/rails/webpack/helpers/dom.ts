@@ -83,10 +83,6 @@ export function isChildNode(el: any): el is ChildNode {
   return "function" === typeof (el as ChildNode).remove;
 }
 
-function isHandlerAttrValue(value: any): value is Function { // tslint:disable-line ban-types
-  return "function" === typeof value;
-}
-
 function appendTo(el: Node, child?: Node) {
   if (child) { el.appendChild(child); }
 }
