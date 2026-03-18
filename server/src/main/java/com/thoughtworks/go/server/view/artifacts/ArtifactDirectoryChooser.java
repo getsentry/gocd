@@ -19,6 +19,7 @@ import com.thoughtworks.go.domain.LocatableEntity;
 import com.thoughtworks.go.domain.exception.IllegalArtifactLocationException;
 import com.thoughtworks.go.util.FileUtil;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.io.FilenameUtils;
 
 import java.io.File;
 import java.io.IOException;
@@ -53,7 +54,13 @@ public class ArtifactDirectoryChooser {
             if (root == null) {
                 root = preferredRoot(locatableEntity);
             }
-            File file = new File(root, path);
+            // Sanitize the path to prevent path traversal attacks by normalizing it
+            String sanitizedPath = FilenameUtils.normalize(path);
+            if (sanitizedPath == null) {
+                throw new IllegalArtifactLocationException("Artifact path [" + path + "] is illegal."
+                        + " Path must be inside the artifact directory.");
+            }
+            File file = new File(root, sanitizedPath);
             if (!FileUtil.isSubdirectoryOf(root, file)) {
                 throw new IllegalArtifactLocationException("Artifact path [" + path + "] is illegal."
                         + " Path must be inside the artifact directory.");
