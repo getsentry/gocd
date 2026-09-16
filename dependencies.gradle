@@ -92,6 +92,7 @@ final Map<String, String> libraries = [
   rack                : 'com.github.gocd-contrib:jruby-rack:1.2.4.1',
   resilience4jRetry   : 'io.github.resilience4j:resilience4j-retry:2.3.0',
   semanticVersion     : 'de.skuzzle:semantic-version:2.1.1',
+  sentryLogback       : 'io.sentry:sentry-logback:8.57.0',
   servletApi          : 'jakarta.servlet:jakarta.servlet-api:4.0.4', // Should be compatible with Jetty and Spring implementations
   slf4jBom            : 'org.slf4j:slf4j-bom:2.0.17',
   spark               : 'com.sparkjava:spark-core:2.7.2',
@@ -163,6 +164,7 @@ final Map<String, String> v = [
   quartz              : versionOf(libraries.quartz),
   rack                : versionOf(libraries.rack),
   semanticVersion     : versionOf(libraries.semanticVersion),
+  sentryLogback       : versionOf(libraries.sentryLogback),
   servletApi          : versionOf(libraries.servletApi),
   slf4jBom            : versionOf(libraries.slf4jBom),
   spark               : versionOf(libraries.spark),

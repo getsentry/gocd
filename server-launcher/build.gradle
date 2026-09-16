@@ -81,6 +81,9 @@ dependencies {
   packagingInLibDir project.deps.slf4jJul
   packagingInLibDir project.deps.logback
 
+  // Reports server errors to Sentry via a logback appender (see server/src/main/resources/config/logback.xml)
+  packagingInLibDir project.deps.sentryLogback
+
   pluginsZip project(path: ':tw-go-plugins', configuration: 'pluginsZipConfig')
 
   packagingInMainJarTopLevel project(path: ':jetty', configuration: 'runtimeElements')
@@ -230,6 +233,8 @@ task verifyFatJar(type: VerifyJarTask) {
       "jul-to-slf4j-${project.versions.slf4jBom}.jar",
       "logback-classic-${project.versions.logback}.jar",
       "logback-core-${project.versions.logback}.jar",
+      "sentry-${project.versions.sentryLogback}.jar",
+      "sentry-logback-${project.versions.sentryLogback}.jar",
       "server-launcher-${project.version}-main.jar",
       "slf4j-api-${project.versions.slf4jBom}.jar",
       "tfs-impl-14.jar",
