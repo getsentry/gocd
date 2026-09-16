@@ -88,6 +88,15 @@ Security:
 - An XXE fix in `GoConfigService` was merged (#18) and then reverted (#28). The revert gives no
   reason, so find out why before re-applying it.
 
+Observability:
+
+- `sentry-logback` (`io.sentry:sentry-logback`, `dependencies.gradle`, packaged in
+  `server-launcher/build.gradle`) reports server log events to Sentry via a `SentryAppender` in
+  `server/src/main/resources/config/logback.xml`. It's a no-op unless `SENTRY_DSN` is set (the SDK
+  reads it automatically; so does `SENTRY_ENVIRONMENT`). The embedded Rails web app's logger
+  (`com.thoughtworks.go.server.Rails`) is `additivity="false"` so its events never reach the
+  appender. Agents don't carry this dependency at all.
+
 Build:
 
 - The server image is Debian 12 and is tagged `gocd-server:latest` (`settings-docker.gradle`,
@@ -132,6 +141,11 @@ Breaking any of these breaks GoCD's own deploy. Change both repos together.
 - **Agent version skew.** Elastic agents run an upstream go-agent tarball (25.1.0-20129, from
   devinfra's `gocd_agent/Dockerfile`), not a build of this repo. Bump that tarball when a server
   change needs newer agents.
+- **Sentry reporting.** The `SentryAppender` in `server/src/main/resources/config/logback.xml`
+  only activates when devinfra sets `SENTRY_DSN` (and `SENTRY_ENVIRONMENT`) as pod env vars
+  (`terraform/module/gocd-service/{main.tf,helm-values.yaml.tftpl}`). Dropping the env var there,
+  or dropping `sentry-logback` here, silently turns reporting off in either direction -- no error
+  either way, so this is easy to break without noticing.
 
 ## How devinfra-deployment-service uses GoCD
 
