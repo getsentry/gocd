@@ -72,12 +72,21 @@
     </rollingPolicy>
   </appender>
 
+  <!-- Reports server errors to Sentry (https://sentry.io). This is a no-op unless the
+       SENTRY_DSN environment variable is set, which the SDK reads automatically. -->
+  <appender name="SentryAppender" class="io.sentry.logback.SentryAppender"/>
+
   <root level="${gocd.server.logback.root.level:-WARN}">
     <appender-ref ref="${gocd.server.logback.root.appender:-FileAppender}"/>
+    <appender-ref ref="SentryAppender"/>
   </root>
 
   <logger name="com.thoughtworks.go" level="INFO"/>
-  <logger name="com.thoughtworks.go.server.Rails" level="WARN"/>
+  <!-- additivity="false": keep the embedded Rails web app's logs out of SentryAppender (and any
+       other appender attached to root), routing them only to the appender root would have used. -->
+  <logger name="com.thoughtworks.go.server.Rails" level="WARN" additivity="false">
+    <appender-ref ref="${gocd.server.logback.root.appender:-FileAppender}"/>
+  </logger>
   <logger name="com.thoughtworks.go.domain.AccessToken" level="DEBUG"/>
 
   <!-- Change to INFO to enable request logging -->
