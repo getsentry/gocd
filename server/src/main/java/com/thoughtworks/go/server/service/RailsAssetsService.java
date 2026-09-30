@@ -15,12 +15,11 @@
  */
 package com.thoughtworks.go.server.service;
 
-import com.google.gson.Gson;
 import com.google.gson.annotations.SerializedName;
 import com.thoughtworks.go.util.SystemEnvironment;
+import com.thoughtworks.go.util.json.JsonHelper;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.filefilter.RegexFileFilter;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,12 +29,14 @@ import org.springframework.web.context.ServletContextAware;
 import javax.servlet.ServletContext;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @Service
 public class RailsAssetsService implements ServletContextAware {
@@ -67,15 +68,14 @@ public class RailsAssetsService implements ServletContextAware {
         File manifestFile = files.iterator().next();
 
         LOG.info("Found rails assets manifest file named {} ", manifestFile.getName());
-        String manifest = FileUtils.readFileToString(manifestFile, UTF_8);
-        Gson gson = new Gson();
-        railsAssetsManifest = gson.fromJson(manifest, RailsAssetsManifest.class);
+        String manifest = Files.readString(manifestFile.toPath(), UTF_8);
+        railsAssetsManifest = JsonHelper.fromJson(manifest, RailsAssetsManifest.class);
         LOG.info("Successfully read rails assets manifest file located at {}", manifestFile.getAbsolutePath());
     }
 
     public String getAssetPath(String asset) {
         String assetFileName = systemEnvironment.useCompressedJs() ? railsAssetsManifest.getAssetWithDigest(asset) : asset;
-        return StringUtils.isBlank(assetFileName) ? null : String.format("assets/%s", assetFileName);
+        return isBlank(assetFileName) ? null : "assets/" + assetFileName;
     }
 
     @Override

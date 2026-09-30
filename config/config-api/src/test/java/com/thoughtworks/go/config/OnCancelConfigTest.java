@@ -37,7 +37,7 @@ public class OnCancelConfigTest {
 
     @Test
     public void shouldReturnTheOnCancelOptionBasedOnWhatTheOnCancelTaskIs() {
-        assertThat(new OnCancelConfig().onCancelOption()).isEqualTo("");
+        assertThat(new OnCancelConfig().onCancelOption()).isEmpty();
         assertThat(new OnCancelConfig(new ExecTask()).onCancelOption()).isEqualTo("Custom Command");
         assertThat(new OnCancelConfig(new AntTask()).onCancelOption()).isEqualTo("Ant");
         assertThat(new OnCancelConfig(new RakeTask()).onCancelOption()).isEqualTo("Rake");
@@ -47,7 +47,7 @@ public class OnCancelConfigTest {
     public void shouldAddErrorOnErrorCollection() {
         OnCancelConfig onCancelConfig = new OnCancelConfig();
         onCancelConfig.addError("key", "some error");
-        assertThat(onCancelConfig.errors().on("key")).isEqualTo("some error");
+        assertThat(onCancelConfig.errors().firstErrorOn("key")).isEqualTo("some error");
     }
 
     @Test

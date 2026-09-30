@@ -15,8 +15,6 @@
  */
 package com.thoughtworks.go.config.materials;
 
-import com.google.gson.Gson;
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.PipelineConfig;
 import com.thoughtworks.go.config.SecretParam;
 import com.thoughtworks.go.domain.MaterialRevision;
@@ -34,9 +32,9 @@ import com.thoughtworks.go.plugin.access.packagematerial.PackageMetadataStore;
 import com.thoughtworks.go.plugin.access.packagematerial.RepositoryMetadataStore;
 import com.thoughtworks.go.security.CryptoException;
 import com.thoughtworks.go.security.GoCipher;
-import com.thoughtworks.go.util.CachedDigestUtils;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
 import com.thoughtworks.go.util.json.JsonHelper;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -45,6 +43,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.domain.packagerepository.PackageRepositoryMother.create;
 import static com.thoughtworks.go.util.command.EnvironmentVariableContext.EnvironmentVariable.MASK_VALUE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,7 +57,7 @@ class PackageMaterialTest {
 
         assertThat(materialInstance).isNotNull();
         assertThat(materialInstance.getFlyweightName()).isNotNull();
-        assertThat(materialInstance.getConfiguration()).isEqualTo(JsonHelper.toJsonString(material));
+        assertThat(materialInstance.getConfiguration()).isEqualTo(JsonHelper.toJsonExposeOnly(material));
     }
 
     @Test
@@ -82,7 +81,7 @@ class PackageMaterialTest {
         PackageRepository repository = PackageRepositoryMother.create("repo-id", "repo", "pluginid", "version",
                 new Configuration(ConfigurationPropertyMother.create("k1", false, "v1"), ConfigurationPropertyMother.create("secure-key", true, "secure-value")));
         material.setPackageDefinition(PackageDefinitionMother.create("p-id", "name", new Configuration(ConfigurationPropertyMother.create("k2", false, "v2")), repository));
-        assertThat(material.getFingerprint()).isEqualTo(CachedDigestUtils.sha256Hex("plugin-id=pluginid<|>k2=v2<|>k1=v1<|>secure-key=secure-value"));
+        assertThat(material.getFingerprint()).isEqualTo(DigestUtils.sha256Hex("plugin-id=pluginid<|>k2=v2<|>k1=v1<|>secure-key=secure-value"));
     }
 
     @Test
@@ -151,12 +150,12 @@ class PackageMaterialTest {
         PackageMaterial packageMaterial = new PackageMaterial("id");
         packageMaterial.setPackageDefinition(packageDefinition);
 
-        String json = JsonHelper.toJsonString(packageMaterial);
+        String json = JsonHelper.toJsonExposeOnly(packageMaterial);
 
-        String expected = "{\"package\":{\"config\":[{\"configKey\":{\"name\":\"secure-key\"},\"encryptedConfigValue\":{\"value\":" + new Gson().toJson(encryptedPassword) + "}},{\"configKey\":{\"name\":\"non-secure-key\"},\"configValue\":{\"value\":\"value\"}}],\"repository\":{\"plugin\":{\"id\":\"plugin-id\",\"version\":\"1.0\"},\"config\":[{\"configKey\":{\"name\":\"secure-key\"},\"encryptedConfigValue\":{\"value\":" + new Gson().toJson(encryptedPassword) + "}},{\"configKey\":{\"name\":\"non-secure-key\"},\"configValue\":{\"value\":\"value\"}}]}}}";
+        String expected = "{\"package\":{\"config\":[{\"configKey\":{\"name\":\"secure-key\"},\"encryptedConfigValue\":{\"value\":" + JsonHelper.toJson(encryptedPassword) + "}},{\"configKey\":{\"name\":\"non-secure-key\"},\"configValue\":{\"value\":\"value\"}}],\"repository\":{\"plugin\":{\"id\":\"plugin-id\",\"version\":\"1.0\"},\"config\":[{\"configKey\":{\"name\":\"secure-key\"},\"encryptedConfigValue\":{\"value\":" + JsonHelper.toJson(encryptedPassword) + "}},{\"configKey\":{\"name\":\"non-secure-key\"},\"configValue\":{\"value\":\"value\"}}]}}}";
 
         assertThat(json).isEqualTo(expected);
-        assertThat(JsonHelper.fromJson(expected, PackageMaterial.class)).isEqualTo(packageMaterial);
+        assertThat(JsonHelper.fromJsonExposeOnly(expected, PackageMaterial.class)).isEqualTo(packageMaterial);
     }
 
     @Test
@@ -222,7 +221,7 @@ class PackageMaterialTest {
                 new Configuration(ConfigurationPropertyMother.create("k1", false, "v1"), ConfigurationPropertyMother.create("repo-secure", true, "value")));
         material.setPackageDefinition(PackageDefinitionMother.create("p-id", "go-agent",
                 new Configuration(ConfigurationPropertyMother.create("k2", false, "v2"), ConfigurationPropertyMother.create("pkg-secure", true, "value")), repository));
-        material.setName(new CaseInsensitiveString("tw-dev:go-agent"));
+        material.setName(cis("tw-dev:go-agent"));
         Modifications modifications = new Modifications(new Modification(null, null, null, new Date(), "revision-123"));
         EnvironmentVariableContext environmentVariableContext = new EnvironmentVariableContext();
         material.populateEnvironmentContext(environmentVariableContext, new MaterialRevision(material, modifications), null);
@@ -240,10 +239,10 @@ class PackageMaterialTest {
         PackageMaterial material = new PackageMaterial();
         PackageRepository repository = PackageRepositoryMother.create("repo-id", "tw-dev", "pluginid", "version", new Configuration(ConfigurationPropertyMother.create("k1", false, "v1")));
         material.setPackageDefinition(PackageDefinitionMother.create("p-id", "go-agent", new Configuration(ConfigurationPropertyMother.create("k2", false, "v2")), repository));
-        material.setName(new CaseInsensitiveString("tw-dev:go-agent"));
+        material.setName(cis("tw-dev:go-agent"));
         Map<String, String> map = new HashMap<>();
         map.put("MY_NEW_KEY", "my_value");
-        Modification modification = new Modification("loser", "comment", "email", new Date(), "revision-123", JsonHelper.toJsonString(map));
+        Modification modification = new Modification("loser", "comment", "email", new Date(), "revision-123", JsonHelper.toJsonExposeOnly(map));
         Modifications modifications = new Modifications(modification);
 
         EnvironmentVariableContext environmentVariableContext = new EnvironmentVariableContext();
@@ -262,12 +261,12 @@ class PackageMaterialTest {
         PackageRepository repository = PackageRepositoryMother.create("repo-id", "tw-dev", "pluginid", "version", new Configuration(ConfigurationPropertyMother.create("k1", false, "v1")));
         material.setPackageDefinition(PackageDefinitionMother.create("p-id", "go-agent", new Configuration(ConfigurationPropertyMother.create("k2", true, "!secure_value:with_special_chars"),
                 ConfigurationPropertyMother.create("k3", true, "secure_value_with_regular_chars")), repository));
-        material.setName(new CaseInsensitiveString("tw-dev:go-agent"));
+        material.setName(cis("tw-dev:go-agent"));
         Map<String, String> map = new HashMap<>();
         map.put("ADDITIONAL_DATA_ONE", "foobar:!secure_value:with_special_chars");
         map.put("ADDITIONAL_DATA_URL_ENCODED", "something:%21secure_value%3Awith_special_chars");
         map.put("ADDITIONAL_DATA_TWO", "foobar:secure_value_with_regular_chars");
-        Modification modification = new Modification("loser", "comment", "email", new Date(), "revision-123", JsonHelper.toJsonString(map));
+        Modification modification = new Modification("loser", "comment", "email", new Date(), "revision-123", JsonHelper.toJsonExposeOnly(map));
         Modifications modifications = new Modifications(modification);
 
         EnvironmentVariableContext environmentVariableContext = new EnvironmentVariableContext();
@@ -291,7 +290,7 @@ class PackageMaterialTest {
         PackageMaterial material = new PackageMaterial();
         PackageRepository repository = PackageRepositoryMother.create("repo-id", "tw-dev", "pluginid", "version", new Configuration(ConfigurationPropertyMother.create("k1", false, "v1")));
         material.setPackageDefinition(PackageDefinitionMother.create("p-id", "go-agent", new Configuration(ConfigurationPropertyMother.create("k2", false, "v2")), repository));
-        material.setName(new CaseInsensitiveString("tw-dev:go-agent"));
+        material.setName(cis("tw-dev:go-agent"));
         Modifications modifications = new Modifications(new Modification("loser", "comment", "email", new Date(), "revision-123", null));
         EnvironmentVariableContext environmentVariableContext = new EnvironmentVariableContext();
 
@@ -307,7 +306,7 @@ class PackageMaterialTest {
         PackageMaterial material = new PackageMaterial();
         PackageRepository repository = PackageRepositoryMother.create("repo-id", "tw-dev", "pluginid", "version", new Configuration(ConfigurationPropertyMother.create("k1", false, "v1")));
         material.setPackageDefinition(PackageDefinitionMother.create("p-id", "go-agent", new Configuration(ConfigurationPropertyMother.create("k2", false, "v2")), repository));
-        material.setName(new CaseInsensitiveString("tw-dev:go-agent"));
+        material.setName(cis("tw-dev:go-agent"));
         Modifications modifications = new Modifications(new Modification("loser", "comment", "email", new Date(), "revision-123", "salkdfjdsa-jjgkj!!!vcxknbvkjk"));
         EnvironmentVariableContext environmentVariableContext = new EnvironmentVariableContext();
 
@@ -353,9 +352,9 @@ class PackageMaterialTest {
     @Test
     void shouldPassEqualsCheckIfFingerprintIsSame() {
         PackageMaterial material1 = MaterialsMother.packageMaterial();
-        material1.setName(new CaseInsensitiveString("name1"));
+        material1.setName(cis("name1"));
         PackageMaterial material2 = MaterialsMother.packageMaterial();
-        material2.setName(new CaseInsensitiveString("name2"));
+        material2.setName(cis("name2"));
 
         assertThat(material1.equals(material2)).isTrue();
     }
@@ -363,7 +362,7 @@ class PackageMaterialTest {
     @Test
     void shouldFailEqualsCheckIfFingerprintDiffers() {
         PackageMaterial material1 = MaterialsMother.packageMaterial();
-        material1.getPackageDefinition().getConfiguration().first().setConfigurationValue(new ConfigurationValue("new-url"));
+        material1.getPackageDefinition().getConfiguration().getFirst().setConfigurationValue(new ConfigurationValue("new-url"));
         PackageMaterial material2 = MaterialsMother.packageMaterial();
 
         assertThat(material1.equals(material2)).isFalse();
@@ -455,8 +454,8 @@ class PackageMaterialTest {
         @Test
         void shouldBeTrueIfPkgMaterialHasSecretParam() {
             PackageMaterial material = MaterialsMother.packageMaterial();
-            material.getPackageDefinition().getRepository().getConfiguration().get(0).setConfigurationValue(new ConfigurationValue("{{SECRET:[secret_config_id][lookup_token]}}"));
-            material.getPackageDefinition().getConfiguration().get(0).setConfigurationValue(new ConfigurationValue("{{SECRET:[secret_config_id][lookup_password]}}"));
+            material.getPackageDefinition().getRepository().getConfiguration().getFirst().setConfigurationValue(new ConfigurationValue("{{SECRET:[secret_config_id][lookup_token]}}"));
+            material.getPackageDefinition().getConfiguration().getFirst().setConfigurationValue(new ConfigurationValue("{{SECRET:[secret_config_id][lookup_password]}}"));
 
             assertThat(material.hasSecretParams()).isTrue();
         }
@@ -474,12 +473,12 @@ class PackageMaterialTest {
         @Test
         void shouldReturnAListOfSecretParams() {
             PackageMaterial material = MaterialsMother.packageMaterial();
-            material.getPackageDefinition().getRepository().getConfiguration().get(0).setConfigurationValue(new ConfigurationValue("{{SECRET:[secret_config_id][lookup_username]}}"));
-            material.getPackageDefinition().getConfiguration().get(0).setConfigurationValue(new ConfigurationValue("{{SECRET:[secret_config_id][lookup_password]}}"));
+            material.getPackageDefinition().getRepository().getConfiguration().getFirst().setConfigurationValue(new ConfigurationValue("{{SECRET:[secret_config_id][lookup_username]}}"));
+            material.getPackageDefinition().getConfiguration().getFirst().setConfigurationValue(new ConfigurationValue("{{SECRET:[secret_config_id][lookup_password]}}"));
 
             assertThat(material.getSecretParams().size()).isEqualTo(2);
-            assertThat(material.getSecretParams().get(0)).isEqualTo(new SecretParam("secret_config_id", "lookup_username"));
-            assertThat(material.getSecretParams().get(1)).isEqualTo(new SecretParam("secret_config_id", "lookup_password"));
+            assertThat(material.getSecretParams().getFirst()).isEqualTo(new SecretParam("secret_config_id", "lookup_username"));
+            assertThat(material.getSecretParams().getLast()).isEqualTo(new SecretParam("secret_config_id", "lookup_password"));
         }
 
         @Test
@@ -493,16 +492,16 @@ class PackageMaterialTest {
     @Test
     void shouldPopulateEnvironmentContextWithConfigurationWithSecretParamsAsSecure() {
         ConfigurationProperty k1 = ConfigurationPropertyMother.create("k1", false, "{{SECRET:[secret_config_id][lookup_username]}}");
-        k1.getSecretParams().get(0).setValue("some-resolved-value");
+        k1.getSecretParams().getFirst().setValue("some-resolved-value");
         ConfigurationProperty k2 = ConfigurationPropertyMother.create("k2", false, "{{SECRET:[secret_config_id][lookup_password]}}");
-        k2.getSecretParams().get(0).setValue("some-resolved-password");
+        k2.getSecretParams().getFirst().setValue("some-resolved-password");
         PackageDefinition pkgDef = new PackageDefinition("id", "name", new Configuration(k2));
         PackageRepository pkgRepo = new PackageRepository("pkg-repo-id", "pkg-repo-name", new PluginConfiguration(), new Configuration(k1));
         pkgDef.setRepository(pkgRepo);
         PackageMaterial material = new PackageMaterial();
         material.setPackageDefinition(pkgDef);
 
-        material.setName(new CaseInsensitiveString("tw-dev:go-agent"));
+        material.setName(cis("tw-dev:go-agent"));
         Modifications modifications = new Modifications(new Modification(null, null, null, new Date(), "revision-123"));
         EnvironmentVariableContext environmentVariableContext = new EnvironmentVariableContext();
         material.populateEnvironmentContext(environmentVariableContext, new MaterialRevision(material, modifications), null);

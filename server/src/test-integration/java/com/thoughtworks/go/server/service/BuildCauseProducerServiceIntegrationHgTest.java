@@ -45,6 +45,7 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -71,20 +72,18 @@ public class BuildCauseProducerServiceIntegrationHgTest {
     @Autowired private SubprocessExecutionContext subprocessExecutionContext;
 
     @Autowired private DatabaseAccessHelper dbHelper;
-    private static GoConfigFileHelper configHelper = new GoConfigFileHelper();
-    private Pipeline latestPipeline;
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
     private InMemoryStreamConsumer outputStreamConsumer = inMemoryConsumer();
-    private HgTestRepo hgTestRepo;
     private HgMaterial hgMaterial;
     private File workingFolder;
-    PipelineConfig mingleConfig;
+    private PipelineConfig mingleConfig;
 
     @BeforeEach
     public void setup(@TempDir Path tempDir) throws Exception {
         dbHelper.onSetUp();
         configHelper.usingCruiseConfigDao(goConfigDao);
         configHelper.onSetUp();
-        hgTestRepo = new HgTestRepo("hgTestRepo1", tempDir);
+        HgTestRepo hgTestRepo = new HgTestRepo("hgTestRepo1", tempDir);
         hgMaterial = MaterialsMother.hgMaterial(hgTestRepo.projectRepositoryUrl());
         hgMaterial.setFilter(new Filter(new IgnoredFiles("helper/**/*.*")));
         workingFolder = TempDirUtils.createTempDirectoryIn(tempDir, "workingFolder").toFile();
@@ -94,12 +93,12 @@ public class BuildCauseProducerServiceIntegrationHgTest {
 
     @AfterEach
     public void teardown() throws Exception {
+        configHelper.onTearDown();
         dbHelper.onTearDown();
         FileUtils.deleteQuietly(goConfigService.artifactsDir());
         FileUtils.deleteQuietly(workingFolder);
         pipelineScheduleQueue.clear();
     }
-
 
     /**
      * How we handle SVN Material and other Material(Hg Git and etc) is different, which caused the bug
@@ -128,15 +127,16 @@ public class BuildCauseProducerServiceIntegrationHgTest {
         materialRevisions.addRevision(this.hgMaterial, modifications);
         BuildCause buildCause = BuildCause.createWithModifications(materialRevisions, "");
 
-        latestPipeline = PipelineMother.schedule(mingleConfig, buildCause);
+        Pipeline latestPipeline = PipelineMother.schedule(mingleConfig, buildCause);
         latestPipeline = dbHelper.savePipelineWithStagesAndMaterials(latestPipeline);
-        dbHelper.passStage(latestPipeline.getStages().first());
+        dbHelper.passStage(latestPipeline.getStages().getFirst());
     }
 
     private void checkInFiles(String... files) throws Exception {
         for (String fileName : files) {
             File file = new File(workingFolder, fileName);
-            FileUtils.writeStringToFile(file, "bla", UTF_8);
+            file.getParentFile().mkdirs();
+            Files.writeString(file.toPath(), "bla", UTF_8);
             hgMaterial.add(workingFolder, outputStreamConsumer, file);
         }
         hgMaterial.commit(workingFolder, outputStreamConsumer, "comment ", "user");

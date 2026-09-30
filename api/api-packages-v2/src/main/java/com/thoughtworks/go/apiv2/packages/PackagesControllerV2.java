@@ -20,7 +20,7 @@ import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.CrudController;
 import com.thoughtworks.go.api.base.OutputWriter;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.apiv2.packages.representers.PackageDefinitionRepresenter;
 import com.thoughtworks.go.apiv2.packages.representers.PackageDefinitionsRepresenter;
@@ -33,6 +33,7 @@ import com.thoughtworks.go.server.service.EntityHashingService;
 import com.thoughtworks.go.server.service.GoConfigService;
 import com.thoughtworks.go.server.service.materials.PackageDefinitionService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import com.thoughtworks.go.util.Pair;
@@ -53,16 +54,16 @@ import static spark.Spark.*;
 @Component
 public class PackagesControllerV2 extends ApiController implements SparkSpringController, CrudController<PackageDefinition> {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final EntityHashingService entityHashingService;
     private final PackageDefinitionService packageDefinitionService;
     private final GoConfigService goConfigService;
 
     @Autowired
-    public PackagesControllerV2(ApiAuthenticationHelper apiAuthenticationHelper, EntityHashingService entityHashingService,
+    public PackagesControllerV2(ApiAuthorizationHelper apiAuthorizationHelper, EntityHashingService entityHashingService,
                                 PackageDefinitionService packageDefinitionService, GoConfigService goConfigService) {
         super(ApiVersion.v2);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.entityHashingService = entityHashingService;
         this.packageDefinitionService = packageDefinitionService;
         this.goConfigService = goConfigService;
@@ -74,12 +75,12 @@ public class PackagesControllerV2 extends ApiController implements SparkSpringCo
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
-            before("", mimeType, this.apiAuthenticationHelper::checkAdminUserOrGroupAdminUserAnd403);
-            before("/*", mimeType, this.apiAuthenticationHelper::checkAdminUserOrGroupAdminUserAnd403);
+            before("", mimeType, this.apiAuthorizationHelper::checkAnyPipelineGroupAdminUserAnd403);
+            before("/*", mimeType, this.apiAuthorizationHelper::checkAnyPipelineGroupAdminUserAnd403);
 
             get("", mimeType, this::index);
             get(Routes.Packages.PACKAGE_ID, mimeType, this::show);

@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.service;
 
-import com.google.common.collect.Sets;
 import com.thoughtworks.go.config.elastic.ClusterProfile;
 import com.thoughtworks.go.config.elastic.ElasticProfile;
 import com.thoughtworks.go.config.exceptions.RecordNotFoundException;
@@ -23,7 +22,6 @@ import com.thoughtworks.go.domain.AgentInstance;
 import com.thoughtworks.go.domain.JobIdentifier;
 import com.thoughtworks.go.domain.JobInstance;
 import com.thoughtworks.go.domain.JobPlan;
-import com.thoughtworks.go.domain.exception.IllegalArtifactLocationException;
 import com.thoughtworks.go.plugin.access.elastic.ElasticAgentMetadataStore;
 import com.thoughtworks.go.plugin.access.elastic.ElasticAgentPluginRegistry;
 import com.thoughtworks.go.plugin.access.elastic.models.AgentMetadata;
@@ -45,8 +43,8 @@ import com.thoughtworks.go.serverhealth.HealthStateScope;
 import com.thoughtworks.go.serverhealth.ServerHealthService;
 import com.thoughtworks.go.serverhealth.ServerHealthState;
 import com.thoughtworks.go.util.TimeProvider;
-import com.thoughtworks.go.util.Timeout;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.collections4.SetUtils;
+import org.apache.commons.lang3.Strings;
 import org.jetbrains.annotations.TestOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +53,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
@@ -81,16 +80,16 @@ public class ElasticAgentPluginService {
     private final ServerHealthService serverHealthService;
     private final ConcurrentHashMap<Long, Long> jobCreationTimeMap = new ConcurrentHashMap<>();
     private final ScheduleService scheduleService;
-    private ConsoleService consoleService;
+    private final ConsoleService consoleService;
     private EphemeralAutoRegisterKeyService ephemeralAutoRegisterKeyService;
     private final SecretParamResolver secretParamResolver;
-    private JobInstanceSqlMapDao jobInstanceSqlMapDao;
-    private JobStatusTopic jobStatusTopic;
+    private final JobInstanceSqlMapDao jobInstanceSqlMapDao;
+    private final JobStatusTopic jobStatusTopic;
 
     @Value("${go.elasticplugin.heartbeat.interval}")
     private long elasticPluginHeartBeatInterval;
     private final ElasticAgentMetadataStore elasticAgentMetadataStore;
-    private ClusterProfilesService clusterProfilesService;
+    private final ClusterProfilesService clusterProfilesService;
 
     @TestOnly
     public void setElasticPluginHeartBeatInterval(long elasticPluginHeartBeatInterval) {
@@ -149,7 +148,9 @@ public class ElasticAgentPluginService {
             elasticAgentsOfMissingPlugins.remove(descriptor.id());
             List<ClusterProfile> clusterProfiles = clusterProfilesService.getPluginProfiles().findByPluginId(descriptor.id());
             boolean secretsResolved = resolveSecrets(descriptor.id(), clusterProfiles);
-            if (!secretsResolved) continue;
+            if (!secretsResolved) {
+                continue;
+            }
             serverPingQueue.post(new ServerPingMessage(descriptor.id(), clusterProfiles), pingMessageTimeToLive);
             serverHealthService.removeByScope(scope(descriptor.id()));
         }
@@ -191,14 +192,14 @@ public class ElasticAgentPluginService {
                     continue;
                 }
                 long lastTryTime = jobCreationTimeMap.get(jobPlan.getJobId());
-                if ((timeProvider.currentTimeMillis() - lastTryTime) >= goConfigService.elasticJobStarvationThreshold()) {
+                if (timeProvider.currentTimeMillis() - lastTryTime >= goConfigService.elasticJobStarvationThreshold()) {
                     starvingJobs.add(jobPlan);
                 }
             }
         }
 
         List<JobPlan> jobsThatRequireAgent = new ArrayList<>();
-        jobsThatRequireAgent.addAll(Sets.difference(new HashSet<>(newPlan), new HashSet<>(old)));
+        jobsThatRequireAgent.addAll(SetUtils.difference(new HashSet<>(newPlan), new HashSet<>(old)));
         jobsThatRequireAgent.addAll(starvingJobs);
 
         List<JobPlan> plansThatRequireElasticAgent = jobsThatRequireAgent.stream().filter(isElasticAgent()).toList();
@@ -218,7 +219,7 @@ public class ElasticAgentPluginService {
                         The possible reason for the missing cluster information on the elastic profile could be, an upgrade of the GoCD server to a version >= 19.3.0 before the completion of the job.
 
                         A re-run of this job should fix this issue.""";
-                logToJobConsole(jobIdentifier, cancellationMessage);
+                consoleService.appendToConsoleLogSafe(jobIdentifier, cancellationMessage);
                 scheduleService.cancelJob(jobIdentifier);
             } else if (elasticAgentPluginRegistry.has(clusterProfile.getPluginId())) {
                 String environment = environmentConfigService.envForPipeline(plan.getPipelineName());
@@ -228,8 +229,11 @@ public class ElasticAgentPluginService {
                     serverHealthService.removeByScope(scopeForJob(jobIdentifier));
                 } catch (RulesViolationException | SecretResolutionFailureException e) {
                     JobInstance jobInstance = jobInstanceSqlMapDao.buildById(plan.getJobId());
-                    String failureMessage = format("\nThis job was failed by GoCD. This job is configured to run on an elastic agent, there were errors while resolving secrets for the the associated elastic configurations.\nReasons: %s", e.getMessage());
-                    logToJobConsole(jobIdentifier, failureMessage);
+                    String failureMessage = format("""
+                        
+                        This job was failed by GoCD. This job is configured to run on an elastic agent, there were errors while resolving secrets for the the associated elastic configurations.
+                        Reasons: %s""", e.getMessage());
+                    consoleService.appendToConsoleLogSafe(jobIdentifier, failureMessage);
                     scheduleService.failJob(jobInstance);
                     jobStatusTopic.post(new JobStatusMessage(jobIdentifier, jobInstance.getState(), plan.getAgentUuid()));
                 }
@@ -246,7 +250,7 @@ public class ElasticAgentPluginService {
     }
 
     public boolean shouldAssignWork(ElasticAgentMetadata metadata, String environment, ElasticProfile elasticProfile, ClusterProfile clusterProfile, JobIdentifier identifier) {
-        if (clusterProfile == null || !StringUtils.equals(clusterProfile.getPluginId(), metadata.elasticPluginId())) {
+        if (clusterProfile == null || !Strings.CS.equals(clusterProfile.getPluginId(), metadata.elasticPluginId())) {
             return false;
         }
 
@@ -266,7 +270,7 @@ public class ElasticAgentPluginService {
         if (pluginInfo.getCapabilities().supportsPluginStatusReport()) {
             List<Map<String, String>> clusterProfiles = clusterProfilesService.getPluginProfiles().findByPluginId(pluginId)
                     .stream()
-                    .map((profile) -> {
+                    .map(profile -> {
                         secretParamResolver.resolve(profile);
                         return profile.getConfigurationAsMap(true, true);
                     })
@@ -277,7 +281,7 @@ public class ElasticAgentPluginService {
         throw new UnsupportedOperationException("Plugin does not plugin support status report.");
     }
 
-    public String getAgentStatusReport(String pluginId, JobIdentifier jobIdentifier, String elasticAgentId) throws Exception {
+    public String getAgentStatusReport(String pluginId, JobIdentifier jobIdentifier, String elasticAgentId) {
         final ElasticAgentPluginInfo pluginInfo = elasticAgentMetadataStore.getPluginInfo(pluginId);
         if (pluginInfo == null) {
             throw new RecordNotFoundException(format("Plugin with id: '%s' is not found.", pluginId));
@@ -293,7 +297,7 @@ public class ElasticAgentPluginService {
                 }
                 return elasticAgentPluginRegistry.getAgentStatusReport(pluginId, jobIdentifier, elasticAgentId, clusterProfileConfigurations);
             }
-            throw new Exception(format("Could not fetch agent status report for agent %s as either the job running on the agent has been completed or the agent has been terminated.", elasticAgentId));
+            throw new RuntimeException(format("Could not fetch agent status report for agent %s as either the job running on the agent has been completed or the agent has been terminated.", elasticAgentId));
         }
 
         throw new UnsupportedOperationException("Plugin does not support agent status report.");
@@ -343,18 +347,8 @@ public class ElasticAgentPluginService {
             elasticAgentPluginRegistry.reportJobCompletion(pluginId, elasticAgentId, jobIdentifier, elasticProfileConfiguration, clusterProfileConfiguration);
         } catch (RulesViolationException | SecretResolutionFailureException e) {
             String description = format("The job completion call to the plugin for the job identifier [%s] failed for secrets resolution: %s ", jobIdentifier.toString(), e.getMessage());
-            ServerHealthState healthState = error("Failed to notify plugin", description, general(scopeForJob(jobIdentifier)));
-            healthState.setTimeout(Timeout.FIVE_MINUTES);
-            serverHealthService.update(healthState);
+            serverHealthService.update(error("Failed to notify plugin", description, general(scopeForJob(jobIdentifier)), Duration.ofMinutes(5)));
             LOGGER.error(description);
-        }
-    }
-
-    private void logToJobConsole(JobIdentifier identifier, String message) {
-        try {
-            consoleService.appendToConsoleLog(identifier, message);
-        } catch (IllegalArtifactLocationException e) {
-            LOGGER.error(format("Failed to add message(%s) to the job(%s) console", message, identifier), e);
         }
     }
 
@@ -385,8 +379,9 @@ public class ElasticAgentPluginService {
     }
 
     private void resolveSecrets(ClusterProfile clusterProfile, ElasticProfile elasticProfile) {
-        if (clusterProfile != null)
+        if (clusterProfile != null) {
             secretParamResolver.resolve(clusterProfile);
+        }
         secretParamResolver.resolve(elasticProfile);
     }
 }

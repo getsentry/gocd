@@ -20,12 +20,13 @@ import com.thoughtworks.go.agent.common.util.Downloader;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigInteger;
-import java.net.MalformedURLException;
-import java.net.URL;
+import java.net.URI;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 public enum DownloadableFile {
     AGENT("admin/agent", Downloader.AGENT_BINARY),
@@ -48,10 +49,11 @@ public enum DownloadableFile {
     public String validatedUrl(ServerUrlGenerator urlGenerator) {
         String url = url(urlGenerator);
         try {
-            new URL(url);
-        } catch (MalformedURLException mue) {
+            //noinspection ResultOfMethodCallIgnored
+            new URI(url).toURL();
+        } catch (Exception ignore) {
             throw new RuntimeException(
-                    "URL you provided to access Go Server: " + url(urlGenerator) + " is not valid");
+                    "URL you provided to access Go Server: " + url + " is not valid");
         }
         return url;
     }
@@ -68,7 +70,7 @@ public enum DownloadableFile {
                 digest.transferTo(OutputStream.nullOutputStream());
             }
             return expectedSignature.equalsIgnoreCase(encodeHexString(digester.digest()));
-        } catch (Exception e) {
+        } catch (IOException | NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
         }
     }

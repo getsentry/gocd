@@ -16,11 +16,9 @@
 package com.thoughtworks.go.apiv1.usersearch
 
 import com.thoughtworks.go.api.SecurityTestTrait
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper
 import com.thoughtworks.go.apiv1.usersearch.representers.UserSearchResultsRepresenter
 import com.thoughtworks.go.domain.User
-import com.thoughtworks.go.presentation.UserSearchModel
-import com.thoughtworks.go.presentation.UserSourceType
 import com.thoughtworks.go.server.security.UserSearchService
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult
 import com.thoughtworks.go.spark.AdminUserSecurity
@@ -48,7 +46,7 @@ class UserSearchControllerV1Test implements SecurityServiceTrait, ControllerTrai
 
   @Override
   UserSearchControllerV1 createControllerInstance() {
-    new UserSearchControllerV1(new ApiAuthenticationHelper(securityService, goConfigService), userSearchService)
+    new UserSearchControllerV1(new ApiAuthorizationHelper(securityService, goConfigService), userSearchService)
   }
 
   @Nested
@@ -56,6 +54,8 @@ class UserSearchControllerV1Test implements SecurityServiceTrait, ControllerTrai
 
     @Nested
     class Security implements SecurityTestTrait, AdminUserSecurity {
+      @Delegate SecurityServiceTrait s = UserSearchControllerV1Test.this
+      @Delegate ControllerTrait<UserSearchControllerV1> c = UserSearchControllerV1Test.this
 
       @Override
       String getControllerMethodUnderTest() {
@@ -73,7 +73,6 @@ class UserSearchControllerV1Test implements SecurityServiceTrait, ControllerTrai
 
       @BeforeEach
       void setUp() {
-        enableSecurity()
         loginAsAdmin()
       }
 
@@ -81,7 +80,7 @@ class UserSearchControllerV1Test implements SecurityServiceTrait, ControllerTrai
       void 'should return blank array if no users found for query string'() {
         def searchTerm = 'blah blah'
 
-        when(userSearchService.search(eq(searchTerm), any() as HttpLocalizedOperationResult)).then({ InvocationOnMock invocation ->
+        when(userSearchService.search(eq(searchTerm), any())).then({ InvocationOnMock invocation ->
           HttpLocalizedOperationResult result = invocation.getArgument(1)
           result.setMessage("No results found.")
           return []
@@ -100,9 +99,9 @@ class UserSearchControllerV1Test implements SecurityServiceTrait, ControllerTrai
         def searchTerm = 'blah blah'
         def user = new User("bob", searchTerm, "bob@example.com")
         def expectedUsers = [
-          new UserSearchModel(user, UserSourceType.PLUGIN)
+          user
         ]
-        when(userSearchService.search(eq(searchTerm), any() as HttpLocalizedOperationResult)).thenReturn(expectedUsers)
+        when(userSearchService.search(eq(searchTerm), any())).thenReturn(expectedUsers)
 
         getWithApiHeader(controller.controllerPath([q: searchTerm]))
 
@@ -116,7 +115,7 @@ class UserSearchControllerV1Test implements SecurityServiceTrait, ControllerTrai
       void "should render error if search operation fails"(){
         def searchTerm = 'blah blah'
 
-        when(userSearchService.search(eq(searchTerm), any() as HttpLocalizedOperationResult)).then({ InvocationOnMock invocation ->
+        when(userSearchService.search(eq(searchTerm), any())).then({ InvocationOnMock invocation ->
           HttpLocalizedOperationResult result = invocation.getArgument(1)
           result.badRequest("boom!")
           return []

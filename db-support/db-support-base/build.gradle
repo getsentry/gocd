@@ -15,19 +15,12 @@
  */
 
 dependencies {
-  implementation project.deps.commonsDbcp
-  api project.deps.commonsLang3
-  api project.deps.ztExec
-  api(project.deps.apacheAnt) {
-    transitive = false
+  implementation rootProject.deps.commonsDbcp
+  if (rootProject.deps.commonsDbcp) {
+    runtimeOnly rootProject.deps.slf4jJcl // Allow commons-logging replacement
   }
 
-  annotationProcessor project.deps.lombok
-  compileOnly project.deps.lombok
-
-  testImplementation project.deps.junit5Api
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
-  testImplementation project.deps.assertJ
+  annotationProcessor rootProject.deps.lombok
+  compileOnly rootProject.deps.lombok
 }
 

@@ -296,7 +296,7 @@ class SCMTest {
         scm.clearEmptyConfigurations();
 
         assertThat(scm.getConfiguration().size()).isEqualTo(1);
-        assertThat(scm.getConfiguration().get(0).getConfigurationKey().getName()).isEqualTo("name-four");
+        assertThat(scm.getConfiguration().getFirst().getConfigurationKey().getName()).isEqualTo("name-four");
     }
 
     @Test
@@ -307,7 +307,7 @@ class SCMTest {
         scm.validate(new ConfigSaveValidationContext(null));
 
         assertThat(scm.errors().isEmpty()).isFalse();
-        assertThat(scm.errors().getAllOn(SCM.NAME).get(0)).isEqualTo("Invalid SCM name 'some name'. This must be alphanumeric and can contain underscores, hyphens and periods (however, it cannot start with a period). The maximum allowed length is 255 characters.");
+        assertThat(scm.errors().getAllOn(SCM.NAME).getFirst()).isEqualTo("Invalid SCM name 'some name'. This must be alphanumeric and can contain underscores, hyphens and periods (however, it cannot start with a period). The maximum allowed length is 255 characters.");
     }
 
     @Test
@@ -351,9 +351,7 @@ class SCMTest {
 
         Map<String, Map<String, String>> configMap = scm.getConfigAsMap();
 
-        assertThat(configMap.keySet().size()).isEqualTo(keys.size());
-        assertThat(configMap.values().size()).isEqualTo(values.size());
-        assertThat(configMap.keySet().containsAll(keys)).isTrue();
+        assertThat(configMap).containsOnlyKeys(keys);
         for (int i = 0; i < keys.size(); i++) {
             assertThat(configMap.get(keys.get(i)).get(SCM.VALUE_KEY)).isEqualTo(values.get(i));
         }
@@ -382,15 +380,6 @@ class SCMTest {
         scm.addConfigurations(configurationProperties);
 
         assertThat(configuration.size()).isEqualTo(1);
-    }
-
-    @Test
-    void shouldGetSCMTypeCorrectly() {
-        SCM scm = SCMMother.create("scm-id");
-        assertThat(scm.getSCMType()).isEqualTo("pluggable_material_plugin");
-
-        scm.setPluginConfiguration(new PluginConfiguration("plugin-id-2", "1"));
-        assertThat(scm.getSCMType()).isEqualTo("pluggable_material_plugin_id_2");
     }
 
     @Nested
@@ -423,8 +412,8 @@ class SCMTest {
             scm.getConfiguration().addAll(List.of(k1, k2));
 
             assertThat(scm.getSecretParams().size()).isEqualTo(2);
-            assertThat(scm.getSecretParams().get(0)).isEqualTo(new SecretParam("secret_config_id", "lookup_username"));
-            assertThat(scm.getSecretParams().get(1)).isEqualTo(new SecretParam("secret_config_id", "lookup_password"));
+            assertThat(scm.getSecretParams().getFirst()).isEqualTo(new SecretParam("secret_config_id", "lookup_username"));
+            assertThat(scm.getSecretParams().getLast()).isEqualTo(new SecretParam("secret_config_id", "lookup_password"));
         }
 
         @Test

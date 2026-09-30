@@ -18,30 +18,39 @@ package com.thoughtworks.go.domain.materials.perforce;
 import com.thoughtworks.go.domain.materials.Modification;
 import com.thoughtworks.go.domain.materials.ModifiedAction;
 import com.thoughtworks.go.util.command.ConsoleResult;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.StringReader;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
+import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.commons.lang3.StringUtils.splitByWholeSeparator;
 
 public class P4OutputParser {
     private static final Logger LOG = LoggerFactory.getLogger(P4OutputParser.class);
-    private static final String P4_DATE_PATTERN = "yyyy/MM/dd HH:mm:ss";
-    private static final String DESCRIBE_OUTPUT_PATTERN = "^(.+)\n\\s+((.*\n)*)\\s+";
-    private static final String FIRST_LINE_PATTERN =
-            "^Change (\\d+) by (\\S+@\\S+) on (\\d+/\\d+/\\d+ \\d+:\\d+:\\d+)$";
-    private static final String FILE_LINE_PATTERN = "^\\.\\.\\. //.+?/(.+)#(\\d+) (\\w+)$";
-    private static final String SEPARATOR = "Affected files ...\n\n";
+    private static final DateTimeFormatter P4_DATE_PATTERN = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss").withZone(ZoneOffset.systemDefault());
+
+    private static final Pattern DESCRIBE_OUTPUT_PATTERN = Pattern.compile("^(.+)\n\\s+((.*\n)*)\\s+", Pattern.MULTILINE);
+    private static final Pattern CHANGE_PATTERN = Pattern.compile("^Change (\\d+) ");
+    private static final Pattern FIRST_LINE_PATTERN = Pattern.compile("^Change (\\d+) by (\\S+@\\S+) on (\\d+/\\d+/\\d+ \\d+:\\d+:\\d+)$");
+    private static final Pattern FILE_LINE_PATTERN = Pattern.compile("^\\.\\.\\. //.+?/(.+)#(\\d+) (\\w+)$");
+
+    private static final String SEPARATOR = """
+        Affected files ...
+        
+        """;
+
     private final P4Client p4Client;
 
     public P4OutputParser(P4Client p4Client) {
@@ -49,8 +58,7 @@ public class P4OutputParser {
     }
 
     long revisionFromChange(String changeOutput) {
-        Pattern pattern = Pattern.compile("^Change (\\d+) ");
-        Matcher matcher = pattern.matcher(changeOutput);
+        Matcher matcher = CHANGE_PATTERN.matcher(changeOutput);
         if (matcher.find()) {
             String changeNumber = matcher.group(1);
             return Long.parseLong(changeNumber);
@@ -59,12 +67,11 @@ public class P4OutputParser {
     }
 
     Modification modificationFromDescription(String output, ConsoleResult result) throws P4OutputParseException {
-        String[] parts = StringUtils.splitByWholeSeparator(output, SEPARATOR);
-        Pattern pattern = Pattern.compile(DESCRIBE_OUTPUT_PATTERN, Pattern.MULTILINE);
-        Matcher matcher = pattern.matcher(parts[0]);
+        String[] parts = splitByWholeSeparator(output, SEPARATOR);
+        Matcher matcher = DESCRIBE_OUTPUT_PATTERN.matcher(parts[0]);
         if (matcher.find()) {
             Modification modification = new Modification();
-            parseFistline(modification, matcher.group(1), result);
+            parseFirstLine(modification, matcher.group(1), result);
             parseComment(matcher, modification);
             parseAffectedFiles(parts, modification);
             return modification;
@@ -79,7 +86,7 @@ public class P4OutputParser {
     }
 
     private void parseComment(Matcher matcher, Modification modification) {
-        modification.setComment(matcher.group(2).replaceAll("\\t", "").trim());
+        modification.setComment(matcher.group(2).replace("\t", "").trim());
     }
 
     private void parseFileLines(Modification modification, String lines) {
@@ -93,34 +100,28 @@ public class P4OutputParser {
     }
 
     private void parseFileLine(Modification modification, String line) {
-        Pattern pattern = Pattern.compile(FILE_LINE_PATTERN);
-        Matcher matcher = pattern.matcher(line);
+        Matcher matcher = FILE_LINE_PATTERN.matcher(line);
         if (matcher.find()) {
             modification.createModifiedFile(matcher.group(1), "", ModifiedAction.parseP4Action(matcher.group(3)));
         }
     }
 
-    void parseFistline(Modification modification, String line, ConsoleResult result) throws P4OutputParseException {
-        Pattern pattern = Pattern.compile(FIRST_LINE_PATTERN);
-        Matcher matcher = pattern.matcher(line);
+    void parseFirstLine(Modification modification, String line, ConsoleResult result) throws P4OutputParseException {
+        Matcher matcher = FIRST_LINE_PATTERN.matcher(line);
         if (matcher.find()) {
             modification.setRevision(matcher.group(1));
             modification.setUserName(matcher.group(2));
-            try {
-                modification.setModifiedTime(new SimpleDateFormat(P4_DATE_PATTERN).parse(matcher.group(3)));
-            } catch (ParseException e) {
-                throw bomb(e);
-            }
+            modification.setModifiedTime(Date.from(P4_DATE_PATTERN.parse(matcher.group(3), Instant::from)));
         } else {
-            LOG.warn("Could not parse P4 describe: {}", result.replaceSecretInfo(line));
-            throw new P4OutputParseException("Could not parse P4 describe: " + result.replaceSecretInfo(line));
+            LOG.warn("Could not parse P4 describe: {}", result.redactFrom(line));
+            throw new P4OutputParseException("Could not parse P4 describe: " + result.redactFrom(line));
         }
     }
 
     public List<Modification> modifications(ConsoleResult result) {
         List<Modification> modifications = new ArrayList<>();
         for (String change : result.output()) {
-            if (!StringUtils.isBlank(change)) {
+            if (!isBlank(change)) {
                 String description = "";
                 try {
                     long revision = revisionFromChange(change);
@@ -129,12 +130,12 @@ public class P4OutputParser {
                 } catch (P4OutputParseException e) {
                     LOG.error("Error parsing changes for {}", this);
                     LOG.error("---- change ---------");
-                    LOG.error(result.replaceSecretInfo(change));
+                    LOG.error(result.redactFrom(change));
                     LOG.error("---- description ----");
-                    LOG.error(result.replaceSecretInfo(description));
+                    LOG.error(result.redactFrom(description));
                     LOG.error("---------------------");
                 } catch (RuntimeException e) {
-                    throw (RuntimeException) result.smudgedException(e);
+                    throw result.redactFrom(e);
                 }
             }
         }

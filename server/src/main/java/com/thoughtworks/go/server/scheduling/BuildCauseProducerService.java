@@ -32,6 +32,8 @@ import com.thoughtworks.go.server.materials.*;
 import com.thoughtworks.go.server.perf.SchedulingPerformanceLogger;
 import com.thoughtworks.go.server.persistence.MaterialRepository;
 import com.thoughtworks.go.server.service.*;
+import com.thoughtworks.go.server.service.dd.NoCompatibleUpstreamRevisionsException;
+import com.thoughtworks.go.server.service.dd.NoModificationsPresentForDependentMaterialException;
 import com.thoughtworks.go.server.service.result.OperationResult;
 import com.thoughtworks.go.server.service.result.ServerHealthStateOperationResult;
 import com.thoughtworks.go.serverhealth.HealthStateScope;
@@ -49,27 +51,28 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static java.lang.String.format;
 
 @Service
 public class BuildCauseProducerService {
     private static final Logger LOGGER = LoggerFactory.getLogger(BuildCauseProducerService.class);
 
-    private SchedulingCheckerService schedulingChecker;
-    private ServerHealthService serverHealthService;
-    private PipelineScheduleQueue pipelineScheduleQueue;
-    private GoConfigService goConfigService;
-    private MaterialChecker materialChecker;
-    private MaterialUpdateStatusNotifier materialUpdateStatusNotifier;
+    private final SchedulingCheckerService schedulingChecker;
+    private final ServerHealthService serverHealthService;
+    private final PipelineScheduleQueue pipelineScheduleQueue;
+    private final GoConfigService goConfigService;
+    private final MaterialChecker materialChecker;
+    private final MaterialUpdateStatusNotifier materialUpdateStatusNotifier;
     private final MaterialUpdateService materialUpdateService;
     private final SpecificMaterialRevisionFactory specificMaterialRevisionFactory;
     private final PipelineService pipelineService;
 
-    private TriggerMonitor triggerMonitor;
+    private final TriggerMonitor triggerMonitor;
     private final SystemEnvironment systemEnvironment;
     private final MaterialConfigConverter materialConfigConverter;
     private final MaterialExpansionService materialExpansionService;
-    private SchedulingPerformanceLogger schedulingPerformanceLogger;
+    private final SchedulingPerformanceLogger schedulingPerformanceLogger;
 
     @Autowired
     public BuildCauseProducerService(
@@ -107,7 +110,7 @@ public class BuildCauseProducerService {
         schedulingPerformanceLogger.autoSchedulePipelineStart(trackingId, pipelineName);
 
         try {
-            PipelineConfig pipelineConfig = goConfigService.pipelineConfigNamed(new CaseInsensitiveString(pipelineName));
+            PipelineConfig pipelineConfig = goConfigService.pipelineConfigNamed(cis(pipelineName));
             newProduceBuildCause(pipelineConfig, new AutoBuild(goConfigService, pipelineService, pipelineName, systemEnvironment, materialChecker), result, trackingId);
         } finally {
             schedulingPerformanceLogger.autoSchedulePipelineFinish(trackingId, pipelineName);
@@ -173,7 +176,7 @@ public class BuildCauseProducerService {
                     buildCause = buildType.onModifications(revisions, materialConfigurationChanged, null);
                     if (buildCause != null) {
                         if (!buildCause.materialsMatch(expandedMaterialConfigs)) {
-                            LOGGER.warn("Error while scheduling pipeline: {}. Possible Reasons: (1) Upstream pipelines have not been built yet. (2) Materials do not match between configuration and build-cause.", pipelineName);
+                            LOGGER.debug("Error while scheduling pipeline: {}. Possible Reasons: (1) Upstream pipelines have not been built yet. (2) Materials do not match between configuration and build-cause.", pipelineName);
                             return ServerHealthState.success(HealthStateType.general(HealthStateScope.forPipeline(pipelineName)));
                         }
                     }
@@ -184,12 +187,12 @@ public class BuildCauseProducerService {
                 if (!latestRevisions.isMissingModifications()) {
                     MaterialRevisions original = previousBuild.getMaterialRevisions();
                     MaterialRevisions revisions = materialChecker.findRevisionsSince(peggedRevisions, expandedMaterials, original, latestRevisions);
-                    if (!revisions.hasChangedSince(original) || (buildType.shouldCheckWhetherOlderRunsHaveRunWithLatestMaterials() && materialChecker.hasPipelineEverRunWith(pipelineName, latestRevisions))) {
+                    if (!revisions.hasChangedSince(original) || buildType.shouldCheckWhetherOlderRunsHaveRunWithLatestMaterials() && materialChecker.hasPipelineEverRunWith(pipelineName, latestRevisions)) {
                         LOGGER.debug("Repository for [{}] not modified", pipelineName);
                         buildCause = buildType.onEmptyModifications(pipelineConfig, latestRevisions);
                     } else {
                         LOGGER.debug("Repository for [{}] modified; scheduling...", pipelineName);
-                        buildCause = buildType.onModifications(revisions, materialConfigurationChanged, original);
+                        buildCause = buildType.onModifications(revisions, false, original);
                     }
                 }
             }
@@ -214,7 +217,7 @@ public class BuildCauseProducerService {
             LOGGER.debug(message, ncure);
             return showError(pipelineName, message, ncure.getMessage());
         } catch (NoModificationsPresentForDependentMaterialException e) {
-            LOGGER.error(e.getMessage(), e);
+            LOGGER.info(e.getMessage(), e);
             return ServerHealthState.success(HealthStateType.general(HealthStateScope.forPipeline(pipelineName)));
         } catch (Exception e) {
             String message = "Error while scheduling pipeline: " + pipelineName;
@@ -238,8 +241,9 @@ public class BuildCauseProducerService {
 
     private boolean isGoodReasonToSchedule(PipelineConfig pipelineConfig, BuildCause buildCause, BuildType buildType,
                                            boolean materialConfigurationChanged) {
-        if (buildCause == null)
+        if (buildCause == null) {
             return false;
+        }
 
         boolean validCause = buildType.isValidBuildCause(pipelineConfig, buildCause);
 
@@ -286,9 +290,10 @@ public class BuildCauseProducerService {
         private PipelineConfig pipelineConfig;
         private final BuildType buildType;
         private final ConcurrentMap<String, Material> pendingMaterials;
+        private final ScheduleOptions scheduleOptions;
+
         private Material configMaterial;
         private boolean failed;
-        private ScheduleOptions scheduleOptions;
 
         private WaitForPipelineMaterialUpdate(CaseInsensitiveString pipelineName, BuildType buildType, ScheduleOptions scheduleOptions) {
             this.pipelineConfig = goConfigService.pipelineConfigNamed(pipelineName);
@@ -349,8 +354,8 @@ public class BuildCauseProducerService {
         public void onMaterialUpdate(MaterialUpdateCompletedMessage message) {
             Material material = message.getMaterial();
 
-            if (message instanceof MaterialUpdateFailedMessage) {
-                String failureReason = ((MaterialUpdateFailedMessage) message).getReason();
+            if (message instanceof MaterialUpdateFailedMessage materialUpdateFailedMessage) {
+                String failureReason = materialUpdateFailedMessage.getReason();
                 LOGGER.error("not scheduling pipeline {} after manual-trigger because update of material failed with reason {}", pipelineConfig.name(), failureReason);
                 showError(CaseInsensitiveString.str(pipelineConfig.name()), format("Could not trigger pipeline '%s'", pipelineConfig.name()),
                         format("Material update failed for material '%s' because: %s", material.getDisplayName(), failureReason));

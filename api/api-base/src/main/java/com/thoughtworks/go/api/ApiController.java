@@ -28,21 +28,23 @@ import org.springframework.util.MimeType;
 import spark.Filter;
 import spark.Request;
 import spark.Response;
+import spark.route.HttpMethod;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.Map;
-import java.util.Set;
 
 import static com.thoughtworks.go.api.util.HaltApiResponses.haltBecauseConfirmHeaderMissing;
 import static com.thoughtworks.go.api.util.HaltApiResponses.haltBecauseJsonContentTypeExpected;
-import static org.apache.commons.lang3.StringUtils.isBlank;
+import static com.thoughtworks.go.remote.StandardHeaders.REQUEST_CONFIRM_MODIFICATION;
 
 public abstract class ApiController implements ControllerMethods, SparkController {
     protected static final String DEFAULT_PAGE_SIZE = "10";
     protected String BAD_PAGE_SIZE_MSG = "The query parameter 'page_size', if specified must be a number between 10 and 100.";
     protected String BAD_CURSOR_MSG = "The query parameter '%s', if specified, must be a positive integer.";
-    private static final Set<String> UPDATE_HTTP_METHODS = Set.of("PUT", "POST", "PATCH");
+    private static final EnumSet<HttpMethod> UPDATE_HTTP_METHODS = EnumSet.of(HttpMethod.put, HttpMethod.post, HttpMethod.patch);
 
     /**
      * all controllers are singletons, so instance loggers are ok
@@ -72,8 +74,8 @@ public abstract class ApiController implements ControllerMethods, SparkControlle
         return NOTHING;
     }
 
-    protected void verifyContentType(Request request, Response response) throws IOException {
-        if (!UPDATE_HTTP_METHODS.contains(request.requestMethod().toUpperCase())) {
+    protected void verifyContentType(Request request, @SuppressWarnings("unused") Response response) throws IOException {
+        if (!UPDATE_HTTP_METHODS.contains(HttpMethod.get(request.requestMethod().toLowerCase()))) {
             return;
         }
 
@@ -83,18 +85,18 @@ public abstract class ApiController implements ControllerMethods, SparkControlle
             if (!isJsonContentType(request)) {
                 throw haltBecauseJsonContentTypeExpected();
             }
-        } else if (request.headers().stream().noneMatch(headerName -> headerName.equalsIgnoreCase("x-gocd-confirm"))) {
+        } else if (request.headers().stream().noneMatch(headerName -> headerName.equalsIgnoreCase(REQUEST_CONFIRM_MODIFICATION))) {
             throw haltBecauseConfirmHeaderMissing();
         }
     }
 
-    protected void setMultipartUpload(Request req, Response res) {
+    protected void setMultipartUpload(Request req, @SuppressWarnings("unused") Response res) {
         RequestUtils.configureMultipart(req.raw());
     }
 
     protected boolean isJsonContentType(Request request) {
         String mime = request.headers("Content-Type");
-        if (isBlank(mime)) {
+        if (mime == null || mime.isBlank()) {
             return false;
         }
         try {
@@ -105,22 +107,22 @@ public abstract class ApiController implements ControllerMethods, SparkControlle
         }
     }
 
+    @Override
     public String getMimeType() {
         return mimeType;
     }
 
     protected Map<String, Object> readRequestBodyAsJSON(Request req) {
-        Map<String, Object> map = GsonTransformer.getInstance().fromJson(req.body(), new TypeToken<Map<String, Object>>() {
-        }.getType());
+        Map<String, Object> map = GsonTransformer.getInstance().fromJson(req.body(), new TypeToken<Map<String, Object>>() {}.getType());
         if (map == null) {
             return Collections.emptyMap();
         }
         return map;
     }
 
-    protected static Filter onlyOn(Filter filter, String... allowedMethods) {
+    protected static Filter onlyOn(Filter filter, HttpMethod... allowedMethods) {
         return (request, response) -> {
-            if (Set.of(allowedMethods).contains(request.requestMethod())) {
+            if (Arrays.stream(allowedMethods).anyMatch(m -> m.name().equalsIgnoreCase(request.requestMethod()))) {
                 filter.handle(request, response);
             }
         };
@@ -151,7 +153,7 @@ public abstract class ApiController implements ControllerMethods, SparkControlle
         long cursor = 0;
         try {
             String value = request.queryParams(key);
-            if (isBlank(value)) {
+            if (value == null || value.isBlank()) {
                 return cursor;
             }
             cursor = Long.parseLong(value);

@@ -18,7 +18,7 @@ package com.thoughtworks.go.apiv1.internalmaterials;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv1.internalmaterials.representers.ModificationsRepresenter;
 import com.thoughtworks.go.domain.PipelineRunIdInfo;
 import com.thoughtworks.go.domain.materials.MaterialConfig;
@@ -26,25 +26,27 @@ import com.thoughtworks.go.domain.materials.Modification;
 import com.thoughtworks.go.server.service.MaterialConfigService;
 import com.thoughtworks.go.server.service.MaterialService;
 import com.thoughtworks.go.server.service.result.HttpOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.stereotype.Component;
 import spark.Request;
 import spark.Response;
 
+import java.io.IOException;
 import java.util.List;
 
 import static spark.Spark.*;
 
 @Component
 public class InternalMaterialModificationsControllerV1 extends ApiController implements SparkSpringController {
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final MaterialConfigService materialConfigService;
     private final MaterialService materialService;
 
-    public InternalMaterialModificationsControllerV1(ApiAuthenticationHelper apiAuthenticationHelper, MaterialConfigService materialConfigService, MaterialService materialService) {
+    public InternalMaterialModificationsControllerV1(ApiAuthorizationHelper apiAuthorizationHelper, MaterialConfigService materialConfigService, MaterialService materialService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.materialConfigService = materialConfigService;
         this.materialService = materialService;
     }
@@ -55,22 +57,22 @@ public class InternalMaterialModificationsControllerV1 extends ApiController imp
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
 
-            before("", mimeType, this.apiAuthenticationHelper::checkUserAnd403);
+            before("", mimeType, this.apiAuthorizationHelper::checkUserAnd403);
 
             get("", mimeType, this::modifications);
         });
     }
 
-    public String modifications(Request request, Response response) throws Exception {
+    public String modifications(Request request, Response response) throws IOException {
         String fingerprint = request.params("fingerprint");
-        Long after = afterCursor(request);
-        Long before = beforeCursor(request);
-        Integer pageSize = getPageSize(request);
+        long after = afterCursor(request);
+        long before = beforeCursor(request);
+        int pageSize = getPageSize(request);
         String pattern = request.queryParamOrDefault("pattern", "");
 
         HttpOperationResult result = new HttpOperationResult();

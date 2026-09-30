@@ -17,14 +17,12 @@ package com.thoughtworks.go.domain.config;
 
 import com.thoughtworks.go.config.SecretParam;
 import com.thoughtworks.go.config.exceptions.UnresolvedSecretParamException;
-import com.thoughtworks.go.domain.ConfigErrors;
 import com.thoughtworks.go.domain.packagerepository.ConfigurationPropertyMother;
 import com.thoughtworks.go.security.CryptoException;
 import com.thoughtworks.go.security.GoCipher;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -81,8 +79,7 @@ class ConfigurationTest {
 
     @Test
     void shouldGetNullIfPropertyNotFoundForGivenKey() {
-        Configuration config = new Configuration();
-        assertThat(config.getProperty("key2")).isNull();
+        assertThat(new Configuration().getProperty("key2")).isNull();
     }
 
     @Test
@@ -99,7 +96,7 @@ class ConfigurationTest {
         configuration.clearEmptyConfigurations();
 
         assertThat(configuration.size()).isEqualTo(1);
-        assertThat(configuration.get(0).getConfigurationKey().getName()).isEqualTo("name-four");
+        assertThat(configuration.getFirst().getConfigurationKey().getName()).isEqualTo("name-four");
 
     }
 
@@ -150,40 +147,6 @@ class ConfigurationTest {
         verify(inputDirectory).hasErrors();
     }
 
-    @Test
-    void shouldReturnConfigWithErrorsAsMap() {
-        ConfigurationProperty configurationProperty = ConfigurationPropertyMother.create("key", false, "value");
-        configurationProperty.addError("key", "invalid key");
-        Configuration configuration = new Configuration(configurationProperty);
-        Map<String, Map<String, String>> configWithErrorsAsMap = configuration.getConfigWithErrorsAsMap();
-        Map<Object, Object> expectedMap = new HashMap<>();
-        Map<Object, Object> errorsMap = new HashMap<>();
-        errorsMap.put("value", "value");
-        ConfigErrors configErrors = new ConfigErrors();
-        configErrors.add("key", "invalid key");
-        errorsMap.put("errors", configErrors.getAll().toString());
-        expectedMap.put("key", errorsMap);
-
-        assertThat(configWithErrorsAsMap).isEqualTo(expectedMap);
-    }
-
-    @Test
-    void shouldReturnConfigWithMetadataAsMap() throws CryptoException {
-        ConfigurationProperty configurationProperty1 = ConfigurationPropertyMother.create("property1", false, "value");
-        ConfigurationProperty configurationProperty2 = ConfigurationPropertyMother.create("property2", false, null);
-        String password = new GoCipher().encrypt("password");
-        ConfigurationProperty configurationProperty3 = ConfigurationPropertyMother.create("property3");
-        configurationProperty3.setEncryptedValue(new EncryptedConfigurationValue(password));
-        Configuration configuration = new Configuration(configurationProperty1, configurationProperty2, configurationProperty3);
-        Map<String, Map<String, Object>> metadataAndValuesAsMap = configuration.getPropertyMetadataAndValuesAsMap();
-        Map<Object, Object> expectedMap = new HashMap<>();
-        expectedMap.put("property1", buildPropertyMap(false, "value", "value"));
-        expectedMap.put("property2", buildPropertyMap(false, null, null));
-        expectedMap.put("property3", buildPropertyMap(true, password, "****"));
-
-        assertThat(metadataAndValuesAsMap).isEqualTo(expectedMap);
-    }
-
     @Nested
     class HasSecretParams {
         @Test
@@ -213,7 +176,7 @@ class ConfigurationTest {
             Configuration configuration = new Configuration(k1, k2);
 
             assertThat(configuration.getSecretParams().size()).isEqualTo(1);
-            assertThat(configuration.getSecretParams().get(0)).isEqualTo(new SecretParam("secret_config_id", "lookup_password"));
+            assertThat(configuration.getSecretParams().getFirst()).isEqualTo(new SecretParam("secret_config_id", "lookup_password"));
         }
 
         @Test
@@ -277,12 +240,12 @@ class ConfigurationTest {
         @Test
         void shouldReturnConfigAsMapWithSecretsResolved() throws CryptoException {
             ConfigurationProperty configurationProperty1 = ConfigurationPropertyMother.create("property1", false, "{{SECRET:[config_id][lookup_key]}}");
-            configurationProperty1.getSecretParams().get(0).setValue("some-value");
+            configurationProperty1.getSecretParams().getFirst().setValue("some-value");
             ConfigurationProperty configurationProperty2 = ConfigurationPropertyMother.create("property2", false, null);
             String password = new GoCipher().encrypt("{{SECRET:[config_id][password]}}");
             ConfigurationProperty configurationProperty3 = ConfigurationPropertyMother.create("property3");
             configurationProperty3.setEncryptedValue(new EncryptedConfigurationValue(password));
-            configurationProperty3.getSecretParams().get(0).setValue("some-password");
+            configurationProperty3.getSecretParams().getFirst().setValue("some-password");
 
             Map<String, String> configMap = new Configuration(configurationProperty1, configurationProperty2, configurationProperty3)
                     .getConfigurationAsMap(true, true);
@@ -305,13 +268,5 @@ class ConfigurationTest {
                     .isInstanceOf(UnresolvedSecretParamException.class)
                     .hasMessage("SecretParam 'lookup_key' is used before it is resolved.");
         }
-    }
-
-    private Map<String, Object> buildPropertyMap(boolean isSecure, String value, String displayValue) {
-        Map<String, Object> metadataMap2 = new HashMap<>();
-        metadataMap2.put("displayValue", displayValue);
-        metadataMap2.put("value", value);
-        metadataMap2.put("isSecure", isSecure);
-        return metadataMap2;
     }
 }

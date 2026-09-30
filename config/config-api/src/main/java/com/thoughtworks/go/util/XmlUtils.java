@@ -22,8 +22,7 @@ import org.jdom2.output.Format;
 import org.jdom2.output.XMLOutputter;
 
 import java.io.*;
-import java.net.URISyntaxException;
-import java.net.URL;
+import java.net.URI;
 import java.util.regex.Pattern;
 
 public class XmlUtils {
@@ -44,15 +43,15 @@ public class XmlUtils {
         return new SafeSaxBuilder().build(inputStream);
     }
 
-    public static Document buildXmlDocument(File file) throws IOException, JDOMException {
-        return new SafeSaxBuilder().build(file);
+    public static Document buildXmlDocument(String xmlContent) throws JDOMException {
+        try {
+            return new SafeSaxBuilder().build(new StringReader(xmlContent));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e); // Unlikely to happen due to use of StringReader
+        }
     }
 
-    public static Document buildXmlDocument(String xmlContent) throws IOException, JDOMException {
-        return new SafeSaxBuilder().build(new StringReader(xmlContent));
-    }
-
-    public static Document buildValidatedXmlDocument(InputStream inputStream, URL schemaLocation) throws URISyntaxException, IOException, JDOMException {
+    public static Document buildValidatedXmlDocument(InputStream inputStream, URI schemaLocation) throws IOException, JDOMException {
         ValidatingSaxBuilder builder = new ValidatingSaxBuilder(schemaLocation);
         XsdErrorTranslator errorHandler = new XsdErrorTranslator();
         builder.setErrorHandler(errorHandler);

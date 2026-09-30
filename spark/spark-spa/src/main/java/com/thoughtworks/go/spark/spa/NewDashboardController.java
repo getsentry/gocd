@@ -19,9 +19,10 @@ import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.service.PipelineConfigService;
 import com.thoughtworks.go.server.service.SecurityService;
 import com.thoughtworks.go.server.service.support.toggle.Toggles;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.SparkController;
-import com.thoughtworks.go.spark.spring.SPAAuthenticationHelper;
+import com.thoughtworks.go.spark.spring.SpaAuthorizationHelper;
 import com.thoughtworks.go.util.SystemEnvironment;
 import spark.ModelAndView;
 import spark.Request;
@@ -33,15 +34,15 @@ import java.util.Map;
 import static spark.Spark.*;
 
 public class NewDashboardController implements SparkController {
-    private final SPAAuthenticationHelper authenticationHelper;
+    private final SpaAuthorizationHelper authorizationHelper;
     private final TemplateEngine engine;
     private final SecurityService securityService;
-    private SystemEnvironment systemEnvironment;
-    private PipelineConfigService pipelineConfigService;
+    private final SystemEnvironment systemEnvironment;
+    private final PipelineConfigService pipelineConfigService;
 
-    public NewDashboardController(SPAAuthenticationHelper authenticationHelper, TemplateEngine engine, SecurityService securityService,
+    public NewDashboardController(SpaAuthorizationHelper authorizationHelper, TemplateEngine engine, SecurityService securityService,
                                   SystemEnvironment systemEnvironment, PipelineConfigService pipelineConfigService) {
-        this.authenticationHelper = authenticationHelper;
+        this.authorizationHelper = authorizationHelper;
         this.engine = engine;
         this.securityService = securityService;
         this.systemEnvironment = systemEnvironment;
@@ -55,9 +56,9 @@ public class NewDashboardController implements SparkController {
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
-            before("", authenticationHelper::checkUserAnd403);
+            before("", authorizationHelper::checkUserAnd403);
             get("", this::index, engine);
         });
     }
@@ -78,7 +79,7 @@ public class NewDashboardController implements SparkController {
     }
 
     private boolean showAnalyticsIcon() {
-        return systemEnvironment.enableAnalyticsOnlyForAdmins() ? securityService.isUserAdmin(currentUsername()) : true;
+        return !systemEnvironment.enableAnalyticsOnlyForAdmins() || securityService.isUserAdmin(currentUsername());
     }
 }
 

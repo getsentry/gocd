@@ -16,98 +16,34 @@
 
 package com.thoughtworks.go.build
 
-import org.gradle.api.Project
-import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.JavaExec
+import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.TaskAction
-import org.gradle.internal.os.OperatingSystem
-import org.gradle.process.JavaExecSpec
 
-import static com.thoughtworks.go.build.OperatingSystemHelper.normalizeEnvironmentPath
-
-class ExecuteUnderRailsTask extends JavaExec {
-  private static final OperatingSystem CURRENT_OS = OperatingSystem.current()
-  private Map<String, Object> originalEnv
-
-  @Input
-  boolean disableJRubyOptimization = false
+abstract class ExecuteUnderRailsTask extends JRuby {
+  private Provider<File> bundledGemsPath
 
   ExecuteUnderRailsTask() {
-    super()
-    dependsOn(':server:initializeRailsGems', ':server:cleanDb', ':server:createJRubyBinstubs', ':server:pathingJar')
-
-    originalEnv = new LinkedHashMap<String, Object>(environment)
+    def initTask = project.tasks.named('initializeRailsGems')
+    dependsOn(initTask)
+    inputs.files(initTask)
     workingDir = project.railsRoot
-
-    systemProperties += project.railsSystemProperties
-
-    def pathingJarLoc = project.tasks.getByName('pathingJar').archiveFile
-
-    classpath(pathingJarLoc)
-    if (CURRENT_OS.isWindows()) {
-      environment['CLASSPATH'] += "${File.pathSeparatorChar}${pathingJarLoc.get()}"
-    }
-    setup(project, this, disableJRubyOptimization)
-  }
-
-  static void setup(Project project, JavaExecSpec execSpec, boolean disableJRubyOptimization) {
-    execSpec.with {
-      normalizeEnvironmentPath(environment)
-      environment['PATH'] = (project.additionalJRubyPaths + [environment['PATH']]).join(File.pathSeparator)
-
-      classpath(project.jrubyJar())
-      standardOutput = new PrintStream(System.out, true)
-      errorOutput = new PrintStream(System.err, true)
-
-      environment += project.defaultJRubyEnvironment
-
-      if (CURRENT_OS.isWindows()) {
-        environment += [CLASSPATH: project.jrubyJar().toString()]
-      }
-
-      // flags to optimize jruby startup performance
-      if (!disableJRubyOptimization) {
-        jvmArgs += project.jrubyOptimizationJvmArgs
-      }
-
-      systemProperties += project.jrubyDefaultSystemProperties
-
-      mainClass.set('org.jruby.Main')
-    }
+    classpath = classpath.filter { false } // Remove convenience jruby-jar and expect tasks to define their own classpath
+    bundledGemsPath = initTask.map { new File(it.outputs.files.first(), 'jruby').listFiles().first() }
   }
 
   @Override
   @TaskAction
   void exec() {
-    project.delete(project.rails.testDataDir)
-
-    project.copy {
-      from('config')
-      into project.rails.testConfigDir
-    }
-
-    try {
-      debugEnvironment(this, originalEnv)
-      dumpTaskCommand(this)
-      super.exec()
-    } finally {
-      standardOutput.flush()
-      errorOutput.flush()
-    }
-  }
-
-  static dumpTaskCommand(JavaExecSpec execSpec) {
-    println "[${execSpec.workingDir}]\$ java ${execSpec.allJvmArgs.join(' ')} ${execSpec.mainClass.get()} ${execSpec.args.join(' ')}"
-  }
-
-  static void debugEnvironment(JavaExecSpec javaExecSpec, Map<String, Object> originalEnv) {
-    println "Using environment variables"
-    def toDump = javaExecSpec.environment - originalEnv
-
-    int longestEnv = toDump.keySet().sort { a, b -> a.length() - b.length() }.last().length()
-
-    toDump.keySet().sort().each { k ->
-      println """${k.padLeft(longestEnv)}='${toDump.get(k)}' \\"""
-    }
+    // Can't seem to get bundle exec to work under Windows due to some combination of issues related to
+    // https://github.com/jruby/jruby/issues/6960. The easiest way seems to be to avoid bundle exec and just use rubygems directly
+    // with a bundler-managed GEM_HOME and GEM_PATH, which we do on Linux, Mac and Windows for consistency.
+    // The issue seems to be that the Windows `bin` generated are all `@jruby.exe "%~dpn0" %*` and ignores `RUBY` env
+    // or any other attempts. Since we do not install jruby executables this does not work.
+    environment += [
+      GEM_HOME: bundledGemsPath.get(),
+      GEM_PATH: bundledGemsPath.get(),
+    ]
+    additionalPaths += [new File(bundledGemsPath.get(), 'bin')] // Needed for rspec (under Windows with the above)
+    super.exec()
   }
 }

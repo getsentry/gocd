@@ -1,1 +1,0 @@
-// used to assert that this gets copied during plugin asset caching

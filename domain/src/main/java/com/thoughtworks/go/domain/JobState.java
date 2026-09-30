@@ -15,7 +15,7 @@
  */
 package com.thoughtworks.go.domain;
 
-public enum JobState implements ViewableStatus {
+public enum JobState {
     Unknown,
     Scheduled,  // Scheduled icon
     Assigned,   // Building icon
@@ -28,14 +28,8 @@ public enum JobState implements ViewableStatus {
     Paused,
     Waiting;
 
-    @Override
     public String getStatus() {
         return this.toString().toLowerCase();
-    }
-
-    @Override
-    public String getCruiseStatus() {
-        return this.toString();
     }
 
     public String toLowerCase() {
@@ -56,6 +50,10 @@ public enum JobState implements ViewableStatus {
 
     public boolean isActiveOnAgent() {
         return this == Assigned || isBuilding();
+    }
+
+    public boolean isInactiveOnAgent() {
+        return this == Rescheduled || this == Completed;
     }
 
     public boolean isCompleted() {

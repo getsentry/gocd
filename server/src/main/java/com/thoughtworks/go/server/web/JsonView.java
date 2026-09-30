@@ -19,8 +19,8 @@ import org.springframework.web.servlet.view.AbstractView;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -40,23 +40,16 @@ public class JsonView extends AbstractView {
     }
 
     @Override
-    protected void renderMergedOutputModel(Map map, HttpServletRequest httpServletRequest,
-                                           HttpServletResponse httpServletResponse) throws Exception {
+    protected void renderMergedOutputModel(Map<String, Object> map, HttpServletRequest httpServletRequest,
+                                           HttpServletResponse httpServletResponse) throws IOException {
         if (requestContext == null) {
-            //TODO requestContext may already exist in request; need to check it
             requestContext = new GoRequestContext(httpServletRequest);
         }
         Object json = map.get("json");
 
-        PrintWriter writer = httpServletResponse.getWriter();
-        JsonRenderer.render(json, requestContext, writer);
-        writer.close();
-    }
-
-    public static Map<String, Object> getSimpleAjaxResult(String messageKey, String message) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put(messageKey, message);
-        return result;
+        try (PrintWriter writer = httpServletResponse.getWriter()) {
+            JsonRenderer.render(json, requestContext, writer);
+        }
     }
 
     public String renderJson(Map<String, Object> json) {

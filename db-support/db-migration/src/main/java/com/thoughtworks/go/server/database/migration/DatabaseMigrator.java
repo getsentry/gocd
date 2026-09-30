@@ -19,6 +19,7 @@ package com.thoughtworks.go.server.database.migration;
 import liquibase.Liquibase;
 import liquibase.Scope;
 import liquibase.UpdateSummaryOutputEnum;
+import liquibase.analytics.configuration.AnalyticsArgs;
 import liquibase.database.Database;
 import liquibase.database.DatabaseFactory;
 import liquibase.database.jvm.JdbcConnection;
@@ -28,13 +29,15 @@ import liquibase.resource.ClassLoaderResourceAccessor;
 import liquibase.ui.LoggerUIService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.jetbrains.annotations.VisibleForTesting;
+import org.slf4j.event.Level;
 
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.List;
 import java.util.Map;
 
-import static org.apache.commons.lang3.StringUtils.repeat;
+import static org.slf4j.event.Level.INFO;
+import static org.slf4j.event.Level.WARN;
 
 @Slf4j
 public class DatabaseMigrator {
@@ -43,25 +46,11 @@ public class DatabaseMigrator {
         try {
             log.info("Upgrading database, this might take a while depending on the size of the database.");
 
-            List<String> messages = List.of(
-                    repeat("*", "", 72),
-                    "WARNING: Shutting down your server at this point will lead to a database corruption. Please wait until the database upgrade completes.",
-                    repeat("*", "", 72)
-            );
-            for (String message : messages) {
-                System.err.println(message);
-                log.info(message);
-            }
+            logBoth(WARN, "Shutting down your server at this point may lead to database corruption. Please wait until the database upgrade completes.");
+            migrateSchema("liquibase.xml", connection);
+            logBoth(INFO, "Database schema upgrade completed successfully.");
 
-            disableLiquibaseConsoleLogging();
-
-            Database database = DatabaseFactory.getInstance().findCorrectDatabaseImplementation(new JdbcConnection(connection));
-            newLiquibaseFor(database).update();
-
-            System.err.println("INFO: Database upgrade completed successfully.");
-            log.info("Database upgrade completed successfully.");
-
-            DataMigrationRunner.run(connection);
+            migrateData(connection);
         } catch (LockException e) {
             String message = "Unable to migrate the database, as it is currently locked. A previous GoCD start-up may have been interrupted during migration, and you may need to " +
                 "1) validate no GoCD instances are running, " +
@@ -77,18 +66,48 @@ public class DatabaseMigrator {
         }
     }
 
-    Liquibase newLiquibaseFor(Database database) {
-        Liquibase liquibase = new Liquibase("db-migration-scripts/liquibase.xml", new ClassLoaderResourceAccessor(getClass().getClassLoader()), database);
+    @VisibleForTesting
+    void migrateSchema(String changeLogFile, Connection connection) throws LiquibaseException {
+        configureLiquibase();
+        Database database = DatabaseFactory.getInstance().findCorrectDatabaseImplementation(new JdbcConnection(connection));
+        Liquibase liquibase = newLiquibaseFor(changeLogFile, database);
+        liquibase.update();
+    }
+
+    @VisibleForTesting
+    Liquibase newLiquibaseFor(String migration, Database database) {
+        Liquibase liquibase = new Liquibase("db-migration-scripts/" + migration, new ClassLoaderResourceAccessor(getClass().getClassLoader()), database);
         liquibase.setShowSummaryOutput(UpdateSummaryOutputEnum.LOG);
         return liquibase;
     }
 
-    private static void disableLiquibaseConsoleLogging() {
+    private static void logBoth(Level level, String message) {
+        if (isProduction()) {
+            System.out.printf("%s: %s%n", level, message);
+        }
+        log.info(message);
+    }
+
+    private static void configureLiquibase() {
+        try {
+            Scope.enter(Map.of(AnalyticsArgs.ENABLED.getKey(), false));
+        } catch (Exception e) {
+            log.warn("Failed to disable liquibase analytics. Continuing anyway...", e);
+        }
+
         // See https://github.com/liquibase/liquibase/issues/2396
         try {
             Scope.enter(Map.of(Scope.Attr.ui.name(), new LoggerUIService()));
         } catch (Exception e) {
-            log.error("Failed to disable liquibase console logging. Continuing anyway...", e);
+            log.warn("Failed to disable liquibase console logging. Continuing anyway...", e);
         }
+    }
+
+    private void migrateData(Connection connection) throws SQLException {
+        DataMigrationRunner.run(connection);
+    }
+
+    private static boolean isProduction() {
+        return !System.getProperty("java.io.tmpdir", "").contains("gocd-tests");
     }
 }

@@ -23,34 +23,25 @@ configurations {
 }
 
 dependencies {
-  implementation project(path: ':base', configuration: 'runtimeElements')
-  api project(path: ':util', configuration: 'runtimeElements')
-  api project.deps.springTest
-  api project.deps.logback
-  implementation project.deps.jetty
-  implementation project.deps.jettyJmx
-  implementation project.deps.jettyUtil
-  implementation project.deps.jettyServlet
-  api project.deps.jettyWebapp
-  implementation project.deps.jakartaMail
+  testFixturesApi(project(':base')) { capabilities { requireFeature('logging') } }
+  testFixturesApi project(':util')
+  testFixturesImplementation rootProject.deps.logback
+  testFixturesImplementation rootProject.deps.mockitoCore
 
-  api project.deps.assertJ
-  api enforcedPlatform(project.deps.junit5Bom)
-  api project.deps.junit5Api
-  api project.deps.junit5Params
-  api project.deps.systemStubs
-  runtimeOnly project.deps.junit5Engine
-
+  testFixturesApi rootProject.deps.assertJ
+  testFixturesApi enforcedPlatform(rootProject.deps.junit5Bom)
+  testFixturesApi rootProject.deps.junit5Api
+  testFixturesApi rootProject.deps.junit5Params
 
   copyOnly project(path: ':agent-launcher', configuration: 'fatJarConfig')
-  copyOnly project(path: ':test:test-agent')
+  copyOnly(testFixtures(project(':test:test-agent')))
   copyOnly project(path: ':tfs-impl:tfs-impl-14', configuration: 'fatJarConfig')
 }
 
 def generatedResourcesOutput = file("resources-generated")
 
 sourceSets {
-  main {
+  testFixtures {
     resources {
       output.dir generatedResourcesOutput, builtBy: 'generateResources'
       srcDirs += generatedResourcesOutput
@@ -62,18 +53,19 @@ clean {
   delete(generatedResourcesOutput)
 }
 
-task generateResources(type: Copy) {
+tasks.register('generateResources', Copy) {
+  dependsOn configurations.copyOnly
+  outputs.dir(generatedResourcesOutput)
+
   into "$generatedResourcesOutput/testdata/gen"
-  from(project.configurations.copyOnly) {
-    rename "(.*)-${project.version}.(jar|zip)", '$1.$2'
+  from({ configurations.copyOnly }) {
+    rename "(.*)-${project.version}(-.*)?.(jar|zip)", '$1.$3'
   }
 }
+checkLicenseTestFixtures.dependsOn generateResources
+processTestFixturesResources.dependsOn generateResources
 
-processResources {
-  dependsOn generateResources
-}
-
-task prepare {
+tasks.register('prepare') {
   dependsOn generateResources
 }
 

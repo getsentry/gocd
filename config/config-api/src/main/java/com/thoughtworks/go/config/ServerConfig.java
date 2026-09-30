@@ -20,12 +20,13 @@ import com.thoughtworks.go.domain.ConfigErrors;
 import com.thoughtworks.go.domain.SecureSiteUrl;
 import com.thoughtworks.go.domain.ServerSiteUrlConfig;
 import com.thoughtworks.go.domain.SiteUrl;
-import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.TestOnly;
 
 import javax.annotation.PostConstruct;
 import java.util.Objects;
 import java.util.UUID;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @ConfigTag("server")
 public class ServerConfig implements Validatable {
@@ -87,21 +88,21 @@ public class ServerConfig implements Validatable {
 
     @PostConstruct
     public void ensureAgentAutoregisterKeyExists() {
-        if (StringUtils.isBlank(agentAutoRegisterKey)) {
+        if (isBlank(agentAutoRegisterKey)) {
             agentAutoRegisterKey = UUID.randomUUID().toString();
         }
     }
 
     @PostConstruct
     public void ensureWebhookSecretExists() {
-        if (StringUtils.isBlank(webhookSecret)) {
+        if (isBlank(webhookSecret)) {
             webhookSecret = UUID.randomUUID().toString();
         }
     }
 
     @PostConstruct
     public void ensureTokenGenerationKeyExists() {
-        if (StringUtils.isBlank(tokenGenerationKey)) {
+        if (isBlank(tokenGenerationKey)) {
             tokenGenerationKey = UUID.randomUUID().toString();
         }
     }
@@ -161,7 +162,7 @@ public class ServerConfig implements Validatable {
 
     public void updateMailHost(MailHost mailHost) {
         // remove mailhost if default value
-        if (mailHost != null && mailHost.equals(new MailHost())) {
+        if (Objects.equals(mailHost, new MailHost())) {
             this.mailHost = null;
             return;
         }
@@ -187,34 +188,16 @@ public class ServerConfig implements Validatable {
 
         ServerConfig that = (ServerConfig) o;
 
-        if (!Objects.equals(artifactConfig, that.artifactConfig)) {
-            return false;
-        }
-        if (getSiteUrl() != null ? !getSiteUrl().equals(that.getSiteUrl()) : that.getSiteUrl() != null) {
-            return false;
-        }
-        if (getSecureSiteUrl() != null ? !getSecureSiteUrl().equals(that.getSecureSiteUrl()) : that.getSecureSiteUrl() != null) {
-            return false;
-        }
-        if (jobTimeout != null ? !jobTimeout.equals(that.jobTimeout) : that.jobTimeout != null) {
-            return false;
-        }
-        if (agentAutoRegisterKey != null ? !agentAutoRegisterKey.equals(that.agentAutoRegisterKey) : that.agentAutoRegisterKey != null) {
-            return false;
-        }
-        if (webhookSecret != null ? !webhookSecret.equals(that.webhookSecret) : that.webhookSecret != null) {
-            return false;
-        }
-        if (serverId != null ? !serverId.equals(that.serverId) : that.serverId != null) {
-            return false;
-        }
-        if (securityConfig != null ? !securityConfig.equals(that.securityConfig) : that.securityConfig != null) {
-            return false;
-        }
-        if (mailHost != null ? !mailHost.equals(that.mailHost) : that.mailHost != null) {
-            return false;
-        }
-        return tokenGenerationKey != null ? tokenGenerationKey.equals(that.tokenGenerationKey) : that.tokenGenerationKey == null;
+        return Objects.equals(artifactConfig, that.artifactConfig) &&
+            Objects.equals(getSiteUrl(), that.getSiteUrl()) &&
+            Objects.equals(getSecureSiteUrl(), that.getSecureSiteUrl()) &&
+            Objects.equals(jobTimeout, that.jobTimeout) &&
+            Objects.equals(agentAutoRegisterKey, that.agentAutoRegisterKey) &&
+            Objects.equals(webhookSecret, that.webhookSecret) &&
+            Objects.equals(serverId, that.serverId) &&
+            Objects.equals(securityConfig, that.securityConfig) &&
+            Objects.equals(mailHost, that.mailHost) &&
+            Objects.equals(tokenGenerationKey, that.tokenGenerationKey);
     }
 
     @Override
@@ -232,12 +215,12 @@ public class ServerConfig implements Validatable {
 
     @TestOnly
     public void setSiteUrl(String siteUrl) {
-        getSiteUrls().setSiteUrl(StringUtils.isBlank(siteUrl) ? new SiteUrl() : new SiteUrl(siteUrl));
+        getSiteUrls().setSiteUrl(isBlank(siteUrl) ? new SiteUrl() : new SiteUrl(siteUrl));
     }
 
     @TestOnly
     public void setSecureSiteUrl(String secureSiteUrl) {
-        getSiteUrls().setSecureSiteUrl(StringUtils.isBlank(secureSiteUrl) ? new SecureSiteUrl() : new SecureSiteUrl(secureSiteUrl));
+        getSiteUrls().setSecureSiteUrl(isBlank(secureSiteUrl) ? new SecureSiteUrl() : new SecureSiteUrl(secureSiteUrl));
     }
 
 
@@ -291,23 +274,23 @@ public class ServerConfig implements Validatable {
 
     public ServerSiteUrlConfig getHttpsUrl() {
         ServerSiteUrlConfig siteUrlPreferSecured = getSiteUrlPreferablySecured();
-        return siteUrlPreferSecured.isAHttpsUrl() ? siteUrlPreferSecured : new SecureSiteUrl();
+        return siteUrlPreferSecured.isHttps() ? siteUrlPreferSecured : new SecureSiteUrl();
     }
 
     public boolean hasAnyUrlConfigured() {
         return !getSiteUrl().isBlank() || !getSecureSiteUrl().isBlank();
     }
 
-    public Double getPurgeStart() {
+    public Double getPurgeStartDiskSpaceInGigabytes() {
         return artifactConfig.getPurgeSettings().getPurgeStart().getPurgeStartDiskSpace();
     }
 
-    public Double getPurgeUpto() {
+    public Double getPurgeUptoDiskSpaceInGigabytes() {
         return artifactConfig.getPurgeSettings().getPurgeUpto().getPurgeUptoDiskSpace();
     }
 
     public boolean isArtifactPurgingAllowed() {
-        return !(getPurgeStart() == null || getPurgeUpto() == null);
+        return getPurgeStartDiskSpaceInGigabytes() != null && getPurgeUptoDiskSpaceInGigabytes() != null;
     }
 
     public void setPurgeLimits(Double purgeStart, Double purgeUpto) {
@@ -332,7 +315,7 @@ public class ServerConfig implements Validatable {
     }
 
     public boolean shouldAutoRegisterAgentWith(String agentKey) {
-        return (!StringUtils.isBlank(getAgentAutoRegisterKey())) && getAgentAutoRegisterKey().equals(agentKey);
+        return !isBlank(getAgentAutoRegisterKey()) && getAgentAutoRegisterKey().equals(agentKey);
     }
 
     public String getServerId() {

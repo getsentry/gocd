@@ -19,19 +19,19 @@ import com.thoughtworks.go.domain.ConfigErrors;
 import com.thoughtworks.go.domain.IpAddress;
 import com.thoughtworks.go.domain.PersistentObject;
 import com.thoughtworks.go.remote.AgentIdentifier;
-import com.thoughtworks.go.util.ClonerFactory;
+import org.jetbrains.annotations.TestOnly;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Stream;
 
 import static com.thoughtworks.go.config.JobConfig.RESOURCES;
-import static com.thoughtworks.go.util.CommaSeparatedString.remove;
 import static com.thoughtworks.go.util.CommaSeparatedString.*;
 import static com.thoughtworks.go.util.SystemUtil.isLocalhost;
 import static java.lang.String.format;
-import static java.util.Collections.emptyList;
 import static java.util.stream.Collectors.toSet;
-import static org.apache.commons.lang3.StringUtils.*;
-import static org.springframework.util.CollectionUtils.isEmpty;
 
 /**
  * <code>Agent</code> is the entity object model class used by Hibernate to represent a record in <code>Agents</code> table.
@@ -39,6 +39,10 @@ import static org.springframework.util.CollectionUtils.isEmpty;
  * and do not change anything related to <i>id</i> field as those are critical for hibernate to work fine
  */
 public class Agent extends PersistentObject {
+    public static final String IP_ADDRESS = "ipAddress";
+    public static final String UUID = "uuid";
+    private static final String DEFAULT_VALUE = "";
+
     private String hostname;
     private String ipaddress;
     private String uuid;
@@ -50,11 +54,8 @@ public class Agent extends PersistentObject {
     private String cookie;
     private boolean deleted;
 
-    private transient Boolean cachedIsFromLocalHost;
     private final ConfigErrors errors = new ConfigErrors();
-    public static final String IP_ADDRESS = "ipAddress";
-    public static final String UUID = "uuid";
-    private static final String DEFAULT_VALUE = "";
+    private transient Boolean cachedIsFromLocalHost;
 
     public Agent() {
     }
@@ -74,9 +75,7 @@ public class Agent extends PersistentObject {
         setId(anotherAgent.getId());
         setDeleted(anotherAgent.isDeleted());
 
-        if (anotherAgent.getCookie() != null) {
-            setCookie(anotherAgent.getCookie());
-        }
+        setCookie(anotherAgent.getCookie());
     }
 
     public Agent(String uuid) {
@@ -84,14 +83,15 @@ public class Agent extends PersistentObject {
     }
 
     public Agent(String uuid, String hostname, String ipaddress) {
-        this(uuid, hostname, ipaddress, emptyList());
-    }
-
-    public Agent(String uuid, String hostname, String ipaddress, List<String> resources) {
         this.hostname = hostname;
         this.ipaddress = ipaddress;
         this.uuid = uuid;
-        this.resources = resources == null ? null : join(resources, ",");
+    }
+
+    @TestOnly
+    public Agent(String uuid, String hostname, String ipaddress, List<String> resources) {
+        this(uuid, hostname, ipaddress);
+        setResourcesFrom(resources);
     }
 
     public Agent(String uuid, String hostname, String ipaddress, String cookie) {
@@ -103,13 +103,10 @@ public class Agent extends PersistentObject {
         return new Agent(uuid, "Unknown", "Unknown", "Unknown");
     }
 
-    public void removeEnvironments(List<String> envsToRemove) {
-        this.setEnvironments(remove(this.getEnvironments(), envsToRemove));
-    }
 
     public void validate() {
         validateIpAddress();
-        if (isBlank(uuid)) {
+        if (uuid == null || uuid.isBlank()) {
             addError(UUID, "UUID cannot be empty");
         }
         validateResources();
@@ -139,7 +136,7 @@ public class Agent extends PersistentObject {
             return;
         }
 
-        if (isBlank(ipAddress)) {
+        if (ipAddress.isBlank()) {
             addError(IP_ADDRESS, "IpAddress cannot be empty if it is present.");
             return;
         }
@@ -164,51 +161,39 @@ public class Agent extends PersistentObject {
     }
 
     public boolean hasErrors() {
-        return errors != null && !errors.isEmpty();
+        return !errors.isEmpty();
     }
 
-    public boolean hasAllResources(Collection<String> resourcesToCheck) {
-        Set<String> agentResources = this.getResourcesAsList().stream().map(String::toLowerCase).collect(toSet());
-        Set<String> requiredResources = resourcesToCheck.stream().map(String::toLowerCase).collect(toSet());
-
-        return agentResources.containsAll(requiredResources);
+    public boolean hasAllResources(Collection<String> requiredResources) {
+        Set<String> agentResources = this.getResourcesAsStream().map(String::toLowerCase).collect(toSet());
+        return requiredResources.stream().map(String::toLowerCase).allMatch(agentResources::contains);
     }
 
     public void removeResources(List<String> resourcesToRemove) {
-        if (!isEmpty(resourcesToRemove)) {
-            String resourcesAfterAdd = remove(this.resources, resourcesToRemove);
-            setCommaSeparatedResourceNames(resourcesAfterAdd);
+        if (resourcesToRemove != null && !resourcesToRemove.isEmpty()) {
+            this.resources = remove(this.resources, resourcesToRemove);
         }
     }
 
     public void addResource(String resource) {
-        if (isNotBlank(resource)) {
+        if (resource != null && !resource.isBlank()) {
             addResources(List.of(resource));
         }
     }
 
     public void addResources(List<String> resourcesToAdd) {
-        if (!isEmpty(resourcesToAdd)) {
-            String resourcesAfterAdd = append(this.resources, resourcesToAdd);
-            setCommaSeparatedResourceNames(resourcesAfterAdd);
+        if (resourcesToAdd != null && !resourcesToAdd.isEmpty()) {
+            this.resources = append(this.resources, resourcesToAdd);
         }
     }
 
     public void setResources(String commaSeparatedResources) {
-        setCommaSeparatedResourceNames(commaSeparatedResources);
+        this.resources = normalizeToNull(commaSeparatedResources);
     }
 
-    public void setResourcesFromList(List<String> resourceList) {
-        String resourceNames = append(null, resourceList);
-        setCommaSeparatedResourceNames(resourceNames);
-    }
-
-    private void setCommaSeparatedResourceNames(String resourceNames) {
-        if (isBlank(resourceNames)) {
-            this.resources = null;
-            return;
-        }
-        this.resources = new ResourceConfigs(resourceNames).getCommaSeparatedResourceNames();
+    @TestOnly
+    public void setResourcesFrom(List<String> resourceList) {
+        this.resources = append("", resourceList);
     }
 
     public boolean isEnabled() {
@@ -231,10 +216,6 @@ public class Agent extends PersistentObject {
         return false;
     }
 
-    public Agent deepClone() {
-        return ClonerFactory.instance().deepClone(this);
-    }
-
     public boolean isFromLocalHost() {
         if (cachedIsFromLocalHost == null) {
             cachedIsFromLocalHost = isLocalhost(ipaddress);
@@ -243,7 +224,7 @@ public class Agent extends PersistentObject {
     }
 
     public boolean isElastic() {
-        return isNotBlank(elasticAgentId) && isNotBlank(elasticPluginId);
+        return elasticAgentId != null && !elasticAgentId.isBlank() && elasticPluginId != null && !elasticPluginId.isBlank();
     }
 
     @Override
@@ -261,8 +242,12 @@ public class Agent extends PersistentObject {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         Agent that = (Agent) o;
         return disabled == that.disabled &&
                 Objects.equals(hostname, that.hostname) &&
@@ -332,32 +317,45 @@ public class Agent extends PersistentObject {
         return environments;
     }
 
-    public List<String> getEnvironmentsAsList() {
-        return (isBlank(this.environments) ? new ArrayList<>() : commaSeparatedStrToList(environments));
+    public Stream<String> getEnvironmentsAsStream() {
+        return commaSeparatedStrToTrimmed(environments);
     }
 
-    public void setEnvironments(String envs) {
-        this.environments = append(null, commaSeparatedStrToList(envs));
+    public void setEnvironments(String commaSeparatedEnvs) {
+        this.environments = normalizeToNull(commaSeparatedEnvs);
     }
 
+    @TestOnly
     public void setEnvironmentsFrom(List<String> envList) {
         this.environments = append(null, envList);
     }
 
-    public void addEnvironments(List<String> envsToAdd) {
-        this.environments = append(this.getEnvironments(), envsToAdd);
+    public void addEnvironment(String env) {
+        this.addEnvironments(env == null || env.isBlank() ? null : List.of(env));
     }
 
-    public void addEnvironment(String env) {
-        this.addEnvironments(isBlank(env) ? null : List.of(env));
+    public void addEnvironments(List<String> envsToAdd) {
+        this.environments = append(this.environments, envsToAdd);
+    }
+
+    public void removeEnvironments(List<String> envsToRemove) {
+        this.environments = remove(this.environments, envsToRemove);
+    }
+
+    public void removeEnvironment(String env) {
+        this.environments = remove(this.environments, env == null ? null : List.of(env));
     }
 
     public String getResources() {
         return resources;
     }
 
-    public List<String> getResourcesAsList() {
-        return (isBlank(this.resources) ? new ArrayList<>() : commaSeparatedStrToList(this.resources));
+    public String getResourcesNormalized() {
+        return normalizeToNull(resources);
+    }
+
+    public Stream<String> getResourcesAsStream() {
+        return commaSeparatedStrToTrimmed(this.resources);
     }
 
     public String getCookie() {

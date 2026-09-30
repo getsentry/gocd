@@ -48,7 +48,7 @@ describe('PipelineHistorySpec', () => {
     expect(pipelineHistory.pipelineInstances.length).toBe(1);
   });
 
-  it('should should be able to parse json when no links are present', () => {
+  it('should be able to parse json when no links are present', () => {
     const pipelineJson = PipelineInstanceData.pipeline();
     const json         = {pipelines: [pipelineJson]} as PipelineHistoryJSON;
 
@@ -131,7 +131,7 @@ describe('PipelineHistorySpec', () => {
       expect(materialRevision.material().id()).toEqual(materialRevisionJSON.material.id);
       expect(materialRevision.material().name()).toEqual(materialRevisionJSON.material.name);
       expect(materialRevision.material().fingerprint()).toEqual(materialRevisionJSON.material.fingerprint);
-      expect(materialRevision.material().type()).toEqual(materialRevisionJSON.material.type);
+      expect(materialRevision.material().displayType()).toEqual(materialRevisionJSON.material.type);
       expect(materialRevision.material().description()).toEqual(materialRevisionJSON.material.description);
 
       const modifications = materialRevision.modifications();

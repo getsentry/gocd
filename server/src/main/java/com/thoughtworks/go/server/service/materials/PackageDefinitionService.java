@@ -42,7 +42,6 @@ import com.thoughtworks.go.server.service.GoConfigService;
 import com.thoughtworks.go.server.service.SecretParamResolver;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
 import com.thoughtworks.go.server.service.result.LocalizedOperationResult;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,15 +51,17 @@ import java.util.List;
 
 import static com.thoughtworks.go.i18n.LocalizedMessage.entityConfigValidationFailed;
 import static com.thoughtworks.go.i18n.LocalizedMessage.saveFailedWithReason;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @Service
 public class PackageDefinitionService {
-    private EntityHashingService entityHashingService;
-    private GoConfigService goConfigService;
-    private final SecretParamResolver secretParamResolver;
-    PackageRepositoryExtension packageRepositoryExtension;
+    private static final Logger LOGGER = LoggerFactory.getLogger(PackageDefinitionService.class);
 
-    public static final Logger LOGGER = LoggerFactory.getLogger(PackageDefinitionService.class);
+    private final EntityHashingService entityHashingService;
+    private final GoConfigService goConfigService;
+    private final SecretParamResolver secretParamResolver;
+    private final PackageRepositoryExtension packageRepositoryExtension;
+
 
     @Autowired
     public PackageDefinitionService(PackageRepositoryExtension packageRepositoryExtension, EntityHashingService entityHashingService, GoConfigService goConfigService, SecretParamResolver secretParamResolver) {
@@ -107,7 +108,7 @@ public class PackageDefinitionService {
             if (property != null) {
                 property.addError(validationError.getKey(), validationError.getMessage());
             } else {
-                String validationErrorKey = StringUtils.isBlank(validationError.getKey()) ? PackageDefinition.CONFIGURATION : validationError.getKey();
+                String validationErrorKey = isBlank(validationError.getKey()) ? PackageDefinition.CONFIGURATION : validationError.getKey();
                 packageDefinition.addError(validationErrorKey, validationError.getMessage());
             }
         }

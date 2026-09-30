@@ -15,6 +15,7 @@
  */
 package com.thoughtworks.go.logging;
 
+import ch.qos.logback.classic.LoggerContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,7 +58,7 @@ public class LogConfiguratorTest {
         final boolean[] defaultLoggingInvoked = {false};
         LogConfigurator logConfigurator = new LogConfigurator("non-existant-dir", "non-existant.properties") {
             @Override
-            protected void configureDefaultLogging() {
+            protected void configureDefaultLogging(LoggerContext loggerContext) {
                 defaultLoggingInvoked[0] = true;
             }
         };
@@ -67,7 +68,7 @@ public class LogConfiguratorTest {
 
         assertThat(stderr.toString()).contains(String.format("Could not find file `%s'. Attempting to load from classpath.", new File("non-existant-dir", "non-existant.properties")));
         assertThat(stderr.toString()).contains("Could not find classpath resource `config/non-existant.properties'. Falling back to using a default logback configuration that writes to stdout.");
-        assertThat(stdout.toString()).isEqualTo("");
+        assertThat(stdout.toString()).isEmpty();
     }
 
     @Test
@@ -75,7 +76,7 @@ public class LogConfiguratorTest {
         final URL[] initializeFromPropertyResource = {null};
         LogConfigurator logConfigurator = new LogConfigurator("xxx", "logging-test-logback.xml") {
             @Override
-            protected void configureWith(URL resource) {
+            protected void configureWith(LoggerContext loggerContext, URL resource) {
                 initializeFromPropertyResource[0] = resource;
             }
         };
@@ -85,7 +86,7 @@ public class LogConfiguratorTest {
         assertThat(initializeFromPropertyResource[0]).isEqualTo(expectedResource);
 
         assertThat(stderr.toString()).contains("Using classpath resource `" + expectedResource + "'");
-        assertThat(stdout.toString()).isEqualTo("");
+        assertThat(stdout.toString()).isEmpty();
     }
 
     @Test
@@ -94,7 +95,7 @@ public class LogConfiguratorTest {
         final URL[] initializeFromPropertiesFile = {null};
         LogConfigurator logConfigurator = new LogConfigurator(temporaryFolder.toAbsolutePath().toString(), configFile.getFileName().toString()) {
             @Override
-            protected void configureWith(URL resource) {
+            protected void configureWith(LoggerContext loggerContext, URL resource) {
                 initializeFromPropertiesFile[0] = resource;
             }
         };
@@ -104,6 +105,6 @@ public class LogConfiguratorTest {
         assertThat(initializeFromPropertiesFile[0]).isEqualTo(configFile.toUri().toURL());
 
         assertThat(stderr.toString()).contains(String.format("Using logback configuration from file %s", configFile));
-        assertThat(stdout.toString()).isEqualTo("");
+        assertThat(stdout.toString()).isEmpty();
     }
 }

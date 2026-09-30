@@ -20,10 +20,14 @@ import com.thoughtworks.go.config.validation.FilePathTypeValidator;
 import com.thoughtworks.go.domain.scm.SCM;
 import com.thoughtworks.go.plugin.access.scm.SCMMetadataStore;
 import com.thoughtworks.go.util.FilenameUtil;
-import org.apache.commons.lang3.StringUtils;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.util.Map;
+import java.util.Objects;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @ConfigTag(value = "scm")
 public class PluggableSCMMaterialConfig extends AbstractMaterialConfig {
@@ -61,7 +65,7 @@ public class PluggableSCMMaterialConfig extends AbstractMaterialConfig {
     public PluggableSCMMaterialConfig(CaseInsensitiveString name, SCM scmConfig, String folder, Filter filter, boolean invertFilter) {
         super(TYPE);
         this.name = name;
-        this.scmId = scmConfig == null ? null : scmConfig.getSCMId();
+        this.scmId = scmConfig == null ? null : scmConfig.getId();
         this.scmConfig = scmConfig;
         this.folder = folder;
         this.filter = filter;
@@ -136,7 +140,7 @@ public class PluggableSCMMaterialConfig extends AbstractMaterialConfig {
     }
 
     @Override
-    public String getFingerprint() {
+    public @Nullable String getFingerprint() {
         if (scmConfig == null) {
             return null;
         }
@@ -169,11 +173,6 @@ public class PluggableSCMMaterialConfig extends AbstractMaterialConfig {
         scmConfig.setAutoUpdate(autoUpdate);
     }
 
-    @Override
-    public Boolean isUsedInFetchArtifact(PipelineConfig pipelineConfig) {
-        return Boolean.FALSE;
-    }
-
     @SuppressWarnings("unchecked")
     @Override
     public void setConfigAttributes(Object attributes) {
@@ -185,14 +184,14 @@ public class PluggableSCMMaterialConfig extends AbstractMaterialConfig {
         this.scmId = map.get(SCM_ID);
         if (map.containsKey(FOLDER)) {
             String folder = map.get(FOLDER);
-            if (StringUtils.isBlank(folder)) {
+            if (isBlank(folder)) {
                 folder = null;
             }
             this.folder = folder;
         }
         if (map.containsKey(FILTER)) {
             String pattern = map.get(FILTER);
-            if (!StringUtils.isBlank(pattern)) {
+            if (!isBlank(pattern)) {
                 this.setFilter(Filter.fromDisplayString(pattern));
             } else {
                 this.setFilter(null);
@@ -202,17 +201,17 @@ public class PluggableSCMMaterialConfig extends AbstractMaterialConfig {
     }
 
     private boolean nameIsEmpty() {
-        return (name == null || name.isBlank());
+        return name == null || name.isEmpty();
     }
 
     private boolean scmNameIsEmpty() {
-        return (scmConfig == null || scmConfig.getName() == null || scmConfig.getName().isEmpty());
+        return scmConfig == null || scmConfig.getName() == null || scmConfig.getName().isEmpty();
     }
 
     @Override
     public CaseInsensitiveString getName() {
         if (nameIsEmpty() && !scmNameIsEmpty()) {
-            return new CaseInsensitiveString(scmConfig.getName());
+            return cis(scmConfig.getName());
         } else {
             return name;
         }
@@ -221,7 +220,7 @@ public class PluggableSCMMaterialConfig extends AbstractMaterialConfig {
     @Override
     public String getDisplayName() {
         CaseInsensitiveString name = getName();
-        return name == null || name.isBlank() ? getUriForDisplay() : CaseInsensitiveString.str(name);
+        return name == null || name.isEmpty() ? getUriForDisplay() : CaseInsensitiveString.str(name);
     }
 
     @Override
@@ -243,18 +242,18 @@ public class PluggableSCMMaterialConfig extends AbstractMaterialConfig {
     protected void validateConcreteMaterial(ValidationContext validationContext) {
         validateDestFolderPath();
         validateNotOutsideSandbox();
-        validateScmID(validationContext);
+        validateScmID();
     }
 
-    private void validateScmID(ValidationContext validationContext) {
-        if (StringUtils.isBlank(scmId)) {
+    private void validateScmID() {
+        if (isBlank(scmId)) {
             addError(SCM_ID, "Please select a SCM");
         }
     }
 
     @Override
     protected void validateExtras(ValidationContext validationContext) {
-        if (!StringUtils.isBlank(scmId)) {
+        if (!isBlank(scmId)) {
             SCM scm = validationContext.findScmById(scmId);
             if (scm == null) {
                 addError(SCM_ID, String.format("Could not find SCM for given scm-id: [%s].", scmId));
@@ -265,7 +264,7 @@ public class PluggableSCMMaterialConfig extends AbstractMaterialConfig {
     }
 
     private void validateDestFolderPath() {
-        if (StringUtils.isBlank(folder)) {
+        if (isBlank(folder)) {
             return;
         }
         if (!new FilePathTypeValidator().isPathValid(folder)) {
@@ -278,7 +277,7 @@ public class PluggableSCMMaterialConfig extends AbstractMaterialConfig {
         if (dest == null) {
             return;
         }
-        if (!(FilenameUtil.isNormalizedPathOutsideWorkingDir(dest))) {
+        if (!FilenameUtil.isNormalizedPathOutsideWorkingDir(dest)) {
             addError(FOLDER, String.format("Dest folder '%s' is not valid. It must be a sub-directory of the working folder.", dest));
         }
     }
@@ -301,15 +300,15 @@ public class PluggableSCMMaterialConfig extends AbstractMaterialConfig {
 
     @Override
     public void validateNameUniqueness(Map<CaseInsensitiveString, AbstractMaterialConfig> map) {
-        if (StringUtils.isBlank(scmId)) {
+        if (isBlank(scmId)) {
             return;
         }
-        if (map.containsKey(new CaseInsensitiveString(scmId))) {
-            AbstractMaterialConfig material = map.get(new CaseInsensitiveString(scmId));
+        if (map.containsKey(cis(scmId))) {
+            AbstractMaterialConfig material = map.get(cis(scmId));
             material.addError(SCM_ID, "Duplicate SCM material detected!");
             addError(SCM_ID, "Duplicate SCM material detected!");
         } else {
-            map.put(new CaseInsensitiveString(scmId), this);
+            map.put(cis(scmId), this);
         }
     }
 
@@ -324,15 +323,10 @@ public class PluggableSCMMaterialConfig extends AbstractMaterialConfig {
 
         PluggableSCMMaterialConfig that = (PluggableSCMMaterialConfig) o;
 
-        if (folder != null ? !folder.equals(that.folder) : that.folder != null) {
-            return false;
-        }
+        return Objects.equals(folder, that.folder) &&
+            Objects.equals(scmConfig, that.scmConfig) &&
+            super.equals(that);
 
-        if (scmConfig != null ? !scmConfig.equals(that.scmConfig) : that.scmConfig != null) {
-            return false;
-        }
-
-        return super.equals(that);
     }
 
     @Override

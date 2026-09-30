@@ -17,7 +17,7 @@ package com.thoughtworks.go.apiv1.export;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.HaltApiResponses;
 import com.thoughtworks.go.config.ConfigRepoPlugin;
 import com.thoughtworks.go.config.GoConfigPluginService;
@@ -27,9 +27,9 @@ import com.thoughtworks.go.config.exceptions.RecordNotFoundException;
 import com.thoughtworks.go.plugin.access.configrepo.ExportedConfig;
 import com.thoughtworks.go.server.service.EntityHashingService;
 import com.thoughtworks.go.server.service.GoConfigService;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes.Export;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import spark.Request;
@@ -37,21 +37,22 @@ import spark.Response;
 
 import static com.thoughtworks.go.api.util.HaltApiResponses.haltBecauseOfReason;
 import static java.lang.String.format;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 import static spark.Spark.*;
 
 @Component
 public class ExportControllerV1 extends ApiController implements SparkSpringController {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final GoConfigPluginService crPluginService;
     private final GoConfigService configService;
-    private EntityHashingService entityHashingService;
+    private final EntityHashingService entityHashingService;
 
     @Autowired
-    public ExportControllerV1(ApiAuthenticationHelper apiAuthenticationHelper, GoConfigPluginService crPluginService, GoConfigService configService,
+    public ExportControllerV1(ApiAuthorizationHelper apiAuthorizationHelper, GoConfigPluginService crPluginService, GoConfigService configService,
                               EntityHashingService entityHashingService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.crPluginService = crPluginService;
         this.configService = configService;
         this.entityHashingService = entityHashingService;
@@ -63,7 +64,7 @@ public class ExportControllerV1 extends ApiController implements SparkSpringCont
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
@@ -71,7 +72,7 @@ public class ExportControllerV1 extends ApiController implements SparkSpringCont
             before("", mimeType, this::verifyContentType);
             before("/*", mimeType, this::verifyContentType);
 
-            before(Export.PIPELINES_PATH, mimeType, apiAuthenticationHelper::checkPipelineGroupAdminOfPipelineOrGroupInURLUserAnd403);
+            before(Export.PIPELINES_PATH, mimeType, apiAuthorizationHelper::checkPipelineGroupAdminViaNameParamsAnd403);
 
             get(Export.PIPELINES_PATH, mimeType, this::exportPipeline);
         });
@@ -124,7 +125,7 @@ public class ExportControllerV1 extends ApiController implements SparkSpringCont
     private String requiredQueryParam(final Request req, final String name) {
         String value = req.queryParams(name);
 
-        if (StringUtils.isBlank(value)) {
+        if (isBlank(value)) {
             throw HaltApiResponses.haltBecauseRequiredParamMissing(name);
         }
 

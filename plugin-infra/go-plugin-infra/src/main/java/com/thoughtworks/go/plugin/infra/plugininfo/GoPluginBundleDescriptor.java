@@ -21,13 +21,12 @@ import jakarta.xml.bind.annotation.XmlElementWrapper;
 import jakarta.xml.bind.annotation.XmlRootElement;
 import lombok.*;
 import lombok.experimental.Accessors;
-import org.apache.commons.collections4.IterableUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.osgi.framework.Bundle;
 
 import java.io.File;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @NoArgsConstructor
@@ -77,7 +76,7 @@ public class GoPluginBundleDescriptor {
     }
 
     public boolean isInvalid() {
-        return IterableUtils.matchesAny(pluginDescriptors, GoPluginDescriptor::isInvalid);
+        return pluginDescriptors.stream().anyMatch(GoPluginDescriptor::isInvalid);
     }
 
     public File bundleLocation() {
@@ -94,14 +93,14 @@ public class GoPluginBundleDescriptor {
     }
 
     public String bundleSymbolicName() {
-        return StringUtils.join(pluginIDs(), "--");
+        return String.join("--", pluginIDs());
     }
 
     public List<String> pluginIDs() {
-        return descriptors().stream().map(GoPluginDescriptor::id).collect(Collectors.toList());
+        return descriptors().stream().map(GoPluginDescriptor::id).filter(Objects::nonNull).collect(Collectors.toList());
     }
 
     private GoPluginDescriptor first() {
-        return this.pluginDescriptors.get(0);
+        return this.pluginDescriptors.getFirst();
     }
 }

@@ -15,6 +15,7 @@
  */
 package com.thoughtworks.go.plugin.infra.service;
 
+import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.ConsoleAppender;
 import ch.qos.logback.core.FileAppender;
@@ -166,19 +167,19 @@ public class DefaultPluginLoggingService implements LoggingService {
 
                 ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(PLUGIN_LOGGER_PREFIX + "." + pluginId);
                 logger.setAdditive(false);
-                logger.setLevel(systemEnvironment.pluginLoggingLevel(pluginId));
+                logger.setLevel(Level.convertAnSLF4JLevel(systemEnvironment.pluginLoggingLevel(pluginId)));
                 logger.addAppender(pluginAppender);
 
                 if (systemEnvironment.consoleOutToStdout()) {
                     ConsoleAppender<ILoggingEvent> consoleAppender = new ConsoleAppender<>();
                     consoleAppender.setEncoder(LogHelper.encoder("%d{ISO8601} %5p [%t] %c{1}:%L [plugin-" + pluginId + "] - %m%n"));
                     logger.setAdditive(false);
-                    logger.setLevel(systemEnvironment.pluginLoggingLevel(pluginId));
+                    logger.setLevel(Level.convertAnSLF4JLevel(systemEnvironment.pluginLoggingLevel(pluginId)));
                     consoleAppender.start();
                     logger.addAppender(consoleAppender);
                 }
 
-                loggingServiceLogger.debug("Plugin with ID: " + pluginId + " will log to: " + pluginAppender.rawFileProperty());
+                loggingServiceLogger.debug("Plugin with ID: {} will log to: {}", pluginId, pluginAppender.rawFileProperty());
             }
         }
     }

@@ -17,13 +17,25 @@ package com.thoughtworks.go.util;
 
 public class FileSizeUtils {
 
-    public static String byteCountToDisplaySize(long size) {
-        if (size < 1024L) {
-            return String.valueOf(size) + (size > 1 ? " bytes" : " byte");
+    public static String byteCountToDisplaySize(long bytes) {
+        if (bytes < 1024) {
+            return bytes + (bytes > 1 ? " bytes" : " byte");
         }
-        long exp = (long) (Math.log(size) / Math.log((long) 1024));
-        double value = size / Math.pow((long) 1024, exp);
-        char unit = "KMGTPEZY".charAt((int) exp - 1);
+        int exp = (int) (Math.log(bytes) / Math.log(1024));
+        double value = bytes / Math.pow(1024, exp);
+        char unit = "KMGTPEZY".charAt(exp - 1);
         return String.format("%.1f %s%s", value, unit, "B");
+    }
+
+    public static long fromMegaToBytes(long megabytes) {
+        return megabytes * 1024 * 1024;
+    }
+
+    public static long fromGigaToMegabytes(long gigabytes) {
+        return gigabytes * 1024;
+    }
+
+    public static long fromGigaToBytes(long gigabytes) {
+        return gigabytes * 1024 * 1024 * 1024;
     }
 }

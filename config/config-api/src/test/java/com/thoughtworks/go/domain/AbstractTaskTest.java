@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -133,7 +134,7 @@ public class AbstractTaskTest {
         task.validate(null);
 
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(AbstractTask.ON_CANCEL_CONFIG)).isEqualTo("Cannot nest 'oncancel' within a cancel task");
+        assertThat(task.errors().firstErrorOn(AbstractTask.ON_CANCEL_CONFIG)).isEqualTo("Cannot nest 'oncancel' within a cancel task");
     }
 
     @Test
@@ -174,11 +175,11 @@ public class AbstractTaskTest {
     }
 
     @Test
-    public void shouldValidateTree(){
+    public void shouldValidateTree() {
         String pipelineName = "p1";
-        PipelineConfig pipelineConfig = GoConfigMother.configWithPipelines(pipelineName).pipelineConfigByName(new CaseInsensitiveString(pipelineName));
-        StageConfig stageConfig = pipelineConfig.getStages().get(0);
-        JobConfig jobConfig = stageConfig.getJobs().get(0);
+        PipelineConfig pipelineConfig = GoConfigMother.configWithPipelines(pipelineName).pipelineConfigByName(cis(pipelineName));
+        StageConfig stageConfig = pipelineConfig.getStages().getFirst();
+        JobConfig jobConfig = stageConfig.getJobs().getFirst();
 
         AbstractTask execTask = new ExecTask("ls", "-la", "42");
         AntTask antTask = new AntTask();

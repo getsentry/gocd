@@ -25,6 +25,7 @@ import com.thoughtworks.go.domain.packagerepository.PackageDefinition;
 import com.thoughtworks.go.domain.packagerepository.PackageRepository;
 import com.thoughtworks.go.domain.scm.SCM;
 import com.thoughtworks.go.util.Pair;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 
@@ -92,27 +93,16 @@ public class PipelineGroups extends BaseCollection<PipelineConfigs> implements V
         this.add(0, configs);
     }
 
+    public @NotNull PipelineConfigs findGroup(String groupName) {
+        return findGroupOptional(groupName).orElseThrow(() -> new RecordNotFoundException(EntityType.PipelineGroup, groupName));
+    }
 
-    public PipelineConfigs findGroup(String groupName) {
-        for (PipelineConfigs pipelines : this) {
-            if (pipelines.isNamed(groupName)) {
-                return pipelines;
-            }
-        }
-        throw new RecordNotFoundException(EntityType.PipelineGroup, groupName);
+    public @NotNull Optional<PipelineConfigs> findGroupOptional(String groupName) {
+        return stream().filter(group -> group.isNamed(groupName)).findFirst();
     }
 
     public boolean hasGroup(String groupName) {
-        try {
-            findGroup(groupName);
-            return true;
-        } catch (RecordNotFoundException e) {
-            return false;
-        }
-    }
-
-    public PipelineConfig findPipeline(String groupName, int pipelineIndex) {
-        return findGroup(groupName).get(pipelineIndex);
+        return findGroupOptional(groupName).isPresent();
     }
 
     public void accept(PipelineGroupVisitor visitor) {
@@ -121,18 +111,13 @@ public class PipelineGroups extends BaseCollection<PipelineConfigs> implements V
         }
     }
 
-    public String findGroupNameByPipeline(CaseInsensitiveString pipelineName) {
-        PipelineConfigs group = findGroupByPipeline(pipelineName);
-        return group == null ? null : group.getGroup();
+    public @NotNull PipelineConfigs findGroupByPipeline(@NotNull CaseInsensitiveString pipelineName) {
+        return findGroupByPipelineOptional(pipelineName)
+            .orElseThrow(() -> new RecordNotFoundException(EntityType.PipelineGroup, EntityType.Pipeline, pipelineName));
     }
 
-    public PipelineConfigs findGroupByPipeline(CaseInsensitiveString pipelineName) {
-        for (PipelineConfigs group : this) {
-            if (group.hasPipeline(pipelineName)) {
-                return group;
-            }
-        }
-        return null;
+    public @NotNull Optional<PipelineConfigs> findGroupByPipelineOptional(@NotNull CaseInsensitiveString pipelineName) {
+        return this.stream().filter(group -> group.hasPipeline(pipelineName)).findFirst();
     }
 
     @Override
@@ -151,11 +136,11 @@ public class PipelineGroups extends BaseCollection<PipelineConfigs> implements V
             for (PipelineConfig pipeline : group) {
                 for (PipelineConfig visitedPipeline : visited) {
                     if (visitedPipeline.name().equals(pipeline.name())) {
-                        if (!duplicates.containsKey(pipeline.name())) {
-                            duplicates.put(pipeline.name(), new HashSet<>());
-                        }
-                        duplicates.get(pipeline.name()).add(pipeline.getOriginDisplayName());
-                        duplicates.get(pipeline.name()).add(visitedPipeline.getOriginDisplayName());
+                        duplicates.computeIfAbsent(pipeline.name(), k -> new HashSet<>())
+                            .addAll(List.of(
+                                pipeline.getOriginDisplayName(),
+                                visitedPipeline.getOriginDisplayName()
+                            ));
                         pipeline.errors().remove(PipelineConfig.NAME);
                         pipeline.addError(PipelineConfig.NAME, String.format("You have defined multiple pipelines named '%s'. Pipeline names must be unique. Source(s): %s", pipeline.name(), duplicates.get(pipeline.name())));
                         visitedPipeline.errors().remove(PipelineConfig.NAME);
@@ -186,10 +171,8 @@ public class PipelineGroups extends BaseCollection<PipelineConfigs> implements V
                         for (PipelineConfig pipelineConfig : pipelineConfigs) {
                             for (PackageMaterialConfig packageMaterialConfig : pipelineConfig.packageMaterialConfigs()) {
                                 String packageId = packageMaterialConfig.getPackageId();
-                                if (!packageToPipelineMap.containsKey(packageId)) {
-                                    packageToPipelineMap.put(packageId, new ArrayList<>());
-                                }
-                                packageToPipelineMap.get(packageId).add(new Pair<>(pipelineConfig, pipelineConfigs));
+                                packageToPipelineMap.computeIfAbsent(packageId, k -> new ArrayList<>())
+                                    .add(new Pair<>(pipelineConfig, pipelineConfigs));
                             }
                         }
                     }
@@ -218,10 +201,8 @@ public class PipelineGroups extends BaseCollection<PipelineConfigs> implements V
                         for (PipelineConfig pipelineConfig : pipelineConfigs) {
                             for (PluggableSCMMaterialConfig pluggableSCMMaterialConfig : pipelineConfig.pluggableSCMMaterialConfigs()) {
                                 String scmId = pluggableSCMMaterialConfig.getScmId();
-                                if (!pluggableSCMMaterialToPipelineMap.containsKey(scmId)) {
-                                    pluggableSCMMaterialToPipelineMap.put(scmId, new ArrayList<>());
-                                }
-                                pluggableSCMMaterialToPipelineMap.get(scmId).add(new Pair<>(pipelineConfig, pipelineConfigs));
+                                pluggableSCMMaterialToPipelineMap.computeIfAbsent(scmId, k -> new ArrayList<>())
+                                    .add(new Pair<>(pipelineConfig, pipelineConfigs));
                             }
                         }
                     }
@@ -240,8 +221,9 @@ public class PipelineGroups extends BaseCollection<PipelineConfigs> implements V
         PipelineGroups locals = new PipelineGroups();
         for (PipelineConfigs pipelineConfigs : this) {
             PipelineConfigs local = pipelineConfigs.getLocal();
-            if (local != null)
+            if (local != null) {
                 locals.add(local);
+            }
         }
         return locals;
     }

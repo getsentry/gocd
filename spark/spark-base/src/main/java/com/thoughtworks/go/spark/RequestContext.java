@@ -17,8 +17,10 @@ package com.thoughtworks.go.spark;
 
 import spark.Request;
 
-import java.net.MalformedURLException;
-import java.net.URL;
+import java.net.URI;
+import java.net.URISyntaxException;
+
+import static com.thoughtworks.go.util.SystemEnvironment.WEBAPP_CONTEXT_PATH;
 
 public class RequestContext {
 
@@ -34,26 +36,29 @@ public class RequestContext {
         this.contextPath = contextPath;
     }
 
+    @SuppressWarnings("unused") // Used by Rails
+    public RequestContext(String protocol, String host, int port) {
+        this(protocol, host, port, WEBAPP_CONTEXT_PATH);
+    }
+
     public static RequestContext requestContext(Request req) {
         return new RequestContext(req.scheme(), req.raw().getServerName(), req.port(), req.contextPath());
     }
 
-    public Link build(String name, String pathAfterContext) {
-        return new Link(name, urlFor(pathAfterContext));
+    public Link build(String name, String encodedPathAfterContext) {
+        return new Link(name, urlFor(encodedPathAfterContext));
     }
 
-    public String pathWithContext(String pathAfterContext) {
-        try {
-            return new URL(protocol, host, port, contextPath + pathAfterContext).getPath();
-        } catch (MalformedURLException e) {
-            throw new RuntimeException(e);
-        }
+    public String pathFor(String encodedPathAfterContext) {
+        return contextPath + encodedPathAfterContext;
     }
 
-    public String urlFor(String pathAfterContext) {
+    public String urlFor(String encodedPathAfterContext) {
         try {
-            return new URL(protocol, host, port, contextPath + pathAfterContext).toExternalForm();
-        } catch (MalformedURLException e) {
+            // Append path separately; otherwise it will be double-encoded
+            URI rootUri = new URI(protocol, null, host, port, null, null, null);
+            return rootUri + pathFor(encodedPathAfterContext);
+        } catch (URISyntaxException e) {
             throw new RuntimeException(e);
         }
     }

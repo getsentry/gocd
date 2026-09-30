@@ -21,32 +21,35 @@ import ch.qos.logback.core.FileAppender;
 import com.thoughtworks.go.util.SystemEnvironment;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.apache.commons.lang3.StringUtils.repeat;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class DefaultPluginLoggingServiceTest {
     @Test
     void shouldTrimDownLogFileNameToAReasonableSizeIfThePluginIdIsTooBig() {
         assertPluginLogFile("abcd", "plugin-abcd.log");
 
-        String pluginIdWithLengthOf189 = repeat("a", 189);
+        String pluginIdWithLengthOf189 = "a".repeat(189);
         assertPluginLogFile(pluginIdWithLengthOf189, "plugin-" + pluginIdWithLengthOf189 + ".log");
 
-        String pluginIdWithLengthOf190 = repeat("a", 190);
+        String pluginIdWithLengthOf190 = "a".repeat(190);
         assertPluginLogFile(pluginIdWithLengthOf190, "plugin-" + pluginIdWithLengthOf189 + ".log");
 
-        String pluginIdWithLengthOf200 = repeat("a", 200);
+        String pluginIdWithLengthOf200 = "a".repeat(200);
         assertPluginLogFile(pluginIdWithLengthOf200, "plugin-" + pluginIdWithLengthOf189 + ".log");
     }
 
     private void assertPluginLogFile(String pluginId, String expectedPluginLogFileName) {
         SystemEnvironment systemEnvironment = mock(SystemEnvironment.class);
+        when(systemEnvironment.pluginLoggingLevel(any())).thenReturn(Level.DEBUG);
 
         DefaultPluginLoggingService loggingService = new DefaultPluginLoggingService(systemEnvironment);
         loggingService.debug(pluginId, "some-logger-name", "message");
@@ -57,6 +60,6 @@ class DefaultPluginLoggingServiceTest {
 
         String loggingDirectory = loggingService.getCurrentLogDirectory();
         assertThat(appenders.size()).isEqualTo(1);
-        assertThat(new File(((FileAppender<?>) appenders.get(0)).rawFileProperty())).isEqualTo(new File(loggingDirectory, expectedPluginLogFileName));
+        assertThat(new File(((FileAppender<?>) appenders.getFirst()).rawFileProperty())).isEqualTo(new File(loggingDirectory, expectedPluginLogFileName));
     }
 }

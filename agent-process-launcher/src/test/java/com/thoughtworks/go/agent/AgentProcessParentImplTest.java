@@ -15,25 +15,25 @@
  */
 package com.thoughtworks.go.agent;
 
-import ch.qos.logback.classic.Level;
 import com.thoughtworks.go.agent.common.AgentBootstrapperArgs;
 import com.thoughtworks.go.agent.common.util.Downloader;
 import com.thoughtworks.go.agent.testhelper.FakeGoServer;
 import com.thoughtworks.go.agent.testhelper.FakeGoServerExtension;
 import com.thoughtworks.go.agent.testhelper.GoTestResource;
-import com.thoughtworks.go.mothers.ServerUrlGeneratorMother;
-import com.thoughtworks.go.util.GoConstants;
+import com.thoughtworks.go.agent.testhelper.ServerUrlGeneratorMother;
 import com.thoughtworks.go.util.LogFixture;
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang3.StringUtils;
+import com.thoughtworks.go.util.SystemEnvironment;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.slf4j.event.Level;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 
 import static com.thoughtworks.go.agent.common.util.Downloader.*;
@@ -50,8 +50,8 @@ public class AgentProcessParentImplTest {
     @GoTestResource
     public FakeGoServer server;
 
-    private final File stderrLog = new File("logs", AgentProcessParentImpl.GO_AGENT_STDERR_LOG);
-    private final File stdoutLog = new File("logs", AgentProcessParentImpl.GO_AGENT_STDOUT_LOG);
+    private final Path stderrLog = Path.of("logs", AgentProcessParentImpl.GO_AGENT_STDERR_LOG);
+    private final Path stdoutLog = Path.of("logs", AgentProcessParentImpl.GO_AGENT_STDOUT_LOG);
 
     @BeforeAll
     public static void setup() {
@@ -59,24 +59,24 @@ public class AgentProcessParentImplTest {
     }
 
     @BeforeEach
-    public void setUp() {
+    public void setUp() throws IOException {
         cleanup();
     }
 
     @AfterEach
-    public void tearDown() {
+    public void tearDown() throws IOException {
         System.clearProperty("sleep.for.download");
-        FileUtils.deleteQuietly(stdoutLog);
-        FileUtils.deleteQuietly(stderrLog);
+        Files.deleteIfExists(stdoutLog);
+        Files.deleteIfExists(stderrLog);
 
         cleanup();
     }
 
-    private void cleanup() {
-        FileUtils.deleteQuietly(AGENT_BINARY_JAR);
-        FileUtils.deleteQuietly(AGENT_PLUGINS_ZIP);
-        FileUtils.deleteQuietly(AGENT_LAUNCHER_JAR);
-        FileUtils.deleteQuietly(TFS_IMPL_JAR);
+    private void cleanup() throws IOException {
+        Files.deleteIfExists(AGENT_BINARY_JAR.toPath());
+        Files.deleteIfExists(AGENT_PLUGINS_ZIP.toPath());
+        Files.deleteIfExists(AGENT_LAUNCHER_JAR.toPath());
+        Files.deleteIfExists(TFS_IMPL_JAR.toPath());
     }
 
     @Test
@@ -89,7 +89,7 @@ public class AgentProcessParentImplTest {
         int returnCode = bootstrapper.run("launcher_version", "bar", getURLGenerator(), new HashMap<>(), context());
         assertThat(returnCode).isEqualTo(42);
         assertThat(cmd).containsExactly(
-                (getProperty("java.home") + FileSystems.getDefault().getSeparator() + "bin" + FileSystems.getDefault().getSeparator() + "java"),
+            getProperty("java.home") + FileSystems.getDefault().getSeparator() + "bin" + FileSystems.getDefault().getSeparator() + "java",
                 "-Dagent.plugins.md5=" + expectedAgentPluginsMd5,
                 "-Dagent.binary.md5=" + expectedAgentMd5,
                 "-Dagent.launcher.md5=bar",
@@ -115,12 +115,12 @@ public class AgentProcessParentImplTest {
 
         AgentProcessParentImpl bootstrapper = createBootstrapper(cmd);
         Map<String, String> context = context();
-        context.put(GoConstants.AGENT_BOOTSTRAPPER_VERSION, "20.3.0-1234");
+        context.put(SystemEnvironment.AGENT_BOOTSTRAPPER_VERSION, "20.3.0-1234");
         int returnCode = bootstrapper.run("launcher_version", "bar", getURLGenerator(), new HashMap<>(), context);
 
         assertThat(returnCode).isEqualTo(42);
         assertThat(cmd).containsExactly(
-                (getProperty("java.home") + FileSystems.getDefault().getSeparator() + "bin" + FileSystems.getDefault().getSeparator() + "java"),
+            getProperty("java.home") + FileSystems.getDefault().getSeparator() + "bin" + FileSystems.getDefault().getSeparator() + "java",
                 "-Dagent.plugins.md5=" + expectedAgentPluginsMd5,
                 "-Dagent.binary.md5=" + expectedAgentMd5,
                 "-Dagent.launcher.md5=bar",
@@ -150,7 +150,7 @@ public class AgentProcessParentImplTest {
 
         assertThat(returnCode).isEqualTo(42);
         assertThat(cmd).containsExactly(
-                (getProperty("java.home") + FileSystems.getDefault().getSeparator() + "bin" + FileSystems.getDefault().getSeparator() + "java"),
+            getProperty("java.home") + FileSystems.getDefault().getSeparator() + "bin" + FileSystems.getDefault().getSeparator() + "java",
                 "-Dextra.property=value1 with space",
                 "-Dextra property with space=value2 with space",
                 "-Dagent.plugins.md5=" + expectedAgentPluginsMd5,
@@ -186,7 +186,7 @@ public class AgentProcessParentImplTest {
 
         assertThat(returnCode).isEqualTo(42);
         assertThat(cmd).containsExactly(
-                (getProperty("java.home") + FileSystems.getDefault().getSeparator() + "bin" + FileSystems.getDefault().getSeparator() + "java"),
+            getProperty("java.home") + FileSystems.getDefault().getSeparator() + "bin" + FileSystems.getDefault().getSeparator() + "java",
                 "-Dagent.plugins.md5=" + expectedAgentPluginsMd5,
                 "-Dagent.binary.md5=" + expectedAgentMd5,
                 "-Dagent.launcher.md5=bar",
@@ -226,14 +226,14 @@ public class AgentProcessParentImplTest {
     public void shouldStartSubprocess_withOverriddenArgs() throws InterruptedException {
         final List<String> cmd = new ArrayList<>();
         AgentProcessParentImpl bootstrapper = createBootstrapper(cmd);
-        int returnCode = bootstrapper.run("launcher_version", "bar", getURLGenerator(), Map.of(AgentProcessParentImpl.AGENT_STARTUP_ARGS, "foo bar  baz with%20some%20space"), context());
+        int returnCode = bootstrapper.run("launcher_version", "bar", getURLGenerator(), Map.of(AgentProcessParentImpl.ENV_GO_AGENT_STARTUP_ARGS, "foo bar  baz with%20some%20space"), context());
         String expectedAgentMd5 = TEST_AGENT.getMd5();
         String expectedAgentPluginsMd5 = TEST_AGENT_PLUGINS.getMd5();
         String expectedTfsMd5 = TEST_TFS_IMPL.getMd5();
 
         assertThat(returnCode).isEqualTo(42);
         assertThat(cmd).containsExactly(
-                (getProperty("java.home") + FileSystems.getDefault().getSeparator() + "bin" + FileSystems.getDefault().getSeparator() + "java"),
+            getProperty("java.home") + FileSystems.getDefault().getSeparator() + "bin" + FileSystems.getDefault().getSeparator() + "java",
                 "foo",
                 "bar",
                 "baz",
@@ -304,8 +304,8 @@ public class AgentProcessParentImplTest {
         AgentProcessParentImpl bootstrapper = createBootstrapper(cmd, subProcess);
         int returnCode = bootstrapper.run("bootstrapper_version", "bar", getURLGenerator(), new HashMap<>(), context());
         assertThat(returnCode).isEqualTo(42);
-        assertThat(FileUtils.readFileToString(stderrLog, UTF_8).contains(stdErrMsg)).isEqualTo(true);
-        assertThat(FileUtils.readFileToString(stdoutLog, UTF_8).contains(stdOutMsg)).isEqualTo(true);
+        assertThat(Files.readString(stderrLog, UTF_8).contains(stdErrMsg)).isEqualTo(true);
+        assertThat(Files.readString(stdoutLog, UTF_8).contains(stdOutMsg)).isEqualTo(true);
     }
 
     @Test
@@ -322,7 +322,7 @@ public class AgentProcessParentImplTest {
             };
             int returnCode = bootstrapper.run("bootstrapper_version", "bar", getURLGenerator(), new HashMap<>(), context());
             assertThat(returnCode).isEqualTo(-373);
-            assertThat(logFixture.contains(Level.ERROR, "Exception while executing command: " + StringUtils.join(cmd, " ") + " - java.lang.RuntimeException: something failed!")).isEqualTo(true);
+            assertThat(logFixture.contains(Level.ERROR, "Exception while executing command: " + String.join(" ", cmd) + " - java.lang.RuntimeException: something failed!")).isEqualTo(true);
         }
     }
 
@@ -348,7 +348,7 @@ public class AgentProcessParentImplTest {
 
         long expectedModifiedDate = AGENT_PLUGINS_ZIP.lastModified();
         AgentProcessParentImpl bootstrapper = createBootstrapper(new ArrayList<>());
-        bootstrapper.run("launcher_version", "bar", getURLGenerator(), Map.of(AgentProcessParentImpl.AGENT_STARTUP_ARGS, "foo bar  baz with%20some%20space"), context());
+        bootstrapper.run("launcher_version", "bar", getURLGenerator(), Map.of(AgentProcessParentImpl.ENV_GO_AGENT_STARTUP_ARGS, "foo bar  baz with%20some%20space"), context());
         assertThat(Downloader.AGENT_PLUGINS_ZIP.lastModified()).isEqualTo(expectedModifiedDate);
     }
 
@@ -359,7 +359,7 @@ public class AgentProcessParentImplTest {
         long original = stalePluginZip.length();
 
         AgentProcessParentImpl bootstrapper = createBootstrapper(new ArrayList<>());
-        bootstrapper.run("launcher_version", "bar", getURLGenerator(), Map.of(AgentProcessParentImpl.AGENT_STARTUP_ARGS, "foo bar  baz with%20some%20space"), context());
+        bootstrapper.run("launcher_version", "bar", getURLGenerator(), Map.of(AgentProcessParentImpl.ENV_GO_AGENT_STARTUP_ARGS, "foo bar  baz with%20some%20space"), context());
 
         assertThat(stalePluginZip.length()).isNotEqualTo(original);
     }
@@ -371,13 +371,13 @@ public class AgentProcessParentImplTest {
         long original = staleFile.length();
 
         AgentProcessParentImpl bootstrapper = createBootstrapper(new ArrayList<>());
-        bootstrapper.run("launcher_version", "bar", getURLGenerator(), Map.of(AgentProcessParentImpl.AGENT_STARTUP_ARGS, "foo bar  baz with%20some%20space"), context());
+        bootstrapper.run("launcher_version", "bar", getURLGenerator(), Map.of(AgentProcessParentImpl.ENV_GO_AGENT_STARTUP_ARGS, "foo bar  baz with%20some%20space"), context());
 
         assertThat(staleFile.length()).isNotEqualTo(original);
     }
 
     private File randomFile(final File pathname) throws IOException {
-        FileUtils.write(pathname, "some rubbish", StandardCharsets.UTF_8);
+        Files.writeString(pathname.toPath(), "some rubbish", StandardCharsets.UTF_8);
         return pathname;
     }
 

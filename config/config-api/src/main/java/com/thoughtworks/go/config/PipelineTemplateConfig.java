@@ -16,7 +16,6 @@
 package com.thoughtworks.go.config;
 
 import com.rits.cloning.Cloner;
-import com.thoughtworks.go.config.preprocessor.ClassAttributeCache;
 import com.thoughtworks.go.config.preprocessor.ParamReferenceCollectorFactory;
 import com.thoughtworks.go.config.preprocessor.ParamResolver;
 import com.thoughtworks.go.config.preprocessor.SkipParameterResolution;
@@ -29,8 +28,10 @@ import com.thoughtworks.go.util.ClonerFactory;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import static com.thoughtworks.go.config.Authorization.ALLOW_GROUP_ADMINS;
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 
 /**
  * Understands abstracting a pipeline definition
@@ -38,7 +39,6 @@ import static com.thoughtworks.go.config.Authorization.ALLOW_GROUP_ADMINS;
 @ConfigTag("pipeline")
 @ConfigCollection(value = StageConfig.class)
 public class PipelineTemplateConfig extends BaseCollection<StageConfig> implements Validatable, ParamsAttributeAware {
-    private static final ClassAttributeCache.FieldCache FIELD_CACHE = new ClassAttributeCache.FieldCache();
     private static final Cloner CLONER = ClonerFactory.instance();
 
     public static final String NAME = "name";
@@ -105,8 +105,8 @@ public class PipelineTemplateConfig extends BaseCollection<StageConfig> implemen
             for (JobConfig jobConfig : stageConfig.getJobs()) {
                 externalArtifactConfigs.addAll(jobConfig.artifactTypeConfigs().getPluggableArtifactConfigs());
                 for (Task task : jobConfig.getTasks()) {
-                    if (task instanceof FetchPluggableArtifactTask) {
-                        fetchExternalArtifactTasks.add((FetchPluggableArtifactTask) task);
+                    if (task instanceof FetchPluggableArtifactTask fetchPluggableArtifactTask) {
+                        fetchExternalArtifactTasks.add(fetchPluggableArtifactTask);
                     }
                 }
             }
@@ -118,7 +118,7 @@ public class PipelineTemplateConfig extends BaseCollection<StageConfig> implemen
         ParamsConfig paramsConfig = this.referredParams();
         for (CaseInsensitiveString pipelineName : pipelineNames) {
             PipelineConfig pipelineConfig = preprocessedConfig.getPipelineConfigByName(pipelineName);
-            PipelineConfigs pipelineGroup = preprocessedConfig.findGroupOfPipeline(pipelineConfig);
+            PipelineConfigs pipelineGroup = preprocessedConfig.findGroupByPipeline(pipelineConfig);
             PipelineConfigSaveValidationContext contextForStages = PipelineConfigSaveValidationContext.forChain(false, pipelineGroup.getGroup(), preprocessedConfig, pipelineConfig);
             validateParams(pipelineConfig, paramsConfig);
             validatePartsOfPipelineConfig(pipelineConfig, contextForStages);
@@ -241,7 +241,7 @@ public class PipelineTemplateConfig extends BaseCollection<StageConfig> implemen
     }
 
     public void setName(String name) {
-        setName(new CaseInsensitiveString(name));
+        setName(cis(name));
     }
 
     public void setName(CaseInsensitiveString name) {
@@ -261,24 +261,6 @@ public class PipelineTemplateConfig extends BaseCollection<StageConfig> implemen
         return super.add(stageConfig);
     }
 
-    public void incrementIndex(StageConfig stageToBeMoved) {
-        moveStage(stageToBeMoved, 1);
-    }
-
-    public void decrementIndex(StageConfig stageToBeMoved) {
-        moveStage(stageToBeMoved, -1);
-    }
-
-    private void moveStage(StageConfig moveMeStage, int moveBy) {
-        int current = this.indexOf(moveMeStage);
-        if (current == -1) {
-            throw new RuntimeException(String.format("Cannot find the stage '%s' in pipeline '%s'", moveMeStage.name(), name()));
-        }
-        this.remove(moveMeStage);
-        this.add(current + moveBy, moveMeStage);
-    }
-
-
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -293,11 +275,7 @@ public class PipelineTemplateConfig extends BaseCollection<StageConfig> implemen
 
         PipelineTemplateConfig config = (PipelineTemplateConfig) o;
 
-        if (name != null ? !name.equals(config.name) : config.name != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(name, config.name);
     }
 
     @Override
@@ -307,10 +285,9 @@ public class PipelineTemplateConfig extends BaseCollection<StageConfig> implemen
         return result;
     }
 
-    public boolean matches(CaseInsensitiveString templateName) {
+    boolean matches(CaseInsensitiveString templateName) {
         return this.name.equals(templateName);
     }
-
 
     @SuppressWarnings("unchecked")
     @Override
@@ -318,7 +295,7 @@ public class PipelineTemplateConfig extends BaseCollection<StageConfig> implemen
         Map<String, String> attributeMap = (Map<String, String>) attributes;
         if (attributeMap.containsKey(NAME)) {
             String strName = attributeMap.get(NAME);
-            name = new CaseInsensitiveString(strName);
+            name = cis(strName);
         }
         if (attributeMap.containsKey(AUTHORIZATION)) {
             this.authorization = new Authorization();
@@ -336,7 +313,7 @@ public class PipelineTemplateConfig extends BaseCollection<StageConfig> implemen
         return this.getAuthorization().isAllowGroupAdmins();
     }
 
-    public void validateNameUniquness(Map<String, PipelineTemplateConfig> templateMap) {
+    public void validateNameUniqueness(Map<String, PipelineTemplateConfig> templateMap) {
         String currentName = name.toLower();
         PipelineTemplateConfig templateWithSameName = templateMap.get(currentName);
         if (templateWithSameName == null) {
@@ -349,7 +326,7 @@ public class PipelineTemplateConfig extends BaseCollection<StageConfig> implemen
 
     public ParamsConfig referredParams() {
         ParamReferenceCollectorFactory paramHandlerFactory = new ParamReferenceCollectorFactory();
-        new ParamResolver(paramHandlerFactory, FIELD_CACHE).resolve(CLONER.deepClone(this));
+        new ParamResolver(paramHandlerFactory).resolve(CLONER.deepClone(this));
         ParamsConfig paramsConfig = new ParamsConfig();
         for (String param : paramHandlerFactory.referredParams()) {
             paramsConfig.add(new ParamConfig(param, null));

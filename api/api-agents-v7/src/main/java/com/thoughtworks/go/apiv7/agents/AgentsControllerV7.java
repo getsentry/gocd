@@ -22,7 +22,7 @@ import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.CrudController;
 import com.thoughtworks.go.api.base.OutputWriter;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.api.util.MessageJson;
 import com.thoughtworks.go.apiv7.agents.model.AgentBulkUpdateRequest;
@@ -42,12 +42,11 @@ import com.thoughtworks.go.server.service.EnvironmentConfigService;
 import com.thoughtworks.go.server.service.SecurityService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
 import com.thoughtworks.go.server.service.result.HttpOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import com.thoughtworks.go.util.Pair;
 import com.thoughtworks.go.util.TriState;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.http.HttpStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,22 +55,22 @@ import spark.Request;
 import spark.Response;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.thoughtworks.go.apiv7.agents.representers.AgentRepresenter.toJSON;
 import static com.thoughtworks.go.apiv7.agents.representers.AgentUpdateRequestRepresenter.fromJSON;
 import static com.thoughtworks.go.serverhealth.HealthStateScope.GLOBAL;
 import static com.thoughtworks.go.serverhealth.HealthStateType.general;
 import static com.thoughtworks.go.util.CommaSeparatedString.append;
-import static com.thoughtworks.go.util.CommaSeparatedString.commaSeparatedStrToList;
+import static com.thoughtworks.go.util.CommaSeparatedString.commaSeparatedStrToTrimmed;
 import static java.lang.String.format;
 import static java.util.stream.Collectors.toCollection;
 import static java.util.stream.Collectors.toMap;
 import static java.util.stream.StreamSupport.stream;
-import static org.apache.commons.lang3.StringUtils.isBlank;
-import static org.apache.commons.lang3.StringUtils.join;
 import static spark.Spark.*;
 
 @SuppressWarnings("ALL")
@@ -80,16 +79,16 @@ public class AgentsControllerV7 extends ApiController implements SparkSpringCont
     private static final Logger LOG = LoggerFactory.getLogger(AgentsControllerV7.class);
 
     private final AgentService agentService;
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final SecurityService securityService;
     private final EnvironmentConfigService environmentConfigService;
 
     @Autowired
-    public AgentsControllerV7(AgentService agentService, ApiAuthenticationHelper apiAuthenticationHelper,
+    public AgentsControllerV7(AgentService agentService, ApiAuthorizationHelper apiAuthorizationHelper,
                               SecurityService securityService, EnvironmentConfigService environmentConfigService) {
         super(ApiVersion.v7);
         this.agentService = agentService;
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.securityService = securityService;
         this.environmentConfigService = environmentConfigService;
     }
@@ -100,7 +99,7 @@ public class AgentsControllerV7 extends ApiController implements SparkSpringCont
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
@@ -108,7 +107,7 @@ public class AgentsControllerV7 extends ApiController implements SparkSpringCont
             before("/*", mimeType, this::checkSecurityOr403);
 
             before(Routes.AgentsAPI.KILL_RUNNING_TASKS, mimeType, this::verifyContentType);
-            before(Routes.AgentsAPI.KILL_RUNNING_TASKS, mimeType, apiAuthenticationHelper::checkAdminUserAnd403);
+            before(Routes.AgentsAPI.KILL_RUNNING_TASKS, mimeType, apiAuthorizationHelper::checkAdminUserAnd403);
 
             get("", mimeType, this::index);
             get(Routes.AgentsAPI.UUID, mimeType, this::show);
@@ -155,7 +154,7 @@ public class AgentsControllerV7 extends ApiController implements SparkSpringCont
         } catch (HttpException e) {
             throw e;
         } catch (Exception e) {
-            throw halt(HttpStatus.SC_INTERNAL_SERVER_ERROR, MessageJson.create(e.getMessage()));
+            throw halt(HttpURLConnection.HTTP_INTERNAL_ERROR, MessageJson.create(e.getMessage()));
         }
 
         return handleCreateOrUpdateResponse(request, response, updatedAgentInstance, result);
@@ -176,11 +175,11 @@ public class AgentsControllerV7 extends ApiController implements SparkSpringCont
                     req.getAgentConfigState(),
                     environmentConfigService
             );
-            result.setMessage("Updated agent(s) with uuid(s): [" + join(req.getUuids(), ", ") + "].");
+            result.setMessage("Updated agent(s) with uuid(s): [" + String.join(", ", req.getUuids()) + "].");
         } catch (HttpException e) {
             throw e;
         } catch (Exception e) {
-            throw halt(HttpStatus.SC_INTERNAL_SERVER_ERROR, MessageJson.create(e.getMessage()));
+            throw halt(HttpURLConnection.HTTP_INTERNAL_ERROR, MessageJson.create(e.getMessage()));
         }
 
         return renderHTTPOperationResult(result, request, response);
@@ -203,23 +202,17 @@ public class AgentsControllerV7 extends ApiController implements SparkSpringCont
             return null;
         }
 
-        if (isBlank(commaSeparatedEnvs)) {
+        if (commaSeparatedEnvs.isBlank()) {
             return new EnvironmentsConfig();
         }
 
-        return createEnvironmentsConfigFrom(commaSeparatedStrToList(commaSeparatedEnvs));
+        return createEnvironmentsConfigFrom(commaSeparatedStrToTrimmed(commaSeparatedEnvs));
     }
 
-    private EnvironmentsConfig createEnvironmentsConfigFrom(List<String> envList) {
-        if (envList != null) {
-            return envList.stream()
-                    .filter(StringUtils::isNotBlank)
-                    .map(String::trim)
-                    .map(environmentConfigService::find)
-                    .filter(envConfig -> envConfig != null)
-                    .collect(toCollection(EnvironmentsConfig::new));
-        }
-        return new EnvironmentsConfig();
+    private EnvironmentsConfig createEnvironmentsConfigFrom(Stream<String> envList) {
+        return envList.map(environmentConfigService::find)
+                .filter(envConfig -> envConfig != null)
+                .collect(toCollection(EnvironmentsConfig::new));
     }
 
     public String deleteAgent(Request request, Response response) throws IOException {
@@ -264,10 +257,10 @@ public class AgentsControllerV7 extends ApiController implements SparkSpringCont
 
     private void checkSecurityOr403(Request request, Response response) {
         if (List.of("GET", "HEAD").contains(request.requestMethod().toUpperCase())) {
-            apiAuthenticationHelper.checkUserAnd403(request, response);
+            apiAuthorizationHelper.checkUserAnd403(request, response);
             return;
         }
-        apiAuthenticationHelper.checkAdminUserAnd403(request, response);
+        apiAuthorizationHelper.checkAdminUserAnd403(request, response);
     }
 
     private List<String> toList(JsonArray jsonArr) {
@@ -303,16 +296,16 @@ public class AgentsControllerV7 extends ApiController implements SparkSpringCont
         if (commaSeparatedEnvs == null) {
             return commaSeparatedEnvs;
         }
-        if (isBlank(commaSeparatedEnvs)) {
-            return commaSeparatedEnvs.trim();
+        if (commaSeparatedEnvs.isBlank()) {
+            return "";
         }
-        List<String> filteredEnvs = commaSeparatedStrToList(commaSeparatedEnvs).stream()
-                .filter(envName -> isAgentNotAssoicatedRemotely(uuid, envName))
+        List<String> filteredEnvs = commaSeparatedStrToTrimmed(commaSeparatedEnvs)
+                .filter(envName -> isAgentNotAssociatedRemotely(uuid, envName))
                 .collect(Collectors.toList());
         return append("", filteredEnvs);
     }
 
-    private boolean isAgentNotAssoicatedRemotely(String uuid, String envName) {
+    private boolean isAgentNotAssociatedRemotely(String uuid, String envName) {
         EnvironmentConfig envConfig = environmentConfigService.find(envName);
         if (envConfig == null || !envConfig.containsAgentRemotely(uuid)) {
             return true;
@@ -331,7 +324,7 @@ public class AgentsControllerV7 extends ApiController implements SparkSpringCont
         } catch (Exception e) {
             String msg = "Shoot! This is unexpected. Something went wrong while deleting agent(s)! More details : ";
             LOG.error(msg, e);
-            throw halt(HttpStatus.SC_INTERNAL_SERVER_ERROR, MessageJson.create(msg + e.getMessage()));
+            throw halt(HttpURLConnection.HTTP_INTERNAL_ERROR, MessageJson.create(msg + e.getMessage()));
         }
     }
 }

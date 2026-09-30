@@ -15,6 +15,7 @@
  */
 package com.thoughtworks.go.server.web;
 
+import com.thoughtworks.go.util.TestUtils;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
@@ -28,6 +29,8 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+
+import static com.thoughtworks.go.util.SystemEnvironment.WEBAPP_CONTEXT_PATH;
 
 /**
  * Understands test http server that is used to test http client code end-to-end
@@ -81,7 +84,7 @@ public class HttpTestUtil {
         SessionHandler sh = new SessionHandler();
         ctx.setSessionHandler(sh);
         customizer.customize(ctx);
-        ctx.setContextPath("/go");
+        ctx.setContextPath(WEBAPP_CONTEXT_PATH);
         server.setHandler(ctx);
     }
 
@@ -107,11 +110,8 @@ public class HttpTestUtil {
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
-            try {
-                Thread.sleep(Integer.MAX_VALUE);
-            } catch (InterruptedException ignore) {
-                Thread.currentThread().interrupt();
-            }
+            TestUtils.sleepQuietly(Integer.MAX_VALUE);
+
         });
         blocker.start();
         while (!server.isStarted()) {

@@ -17,10 +17,11 @@ package com.thoughtworks.go.apiv2.stageoperations;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.server.service.PipelineService;
 import com.thoughtworks.go.server.service.ScheduleService;
 import com.thoughtworks.go.server.service.result.HttpOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.slf4j.Logger;
@@ -31,7 +32,7 @@ import spark.Request;
 import spark.Response;
 
 import java.io.IOException;
-import java.util.Optional;
+import java.util.OptionalInt;
 
 import static com.thoughtworks.go.api.util.HaltApiResponses.haltBecauseOfReason;
 import static spark.Spark.*;
@@ -41,14 +42,14 @@ public class StageOperationsControllerV2 extends ApiController implements SparkS
     private static final Logger LOGGER = LoggerFactory.getLogger(StageOperationsControllerV2.class);
 
     private final ScheduleService scheduleService;
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final PipelineService pipelineService;
 
     @Autowired
-    public StageOperationsControllerV2(ScheduleService scheduleService, ApiAuthenticationHelper apiAuthenticationHelper, PipelineService pipelineService) {
+    public StageOperationsControllerV2(ScheduleService scheduleService, ApiAuthorizationHelper apiAuthorizationHelper, PipelineService pipelineService) {
         super(ApiVersion.v2);
         this.scheduleService = scheduleService;
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.pipelineService = pipelineService;
     }
 
@@ -58,14 +59,14 @@ public class StageOperationsControllerV2 extends ApiController implements SparkS
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerPath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
             before("/*", mimeType, this::verifyContentType);
 
-            before(Routes.Stage.TRIGGER_STAGE_PATH, mimeType, apiAuthenticationHelper::checkPipelineGroupOperateOfPipelineOrGroupInURLUserAnd403);
+            before(Routes.Stage.TRIGGER_STAGE_PATH, mimeType, apiAuthorizationHelper::checkPipelineGroupOperateViaNameParamsAnd403);
 
             post(Routes.Stage.TRIGGER_STAGE_PATH, mimeType, this::triggerStage);
         });
@@ -77,14 +78,14 @@ public class StageOperationsControllerV2 extends ApiController implements SparkS
         String stageName = req.params("stage_name");
         HttpOperationResult result = new HttpOperationResult();
 
-        Optional<Integer> pipelineCounterValue = pipelineService.resolvePipelineCounter(pipelineName, pipelineCounter);
+        OptionalInt pipelineCounterValue = pipelineService.resolvePipelineCounter(pipelineName, pipelineCounter);
         if (pipelineCounterValue.isEmpty()) {
             String errorMessage = String.format("Error while running [%s/%s/%s]. Received non-numeric pipeline counter '%s'.", pipelineName, pipelineCounter, stageName, pipelineCounter);
             LOGGER.error(errorMessage);
             throw haltBecauseOfReason(errorMessage);
         }
 
-        scheduleService.rerunStage(pipelineName, pipelineCounterValue.get(), stageName, result);
+        scheduleService.rerunStage(pipelineName, pipelineCounterValue.getAsInt(), stageName, result);
         return renderHTTPOperationResult(result, req, res);
     }
 }

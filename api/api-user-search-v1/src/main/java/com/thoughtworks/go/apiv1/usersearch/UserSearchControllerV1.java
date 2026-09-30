@@ -17,11 +17,12 @@ package com.thoughtworks.go.apiv1.usersearch;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv1.usersearch.representers.UserSearchResultsRepresenter;
-import com.thoughtworks.go.presentation.UserSearchModel;
+import com.thoughtworks.go.domain.User;
 import com.thoughtworks.go.server.security.UserSearchService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,13 +40,13 @@ import static spark.Spark.*;
 @Component
 public class UserSearchControllerV1 extends ApiController implements SparkSpringController {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final UserSearchService userSearchService;
 
     @Autowired
-    public UserSearchControllerV1(ApiAuthenticationHelper apiAuthenticationHelper, UserSearchService userSearchService) {
+    public UserSearchControllerV1(ApiAuthorizationHelper apiAuthorizationHelper, UserSearchService userSearchService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.userSearchService = userSearchService;
     }
 
@@ -55,11 +56,11 @@ public class UserSearchControllerV1 extends ApiController implements SparkSpring
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
 
-            before("", this.mimeType, this.apiAuthenticationHelper::checkAdminUserAnd403);
+            before("", this.mimeType, this.apiAuthorizationHelper::checkAdminUserAnd403);
             get("", this.mimeType, this::show);
         });
     }
@@ -70,10 +71,10 @@ public class UserSearchControllerV1 extends ApiController implements SparkSpring
         if (isBlank(searchTerm)) {
             throw haltBecauseOfReason("Search term not specified!");
         }
-        List<UserSearchModel> userSearchModels = userSearchService.search(searchTerm, result);
+        List<User> users = userSearchService.search(searchTerm, result);
 
         if (result.isSuccessful()) {
-            return writerForTopLevelObject(req, res, writer -> UserSearchResultsRepresenter.toJSON(writer, searchTerm, userSearchModels));
+            return writerForTopLevelObject(req, res, writer -> UserSearchResultsRepresenter.toJSON(writer, searchTerm, users));
         } else {
             return renderHTTPOperationResult(result, req, res);
         }

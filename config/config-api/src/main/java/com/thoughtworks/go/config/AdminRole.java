@@ -20,6 +20,8 @@ import com.thoughtworks.go.domain.config.Admin;
 
 import java.util.List;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+
 @ConfigTag("role")
 public class AdminRole implements Admin {
     @ConfigValue
@@ -39,7 +41,7 @@ public class AdminRole implements Admin {
     }
 
     public AdminRole(final String name) {
-        this.name = new CaseInsensitiveString(name);
+        this.name = cis(name);
     }
 
     @Override
@@ -108,8 +110,9 @@ public class AdminRole implements Admin {
         SecurityConfig securityConfig = validationContext.getServerSecurityConfig();
         if (!securityConfig.isRoleExist(this.name)) {
             // This is needed for the old UI while validating roles. Errors will be added on the name field.
-            configErrors.add(NAME, String.format("Role \"%s\" does not exist.", this.name));
-            configErrors.add(ADMIN, String.format("Role \"%s\" does not exist.", this.name));
+            String message = String.format("Role \"%s\" does not exist.", this.name);
+            configErrors.add(NAME, message);
+            configErrors.add(ADMIN, message);
         }
     }
 

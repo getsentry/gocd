@@ -21,9 +21,9 @@ import com.thoughtworks.go.domain.JobResult;
 import com.thoughtworks.go.domain.JobState;
 import com.thoughtworks.go.domain.StageResult;
 import com.thoughtworks.go.domain.StageState;
+import com.thoughtworks.go.util.Dates;
 
 import java.sql.Timestamp;
-import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -57,9 +57,9 @@ public class StageNotificationDTO {
         @SerializedName("stage")
         private StageDTO stage;
 
-        public PipelineDTO(String name, Integer counter, String pipelineLabel, String group, List<MaterialRevisionDTO> buildCause, StageDTO stage) {
+        public PipelineDTO(String name, int counter, String pipelineLabel, String group, List<MaterialRevisionDTO> buildCause, StageDTO stage) {
             this.name = name;
-            this.counter = counter.toString();
+            this.counter = String.valueOf(counter);
             this.pipelineLabel = pipelineLabel;
             this.group = group;
             this.buildCause = buildCause;
@@ -98,7 +98,7 @@ public class StageNotificationDTO {
 
         public ModificationDTO(String revision, Date modifiedTime, Map<String, String> data) {
             this.revision = revision;
-            this.modifiedTime = dateToString(modifiedTime);
+            this.modifiedTime = Dates.formatIso8601UtcWithMillis(modifiedTime);
             this.data = data;
         }
     }
@@ -134,13 +134,13 @@ public class StageNotificationDTO {
 
         public StageDTO(String name, int counter, String approvalType, String approvedBy, StageState state, StageResult result, Timestamp createTime, Timestamp lastTransitionTime, List<JobDTO> jobs) {
             this.name = name;
-            this.counter = Integer.valueOf(counter).toString();
+            this.counter = String.valueOf(counter);
             this.approvalType = approvalType;
             this.approvedBy = approvedBy;
             this.state = state.toString();
             this.result = result.toString();
-            this.createTime = timestampToString(createTime);
-            this.lastTransitionTime = timestampToString(lastTransitionTime);
+            this.createTime = Dates.formatIso8601UtcWithMillis(createTime);
+            this.lastTransitionTime = Dates.formatIso8601UtcWithMillis(lastTransitionTime);
             this.jobs = jobs;
         }
     }
@@ -170,20 +170,12 @@ public class StageNotificationDTO {
 
         public JobDTO(String name, Date scheduleTime, Date assignTime, Date completeTime, JobState state, JobResult result, String agentUuid) {
             this.name = name;
-            this.scheduleTime = dateToString(scheduleTime);
-            this.assignTime = dateToString(assignTime);
-            this.completeTime = dateToString(completeTime);
+            this.scheduleTime = Dates.formatIso8601UtcWithMillis(scheduleTime);
+            this.assignTime = Dates.formatIso8601UtcWithMillis(assignTime);
+            this.completeTime = Dates.formatIso8601UtcWithMillis(completeTime);
             this.state = state.toString();
             this.result = result.toString();
             this.agentUuid = agentUuid;
         }
-    }
-
-    private static String timestampToString(Timestamp timestamp) {
-        return timestamp == null ? "" : new SimpleDateFormat(StageConverter.DATE_PATTERN).format(timestamp);
-    }
-
-    private static String dateToString(Date date) {
-        return date == null ? "" : new SimpleDateFormat(StageConverter.DATE_PATTERN).format(date);
     }
 }

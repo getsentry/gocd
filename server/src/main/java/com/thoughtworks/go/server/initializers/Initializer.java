@@ -21,10 +21,4 @@ public interface Initializer {
      * processing, stop them from doing so till startDaemon() is called.
      */
     void initialize();
-
-    /**
-     * Start any background processing threads if necessary. Allow registered callbacks to process events. This is
-     * not called automatically in case of integration tests.
-     */
-    void startDaemon();
 }

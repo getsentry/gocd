@@ -50,6 +50,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+
 @Service
 public class ValueStreamMapService {
 
@@ -184,7 +186,7 @@ public class ValueStreamMapService {
         ValueStreamMap valueStreamMap = new ValueStreamMap(material, materialInstance, modification);
         Map<CaseInsensitiveString, List<PipelineConfig>> pipelineToDownstreamMap = cruiseConfig.generatePipelineVsDownstreamMap();
 
-        traverseDownstream(new CaseInsensitiveString(material.getFingerprint()), downstreamPipelines, pipelineToDownstreamMap, valueStreamMap, new ArrayList<>());
+        traverseDownstream(cis(material.getFingerprint()), downstreamPipelines, pipelineToDownstreamMap, valueStreamMap, new ArrayList<>());
 
         addInstanceInformationToTheGraph(valueStreamMap);
         removeRevisionsBasedOnPermissionAndCurrentConfig(valueStreamMap, username);
@@ -196,7 +198,7 @@ public class ValueStreamMapService {
             if (node instanceof PipelineDependencyNode pipelineDependencyNode) {
                 String pipelineName = node.getName();
 
-                if (!goConfigService.hasPipelineNamed(new CaseInsensitiveString(pipelineName))) {
+                if (!goConfigService.hasPipelineNamed(cis(pipelineName))) {
                     pipelineDependencyNode.setDeleted();
                 } else if (!securityService.hasViewPermissionForPipeline(username, pipelineName)) {
                     pipelineDependencyNode.setNoPermission();
@@ -204,11 +206,11 @@ public class ValueStreamMapService {
 
                 pipelineDependencyNode.setCanEdit(goConfigService.canEditPipeline(pipelineName, username, new HttpLocalizedOperationResult()));
                 pipelineDependencyNode.setTemplateName(
-                        Optional.ofNullable(goConfigService.findPipelineByName(new CaseInsensitiveString(pipelineName)))
+                        Optional.ofNullable(goConfigService.findPipelineByName(cis(pipelineName)))
                                 .map(PipelineConfig::getTemplateName)
                                 .map(CaseInsensitiveString::toString)
-                                .orElse(null))
-                ;
+                                .orElse(null)
+                );
             }
         }
     }
@@ -216,11 +218,11 @@ public class ValueStreamMapService {
     private void traverseUpstream(CaseInsensitiveString pipelineName, BuildCause buildCause, ValueStreamMap graph, List<MaterialRevision> visitedNodes) {
         for (MaterialRevision materialRevision : buildCause.getMaterialRevisions()) {
             Material material = materialRevision.getMaterial();
-            if (material instanceof DependencyMaterial) {
-                CaseInsensitiveString upstreamPipeline = ((DependencyMaterial) material).getPipelineName();
+            if (material instanceof DependencyMaterial dependencyMaterial) {
+                CaseInsensitiveString upstreamPipeline = dependencyMaterial.getPipelineName();
                 DependencyMaterialRevision revision = (DependencyMaterialRevision) materialRevision.getRevision();
 
-                graph.addUpstreamNode(new PipelineDependencyNode(upstreamPipeline, upstreamPipeline.toString()), new PipelineRevision(revision.getPipelineName(), revision.getPipelineCounter(), revision.getPipelineLabel()),
+                graph.addUpstreamPipelineNode(new PipelineDependencyNode(upstreamPipeline, upstreamPipeline.toString()), new PipelineRevision(revision.getPipelineName(), revision.getPipelineCounter(), revision.getPipelineLabel()),
                         pipelineName);
 
                 if (visitedNodes.contains(materialRevision)) {
@@ -244,13 +246,12 @@ public class ValueStreamMapService {
 
     private void traverseDownstream(CaseInsensitiveString materialId, List<PipelineConfig> downstreamPipelines, Map<CaseInsensitiveString, List<PipelineConfig>> pipelineToDownstreamMap, ValueStreamMap graph, List<PipelineConfig> visitedNodes) {
         for (PipelineConfig downstreamPipeline : downstreamPipelines) {
-            graph.addDownstreamNode(new PipelineDependencyNode(downstreamPipeline.name(),
-                    downstreamPipeline.name().toString()), materialId);
-            if (visitedNodes.contains(downstreamPipeline)) {
-                continue;
+            graph.addDownstreamNode(new PipelineDependencyNode(downstreamPipeline.name(), downstreamPipeline.name().toString()), materialId);
+
+            if (!visitedNodes.contains(downstreamPipeline)) {
+                visitedNodes.add(downstreamPipeline);
+                traverseDownstream(downstreamPipeline.name(), pipelineToDownstreamMap, graph, visitedNodes);
             }
-            visitedNodes.add(downstreamPipeline);
-            traverseDownstream(downstreamPipeline.name(), pipelineToDownstreamMap, graph, visitedNodes);
         }
     }
 

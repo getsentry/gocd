@@ -16,8 +16,8 @@
 package com.thoughtworks.go.domain.materials.mercurial;
 
 import com.thoughtworks.go.domain.materials.Modification;
+import com.thoughtworks.go.util.Dates;
 import com.thoughtworks.go.util.command.ConsoleResult;
-import org.joda.time.DateTime;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -29,11 +29,11 @@ public class HgModificationSplitterTest {
 
     @Test
     public void shouldBeAbleToParseModifications() {
-        ConsoleResult result = new ConsoleResult(0, List.of(("""
+        ConsoleResult result = new ConsoleResult(0, List.of("""
                 <changeset>
                 <node>ca3ebb67f527c0ad7ed26b789056823d8b9af23f</node>
                 <author>cruise</author>
-                <date>Tue, 09 Dec 2008 18:56:14 +0800</date>
+                <date>2008-12-09T18:56:14+08:00</date>
                 <desc>test</desc>
                 <files>
                 <modified>
@@ -45,11 +45,11 @@ public class HgModificationSplitterTest {
                 <deleted>
                 </deleted>
                 </files>
-                </changeset>""").split("\n")), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
+                </changeset>""".split("\n")), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
         HgModificationSplitter splitter = new HgModificationSplitter(result);
         List<Modification> list = splitter.modifications();
         assertThat(list.size()).isEqualTo(1);
-        assertThat(list.get(0).getModifiedTime()).isEqualTo(new DateTime("2008-12-09T18:56:14+08:00").toDate());
+        assertThat(list.getFirst().getModifiedTime()).isEqualTo(Dates.parseIso8601StrictOffset("2008-12-09T18:56:14+08:00"));
     }
 
 

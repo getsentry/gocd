@@ -53,14 +53,10 @@ describe ApplicationHelper do
     end
   end
 
-  it "should give the server version" do
-    version == "N/A"
-  end
-
   it "should ask security service whether user is an admin" do
     expect(self).to receive(:security_service).and_return(security_service = double("security_service"))
     expect(self).to receive(:current_user).and_return(:user)
-    expect(security_service).to receive(:canViewAdminPage).with(:user).and_return(:is_admin?)
+    expect(security_service).to receive(:canViewSomeAdminPage).with(:user).and_return(:is_admin?)
     expect(can_view_admin_page?).to eq(:is_admin?)
   end
 
@@ -322,10 +318,6 @@ describe ApplicationHelper do
       expected = nil
       expect(maintenance_mode_updated_by).to eq(expected)
     end
-  end
-
-  it 'should render duration to string' do
-    expect(duration_to_string(org.joda.time.Duration.new(1230 * 1000))).to eq('20 minutes and 30 seconds')
   end
 
   describe :stage_width_percent do

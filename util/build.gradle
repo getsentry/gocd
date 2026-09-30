@@ -17,15 +17,24 @@
 description = 'GoCD Utils'
 
 dependencies {
-  implementation project(path: ':base', configuration: 'runtimeElements')
-  api project.deps.springContext
-  api project.deps.gson
-  implementation project.deps.cloning
-  api project.deps.jdom
-  testImplementation project(path: ':test:test-utils', configuration: 'runtimeElements')
-  testImplementation project.deps.junit5Api
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
-  testImplementation project.deps.junit5Params
-  testImplementation project.deps.assertJ
+  implementation project(':base')
+  implementation rootProject.deps.springContext
+  if (rootProject.deps.springContext) {
+    runtimeOnly rootProject.deps.slf4jJcl // Allow commons-logging replacement
+  }
+  api rootProject.deps.gson
+  implementation rootProject.deps.commonsIO
+  api rootProject.deps.cloning
+  implementation rootProject.deps.jdom
+  implementation rootProject.deps.slf4jApi
+  compileOnly rootProject.deps.jetBrainsAnnotations
+
+  testImplementation(testFixtures(project(':test:test-utils')))
+  testImplementation rootProject.deps.junit5Api
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.assertJ
+  testImplementation rootProject.deps.mockitoCore
+
+  testImplementation rootProject.deps.awaitility
 }

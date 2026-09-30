@@ -15,34 +15,38 @@
  */
 package com.thoughtworks.go.util;
 
-import org.joda.time.DateTime;
-
 import java.io.Serializable;
 import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Date;
 
-import static java.time.LocalDateTime.now;
-
 public class SystemTimeClock implements Clock, Serializable {
-    @Override
-    public Date currentTime() {
-        return new Date();
+    private static final SystemTimeClock INSTANCE = new SystemTimeClock();
+
+    public static Clock get() {
+        return INSTANCE;
     }
 
     @Override
-    public DateTime currentDateTime() {
-        return new DateTime(currentTime());
+    public Instant currentTime() {
+        return Instant.now();
     }
 
     @Override
-    public Timestamp currentTimestamp() {
+    public Date currentUtilDate() {
+        return new Date(currentTimeMillis());
+    }
+
+    @Override
+    public Timestamp currentSqlTimestamp() {
         return new Timestamp(currentTimeMillis());
     }
 
     @Override
     public LocalDateTime currentLocalDateTime() {
-        return now();
+        return LocalDateTime.now();
     }
 
     @Override
@@ -61,12 +65,7 @@ public class SystemTimeClock implements Clock, Serializable {
     }
 
     @Override
-    public DateTime timeoutTime(Timeout timeout) {
-        return timeoutTime(timeout.inMillis());
-    }
-
-    @Override
-    public DateTime timeoutTime(long timeoutInMillis) {
-        return new DateTime().plusMillis((int) timeoutInMillis);
+    public Instant timeoutTime(Duration duration) {
+        return currentTime().plus(duration);
     }
 }

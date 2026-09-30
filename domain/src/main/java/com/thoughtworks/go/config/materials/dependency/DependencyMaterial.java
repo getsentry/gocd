@@ -16,7 +16,6 @@
 package com.thoughtworks.go.config.materials.dependency;
 
 import com.thoughtworks.go.config.CaseInsensitiveString;
-import com.thoughtworks.go.config.FetchTask;
 import com.thoughtworks.go.config.PipelineConfig;
 import com.thoughtworks.go.config.materials.AbstractMaterial;
 import com.thoughtworks.go.config.materials.SubprocessExecutionContext;
@@ -33,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.util.*;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.util.ExceptionUtils.bombIfNull;
 import static java.lang.String.format;
 
@@ -40,8 +40,8 @@ public class DependencyMaterial extends AbstractMaterial {
     private static final Logger LOGGER = LoggerFactory.getLogger(DependencyMaterial.class);
     public static final String TYPE = "DependencyMaterial";
 
-    private CaseInsensitiveString pipelineName = new CaseInsensitiveString("Unknown");
-    private CaseInsensitiveString stageName = new CaseInsensitiveString("Unknown");
+    private CaseInsensitiveString pipelineName = cis("Unknown");
+    private CaseInsensitiveString stageName = cis("Unknown");
     private boolean ignoreForScheduling = false;
 
     public DependencyMaterial() {
@@ -96,6 +96,7 @@ public class DependencyMaterial extends AbstractMaterial {
         //Dependency materials are already unique within a pipeline
     }
 
+    @Override
     public ValidationBean checkConnection(final SubprocessExecutionContext execCtx) {
         return null;
     } //OLD
@@ -109,7 +110,7 @@ public class DependencyMaterial extends AbstractMaterial {
         if (modifications.size() > 1) {
             LOGGER.warn("Dependency material {} has multiple modifications", this.getDisplayName());
         }
-        Modification oldestModification = modifications.get(modifications.size() - 1);
+        Modification oldestModification = modifications.getLast();
         String revision = oldestModification.getRevision();
         return DependencyMaterialRevision.create(revision, oldestModification.getPipelineLabel());
     }
@@ -125,7 +126,7 @@ public class DependencyMaterial extends AbstractMaterial {
         json.put("scmType", "Dependency");
         json.put("location", pipelineName + "/" + stageName);
         json.put("action", "Completed");
-        if (!CaseInsensitiveString.isBlank(getName())) {
+        if (!CaseInsensitiveString.isEmpty(getName())) {
             json.put("materialName", CaseInsensitiveString.str(getName()));
         }
     }
@@ -205,6 +206,7 @@ public class DependencyMaterial extends AbstractMaterial {
         return null;
     }
 
+    @Override
     public boolean ignoreForScheduling() {
         return ignoreForScheduling;
     }
@@ -225,7 +227,7 @@ public class DependencyMaterial extends AbstractMaterial {
 
     @Override
     public int hashCode() {
-        int result = (materialType != null ? materialType.hashCode() : 0);
+        int result = materialType != null ? materialType.hashCode() : 0;
         result = 31 * result + (pipelineName != null ? pipelineName.hashCode() : 0);
         result = 31 * result + (stageName != null ? stageName.hashCode() : 0);
         return result;
@@ -262,12 +264,8 @@ public class DependencyMaterial extends AbstractMaterial {
 
     @Override
     public Boolean isUsedInFetchArtifact(PipelineConfig pipelineConfig) {
-        List<FetchTask> fetchTasks = pipelineConfig.getFetchTasks();
-        for (FetchTask fetchTask : fetchTasks) {
-            if (pipelineName.equals(fetchTask.getDirectParentInAncestorPath()))
-                return true;
-        }
-        return false;
+        return pipelineConfig.getFetchTasks()
+            .anyMatch(fetchTask -> pipelineName.equals(fetchTask.getDirectParentInAncestorPath()));
     }
 
     @Override

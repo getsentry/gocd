@@ -15,9 +15,9 @@
  */
 package com.thoughtworks.go.server.websocket;
 
-import com.google.gson.Gson;
 import com.thoughtworks.go.domain.JobIdentifier;
-import org.apache.http.NameValuePair;
+import com.thoughtworks.go.domain.exception.IllegalArtifactLocationException;
+import com.thoughtworks.go.util.json.JsonHelper;
 import org.apache.http.client.utils.URLEncodedUtils;
 import org.eclipse.jetty.websocket.api.Session;
 import org.eclipse.jetty.websocket.api.StatusCode;
@@ -34,46 +34,51 @@ import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
-import java.util.Optional;
 
 @WebSocket
 public class ConsoleLogSocket implements SocketEndpoint {
     private static final String PING = "{\"type\":\"ping\"}";
     private static final Logger LOGGER = LoggerFactory.getLogger(ConsoleLogSocket.class);
-    private static final Gson GSON = new Gson();
 
     private final JobIdentifier jobIdentifier;
     private final ConsoleLogSender handler;
+    private final String key;
+    private final SocketHealthService socketHealthService;
+    private final String consoleLogCharsetJSONMessage;
+
     private Session session;
     private String sessionId;
-    private String key;
-    private SocketHealthService socketHealthService;
-    private final String consoleLogCharsetJSONMessage;
 
     ConsoleLogSocket(ConsoleLogSender handler, JobIdentifier jobIdentifier, SocketHealthService socketHealthService, Charset consoleLogCharset) {
         this.handler = handler;
         this.jobIdentifier = jobIdentifier;
         this.key = String.format("%s:%d", jobIdentifier, hashCode());
         this.socketHealthService = socketHealthService;
-        this.consoleLogCharsetJSONMessage = GSON.toJson(Collections.singletonMap("charset", consoleLogCharset.name()));
+        this.consoleLogCharsetJSONMessage = JsonHelper.toJson(Collections.singletonMap("charset", consoleLogCharset.name()));
     }
 
     @OnWebSocketConnect
-    public void onConnect(Session session) throws Exception {
+    public void onConnect(Session session) throws IOException, IllegalArtifactLocationException {
         this.session = session;
         socketHealthService.register(this);
-        LOGGER.debug("{} connected", sessionName());
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("{} connected", sessionName());
+        }
 
         session.getRemote().sendString(consoleLogCharsetJSONMessage);
 
         long start = parseStartLine(session.getUpgradeRequest());
-        LOGGER.debug("{} sending logs for {} starting at line {}.", sessionName(), jobIdentifier, start);
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("{} sending logs for {} starting at line {}.", sessionName(), jobIdentifier, start);
+        }
 
         try {
             handler.process(this, jobIdentifier, start);
         } catch (IOException e) {
             if ("Connection output is closed".equals(e.getMessage())) {
-                LOGGER.debug("{} client (likely, browser) closed connection prematurely.", sessionName());
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.debug("{} client (likely, browser) closed connection prematurely.", sessionName());
+                }
                 close(); // for good measure
             } else {
                 throw e;
@@ -128,18 +133,21 @@ public class ConsoleLogSocket implements SocketEndpoint {
 
     private String sessionName() {
         if (null == sessionId) {
-            if (null == session) throw new IllegalStateException(String.format("Cannot get session name because the session has not been assigned to socket %s", key()));
+            if (null == session) {
+                throw new IllegalStateException(String.format("Cannot get session name because the session has not been assigned to socket %s", key()));
+            }
             sessionId = String.format("Session[%s:%s]", session.getRemoteAddress(), key());
         }
         return sessionId;
     }
 
     private long parseStartLine(UpgradeRequest request) {
-        Optional<NameValuePair> startLine = URLEncodedUtils.parse(request.getRequestURI(), StandardCharsets.UTF_8).
-                stream().
-                filter(pair -> "startLine".equals(pair.getName())).findFirst();
-
-        return startLine.isPresent() ? Long.valueOf(startLine.get().getValue()) : 0L;
+        return URLEncodedUtils.parse(request.getRequestURI(), StandardCharsets.UTF_8)
+            .stream()
+            .filter(pair -> "startLine".equals(pair.getName()))
+            .findFirst()
+            .map(startLine -> Long.valueOf(startLine.getValue()))
+            .orElse(0L);
     }
 
 }

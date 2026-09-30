@@ -23,11 +23,10 @@ import com.thoughtworks.go.plugin.api.material.packagerepository.RepositoryConfi
 import com.thoughtworks.go.plugin.api.response.Result;
 import com.thoughtworks.go.plugin.api.response.validation.ValidationError;
 import com.thoughtworks.go.plugin.api.response.validation.ValidationResult;
+import com.thoughtworks.go.util.Dates;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,7 +34,6 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 @SuppressWarnings("SameParameterValue")
 public class JsonMessageHandler1_0Test {
-    public static final String DATE_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
     private JsonMessageHandler1_0 messageHandler;
     private RepositoryConfiguration repositoryConfiguration;
     private com.thoughtworks.go.plugin.api.material.packagerepository.PackageConfiguration packageConfiguration;
@@ -55,10 +53,10 @@ public class JsonMessageHandler1_0Test {
     @Test
     public void shouldBuildRepositoryConfigurationFromResponseBody() {
         String responseBody = "{" +
-                "\"key-one\":{}," +
-                "\"key-two\":{\"default-value\":\"two\",\"part-of-identity\":true,\"secure\":true,\"required\":true,\"display-name\":\"display-two\",\"display-order\":\"1\"}," +
-                "\"key-three\":{\"default-value\":\"three\",\"part-of-identity\":false,\"secure\":false,\"required\":false,\"display-name\":\"display-three\",\"display-order\":\"2\"}" +
-                "}";
+            "\"key-one\":{}," +
+            "\"key-two\":{\"default-value\":\"two\",\"part-of-identity\":true,\"secure\":true,\"required\":true,\"display-name\":\"display-two\",\"display-order\":\"1\"}," +
+            "\"key-three\":{\"default-value\":\"three\",\"part-of-identity\":false,\"secure\":false,\"required\":false,\"display-name\":\"display-three\",\"display-order\":\"2\"}" +
+            "}";
 
         RepositoryConfiguration repositoryConfiguration = messageHandler.responseMessageForRepositoryConfiguration(responseBody);
         assertPropertyConfiguration((PackageMaterialProperty) repositoryConfiguration.get("key-one"), "key-one", "", true, true, false, "", 0);
@@ -69,10 +67,10 @@ public class JsonMessageHandler1_0Test {
     @Test
     public void shouldBuildPackageConfigurationFromResponseBody() {
         String responseBody = "{" +
-                "\"key-one\":{}," +
-                "\"key-two\":{\"default-value\":\"two\",\"part-of-identity\":true,\"secure\":true,\"required\":true,\"display-name\":\"display-two\",\"display-order\":\"1\"}," +
-                "\"key-three\":{\"default-value\":\"three\",\"part-of-identity\":false,\"secure\":false,\"required\":false,\"display-name\":\"display-three\",\"display-order\":\"2\"}" +
-                "}";
+            "\"key-one\":{}," +
+            "\"key-two\":{\"default-value\":\"two\",\"part-of-identity\":true,\"secure\":true,\"required\":true,\"display-name\":\"display-two\",\"display-order\":\"1\"}," +
+            "\"key-three\":{\"default-value\":\"three\",\"part-of-identity\":false,\"secure\":false,\"required\":false,\"display-name\":\"display-three\",\"display-order\":\"2\"}" +
+            "}";
 
         com.thoughtworks.go.plugin.api.material.packagerepository.PackageConfiguration packageConfiguration = messageHandler.responseMessageForPackageConfiguration(responseBody);
         assertPropertyConfiguration((PackageMaterialProperty) packageConfiguration.get("key-one"), "key-one", "", true, true, false, "", 0);
@@ -90,8 +88,8 @@ public class JsonMessageHandler1_0Test {
     public void shouldBuildValidationResultFromCheckRepositoryConfigurationValidResponse() {
         String responseBody = "[{\"key\":\"key-one\",\"message\":\"incorrect value\"},{\"message\":\"general error\"}]";
         ValidationResult validationResult = messageHandler.responseMessageForIsRepositoryConfigurationValid(responseBody);
-        assertValidationError(validationResult.getErrors().get(0), "key-one", "incorrect value");
-        assertValidationError(validationResult.getErrors().get(1), "", "general error");
+        assertValidationError(validationResult.getErrors().getFirst(), "key-one", "incorrect value");
+        assertValidationError(validationResult.getErrors().getLast(), "", "general error");
     }
 
     @Test
@@ -110,8 +108,8 @@ public class JsonMessageHandler1_0Test {
     public void shouldBuildValidationResultForCheckRepositoryConfigurationValidResponse() {
         String responseBody = "[{\"key\":\"key-one\",\"message\":\"incorrect value\"},{\"message\":\"general error\"}]";
         ValidationResult validationResult = messageHandler.responseMessageForIsPackageConfigurationValid(responseBody);
-        assertValidationError(validationResult.getErrors().get(0), "key-one", "incorrect value");
-        assertValidationError(validationResult.getErrors().get(1), "", "general error");
+        assertValidationError(validationResult.getErrors().getFirst(), "key-one", "incorrect value");
+        assertValidationError(validationResult.getErrors().getLast(), "", "general error");
     }
 
     @Test
@@ -175,36 +173,36 @@ public class JsonMessageHandler1_0Test {
     @Test
     public void shouldBuildPackageRevisionFromLatestRevisionResponse() throws Exception {
         String responseBody = "{\"revision\":\"abc.rpm\",\"timestamp\":\"2011-07-14T19:43:37.100Z\",\"user\":\"some-user\",\"revisionComment\":\"comment\"," +
-                "\"trackbackUrl\":\"http:\\\\localhost:9999\",\"data\":{\"dataKeyOne\":\"data-value-one\",\"dataKeyTwo\":\"data-value-two\"}}";
+            "\"trackbackUrl\":\"http:\\\\localhost:9999\",\"data\":{\"dataKeyOne\":\"data-value-one\",\"dataKeyTwo\":\"data-value-two\"}}";
         PackageRevision packageRevision = messageHandler.responseMessageForLatestRevision(responseBody);
         assertPackageRevision(packageRevision, "abc.rpm", "some-user", "2011-07-14T19:43:37.100Z", "comment", "http:\\localhost:9999");
     }
 
     @Test
-    public void shouldThrowExceptionWhenAttemptingToGetLatestRevisionFromEmptyResponse(){
+    public void shouldThrowExceptionWhenAttemptingToGetLatestRevisionFromEmptyResponse() {
         assertThat(getErrorMessageFromLatestRevision("")).isEqualTo("Empty response body");
         assertThat(getErrorMessageFromLatestRevision("{}")).isEqualTo("Empty response body");
         assertThat(getErrorMessageFromLatestRevision(null)).isEqualTo("Empty response body");
     }
 
     @Test
-    public void shouldBuildRequestBodyForLatestRevisionSinceRequest() throws Exception {
-        Date timestamp = new SimpleDateFormat(DATE_FORMAT).parse("2011-07-13T19:43:37.100Z");
+    public void shouldBuildRequestBodyForLatestRevisionSinceRequest() {
+        Date timestamp = Dates.parseIso8601StrictOffset("2011-07-13T19:43:37.100Z");
         Map<String, String> data = new LinkedHashMap<>();
         data.put("dataKeyOne", "data-value-one");
         data.put("dataKeyTwo", "data-value-two");
         PackageRevision previouslyKnownRevision = new PackageRevision("abc.rpm", timestamp, "someuser", "comment", null, data);
         String requestBody = messageHandler.requestMessageForLatestRevisionSince(packageConfiguration, repositoryConfiguration, previouslyKnownRevision);
         String expectedValue = "{\"repository-configuration\":{\"key-one\":{\"value\":\"value-one\"},\"key-two\":{\"value\":\"value-two\"}}," +
-                "\"package-configuration\":{\"key-three\":{\"value\":\"value-three\"},\"key-four\":{\"value\":\"value-four\"}}," +
-                "\"previous-revision\":{\"revision\":\"abc.rpm\",\"timestamp\":\"2011-07-13T19:43:37.100Z\",\"data\":{\"dataKeyOne\":\"data-value-one\",\"dataKeyTwo\":\"data-value-two\"}}}";
+            "\"package-configuration\":{\"key-three\":{\"value\":\"value-three\"},\"key-four\":{\"value\":\"value-four\"}}," +
+            "\"previous-revision\":{\"revision\":\"abc.rpm\",\"timestamp\":\"2011-07-13T19:43:37.100Z\",\"data\":{\"dataKeyOne\":\"data-value-one\",\"dataKeyTwo\":\"data-value-two\"}}}";
         assertThat(requestBody).isEqualTo(expectedValue);
     }
 
     @Test
     public void shouldBuildPackageRevisionFromLatestRevisionSinceResponse() throws Exception {
         String responseBody = "{\"revision\":\"abc.rpm\",\"timestamp\":\"2011-07-14T19:43:37.100Z\",\"user\":\"some-user\",\"revisionComment\":\"comment\"," +
-                "\"trackbackUrl\":\"http:\\\\localhost:9999\",\"data\":{\"dataKeyOne\":\"data-value-one\",\"dataKeyTwo\":\"data-value-two\"}}";
+            "\"trackbackUrl\":\"http:\\\\localhost:9999\",\"data\":{\"dataKeyOne\":\"data-value-one\",\"dataKeyTwo\":\"data-value-two\"}}";
         PackageRevision packageRevision = messageHandler.responseMessageForLatestRevisionSince(responseBody);
         assertPackageRevision(packageRevision, "abc.rpm", "some-user", "2011-07-14T19:43:37.100Z", "comment", "http:\\localhost:9999");
     }
@@ -283,10 +281,10 @@ public class JsonMessageHandler1_0Test {
         assertThat(errorMessageForPackageRevision("{\"timestamp\":\"12-01-2014\"}")).isEqualTo("Unable to de-serialize json response. Package revision timestamp should be of type string with format yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
     }
 
-    private void assertPackageRevision(PackageRevision packageRevision, String revision, String user, String timestamp, String comment, String trackbackUrl) throws ParseException {
+    private void assertPackageRevision(PackageRevision packageRevision, String revision, String user, String timestamp, String comment, String trackbackUrl) {
         assertThat(packageRevision.getRevision()).isEqualTo(revision);
         assertThat(packageRevision.getUser()).isEqualTo(user);
-        assertThat(packageRevision.getTimestamp()).isEqualTo(new SimpleDateFormat(DATE_FORMAT).parse(timestamp));
+        assertThat(packageRevision.getTimestamp()).isEqualTo(Dates.parseIso8601StrictOffset(timestamp));
         assertThat(packageRevision.getRevisionComment()).isEqualTo(comment);
         assertThat(packageRevision.getTrackbackUrl()).isEqualTo(trackbackUrl);
         assertThat(packageRevision.getData().size()).isEqualTo(2);
@@ -350,11 +348,12 @@ public class JsonMessageHandler1_0Test {
     }
 
     private String getErrorMessageFromLatestRevision(String responseBody) {
-        try{
+        try {
             messageHandler.responseMessageForLatestRevision(responseBody);
             fail("Should throw exception");
-        } catch( RuntimeException e){
+        } catch (RuntimeException e) {
             return e.getMessage();
-        } return null;
+        }
+        return null;
     }
 }

@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.service;
 
-import ch.qos.logback.classic.Level;
 import com.thoughtworks.go.config.Agent;
 import com.thoughtworks.go.config.GoConfigDao;
 import com.thoughtworks.go.domain.AgentRuntimeStatus;
@@ -31,6 +30,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.event.Level;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
@@ -61,23 +61,21 @@ public class UpdateAgentStatusTest {
     @Autowired
     private MaterialRepository materialRepository;
 
-    private PipelineWithTwoStages preCondition;
-    private static final GoConfigFileHelper configHelper = new GoConfigFileHelper();
+    private PipelineWithTwoStages pipelineHelper;
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
 
     @BeforeEach
     public void setUp(@TempDir Path tempDir) throws Exception {
-        dbHelper.onSetUp();
-        configHelper.onSetUp();
         configHelper.usingCruiseConfigDao(goConfigDao);
-        preCondition = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
-        preCondition.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
+        pipelineHelper = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
+        pipelineHelper.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
         agentService.clearAll();
         agentService.saveOrUpdate(new Agent("uuid", "CCEDev01", "10.81.2.1", "cookie"));
     }
 
     @AfterEach
     public void tearDown() throws Exception {
-        preCondition.onTearDown();
+        pipelineHelper.onTearDown();
     }
 
     @Test

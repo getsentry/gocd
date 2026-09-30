@@ -16,7 +16,7 @@
 package com.thoughtworks.go.apiv1.internalresources
 
 import com.thoughtworks.go.api.SecurityTestTrait
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper
 import com.thoughtworks.go.server.service.AgentService
 import com.thoughtworks.go.server.service.GoConfigService
 import com.thoughtworks.go.spark.ControllerTrait
@@ -28,6 +28,8 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mock
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.quality.Strictness
+
+import java.util.stream.Stream
 
 import static org.mockito.Mockito.when
 
@@ -41,7 +43,7 @@ class InternalResourcesControllerV1Test implements SecurityServiceTrait, Control
 
   @Override
   InternalResourcesControllerV1 createControllerInstance() {
-    new InternalResourcesControllerV1(new ApiAuthenticationHelper(securityService, goConfigService), goConfigService, agentService)
+    new InternalResourcesControllerV1(new ApiAuthorizationHelper(securityService, goConfigService), goConfigService, agentService)
   }
 
   @Nested
@@ -49,6 +51,9 @@ class InternalResourcesControllerV1Test implements SecurityServiceTrait, Control
 
     @Nested
     class Security implements SecurityTestTrait, NormalUserSecurity {
+      @Delegate SecurityServiceTrait s = InternalResourcesControllerV1Test.this
+      @Delegate ControllerTrait<InternalResourcesControllerV1> c = InternalResourcesControllerV1Test.this
+
       @Override
       String getControllerMethodUnderTest() {
         return 'index'
@@ -69,8 +74,8 @@ class InternalResourcesControllerV1Test implements SecurityServiceTrait, Control
 
       @Test
       void 'test should return resources fetched from go config service and agent service'() {
-        when(goConfigService.getResourceList()).thenReturn(['firefox', 'jdk'])
-        when(agentService.getListOfResourcesAcrossAgents()).thenReturn(['dev', 'java'])
+        when(goConfigService.getResourceNames()).thenReturn(Stream.of('firefox', 'jdk'))
+        when(agentService.getDistinctResourcesAcrossAgents()).thenReturn(Stream.of('dev', 'java'))
 
         getWithApiHeader(controller.controllerBasePath())
 
@@ -81,8 +86,8 @@ class InternalResourcesControllerV1Test implements SecurityServiceTrait, Control
 
       @Test
       void 'should return only the unique resources fetched from go config and agent services'() {
-        when(goConfigService.getResourceList()).thenReturn(['firefox', 'jdk'])
-        when(agentService.getListOfResourcesAcrossAgents()).thenReturn(['firefox', 'java'])
+        when(goConfigService.getResourceNames()).thenReturn(Stream.of('firefox', 'jdk'))
+        when(agentService.getDistinctResourcesAcrossAgents()).thenReturn(Stream.of('firefox', 'java'))
 
         getWithApiHeader(controller.controllerBasePath())
 
@@ -93,8 +98,8 @@ class InternalResourcesControllerV1Test implements SecurityServiceTrait, Control
 
       @Test
       void 'test should return empty resources list when no resources exists'() {
-        when(goConfigService.getResourceList()).thenReturn([])
-        when(agentService.getListOfResourcesAcrossAgents()).thenReturn([])
+        when(goConfigService.getResourceNames()).thenReturn(Stream.empty())
+        when(agentService.getDistinctResourcesAcrossAgents()).thenReturn(Stream.empty())
 
         getWithApiHeader(controller.controllerBasePath())
 

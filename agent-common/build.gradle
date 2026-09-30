@@ -16,17 +16,49 @@
 
 description = 'GoCD Agent Common Utilities'
 
+java {
+  // For use of the GoAgentServerClientBuilder
+  registerFeature('agentClient') {
+    usingSourceSet(sourceSets.create('agentClient'))
+  }
+}
+CapabilitySupport.extendMain(project, 'agentClient')
+
 dependencies {
-  annotationProcessor project.deps.lombok
-  compileOnly project.deps.lombok
+  annotationProcessor rootProject.deps.lombok
+  compileOnly rootProject.deps.lombok
 
-  api project(path: ':base', configuration: 'runtimeElements')
-  api project.deps.jcommander
-  runtimeOnly project.deps.logback
+  api(project(':base')) { capabilities { requireFeature('logging') } }
+  agentClientApi(project(':base'))
 
-  testImplementation project.deps.mockitoCore
-  testImplementation project(path: ':test:test-utils', configuration: 'runtimeElements')
-  testImplementation project.deps.junit5Api
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
+  implementation rootProject.deps.jcommander
+  agentClientRuntimeOnly rootProject.deps.jcommander
+
+  agentClientCompileOnly rootProject.deps.jakartaAnnotation
+  agentClientImplementation rootProject.deps.bouncyCastle
+  agentClientImplementation rootProject.deps.bouncyCastlePkix
+
+  agentClientImplementation(rootProject.deps.apacheHttpComponents) {
+    exclude(module: 'commons-codec')
+  }
+  if (rootProject.deps.apacheHttpComponents) {
+    agentClientRuntimeOnly rootProject.deps.slf4jJcl // Allow commons-logging replacement
+  }
+
+  testImplementation rootProject.deps.mockitoCore
+  testImplementation(testFixtures(project(':test:test-utils')))
+  testImplementation rootProject.deps.junit5Api
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.assertJ
+
+  testFixturesImplementation(testFixtures(project(':test:test-utils')))
+  testFixturesImplementation rootProject.deps.jetty
+  testFixturesImplementation rootProject.deps.jettyUtil
+  testFixturesImplementation rootProject.deps.jettyServlet
+  testFixturesImplementation rootProject.deps.jettyWebapp
+
+  testFixturesApi rootProject.deps.assertJ
+  testFixturesApi enforcedPlatform(rootProject.deps.junit5Bom)
+  testFixturesApi rootProject.deps.junit5Api
 }

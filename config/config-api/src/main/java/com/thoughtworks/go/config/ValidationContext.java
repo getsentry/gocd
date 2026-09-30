@@ -17,16 +17,15 @@ package com.thoughtworks.go.config;
 
 import com.thoughtworks.go.config.elastic.ClusterProfiles;
 import com.thoughtworks.go.config.materials.MaterialConfigs;
-import com.thoughtworks.go.config.policy.PolicyValidationContext;
 import com.thoughtworks.go.config.remote.ConfigReposConfig;
-import com.thoughtworks.go.config.rules.RulesValidationContext;
 import com.thoughtworks.go.domain.packagerepository.PackageRepository;
 import com.thoughtworks.go.domain.scm.SCM;
-import com.thoughtworks.go.util.SystemEnvironment;
+import org.jetbrains.annotations.NotNull;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
-
-import static java.util.Collections.emptyMap;
+import java.util.stream.Collectors;
 
 public interface ValidationContext {
     ConfigReposConfig getConfigRepos();
@@ -47,9 +46,7 @@ public interface ValidationContext {
 
     JobConfig getJob();
 
-    boolean isWithinEnvironment();
-
-    PipelineConfigs getPipelineGroup();
+    @NotNull PipelineConfigs getPipelineGroup();
 
     PipelineTemplateConfig getTemplate();
 
@@ -58,8 +55,6 @@ public interface ValidationContext {
     boolean shouldCheckConfigRepo();
 
     SecurityConfig getServerSecurityConfig();
-
-    boolean doesTemplateExist(CaseInsensitiveString template);
 
     SCM findScmById(String scmID);
 
@@ -75,10 +70,6 @@ public interface ValidationContext {
 
     boolean shouldNotCheckRole();
 
-    default SystemEnvironment systemEnvironment() {
-        return new SystemEnvironment();
-    }
-
     ArtifactStores artifactStores();
 
     CruiseConfig getCruiseConfig();
@@ -90,7 +81,16 @@ public interface ValidationContext {
     }
 
     default Map<CaseInsensitiveString, Boolean> getPipelineToMaterialAutoUpdateMapByFingerprint(String fingerprint) {
-        return emptyMap();
+        return getCruiseConfig().getAllPipelineConfigs().stream()
+            .flatMap(pipeline -> pipeline.materialConfigs().stream()
+                .filter(materialConfig -> fingerprint.equals(materialConfig.getFingerprint()))
+                .findFirst()
+                .map(materialConfig -> Map.entry(pipeline.name(), materialConfig.isAutoUpdate()))
+                .stream()
+            ).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a, LinkedHashMap::new));
     }
+
+    record RulesValidationContext(List<String> allowedActions, List<String> allowedTypes) {}
+    record PolicyValidationContext(List<String> allowedActions, List<String> allowedTypes) {}
 }
 

@@ -24,7 +24,6 @@ import com.thoughtworks.go.config.materials.mercurial.HgMaterialConfig;
 import com.thoughtworks.go.config.pluggabletask.PluggableTask;
 import com.thoughtworks.go.config.registry.ConfigElementImplementationRegistry;
 import com.thoughtworks.go.config.validation.GoConfigValidity;
-import com.thoughtworks.go.domain.GoConfigRevision;
 import com.thoughtworks.go.domain.Task;
 import com.thoughtworks.go.domain.config.*;
 import com.thoughtworks.go.domain.materials.MaterialConfig;
@@ -36,15 +35,11 @@ import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.persistence.AgentDao;
 import com.thoughtworks.go.server.service.GoConfigService;
 import com.thoughtworks.go.serverhealth.*;
-import com.thoughtworks.go.service.ConfigRepository;
 import com.thoughtworks.go.util.ConfigElementImplementationRegistryMother;
 import com.thoughtworks.go.util.GoConfigFileHelper;
 import com.thoughtworks.go.util.SystemEnvironment;
 import com.thoughtworks.go.util.TimeProvider;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.assertj.core.api.Assertions;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.hibernate.Cache;
 import org.hibernate.SessionFactory;
@@ -61,13 +56,15 @@ import org.xmlunit.assertj.XmlAssert;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.thoughtworks.go.domain.config.CaseInsensitiveStringMother.str;
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.domain.packagerepository.ConfigurationPropertyMother.create;
-import static com.thoughtworks.go.util.GoConstants.CONFIG_SCHEMA_VERSION;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
@@ -79,7 +76,7 @@ import static org.assertj.core.api.Assertions.fail;
         "classpath:/testPropertyConfigurer.xml"
 })
 public class GoConfigMigratorIntegrationTest {
-    private File configFile;
+    private Path configFile;
     ConfigRepository configRepository;
     @Autowired
     private AgentDao agentDao;
@@ -95,8 +92,6 @@ public class GoConfigMigratorIntegrationTest {
     @Autowired
     private FullConfigSaveNormalFlow fullConfigSaveNormalFlow;
     @Autowired
-    private ConfigCache configCache;
-    @Autowired
     private ConfigElementImplementationRegistry registry;
     @Autowired
     private GoFileConfigDataSource goFileConfigDataSource;
@@ -105,12 +100,14 @@ public class GoConfigMigratorIntegrationTest {
     @Autowired
     private DatabaseAccessHelper dbHelper;
     private List<Exception> exceptions;
+    @Autowired
+    private GoConfigDao goConfigDao;
 
     @BeforeEach
     public void setUp(@TempDir File temporaryFolder, ResetCipher resetCipher) throws Exception {
         dbHelper.onSetUp();
-        configFile = new File(temporaryFolder, "cruise-config.xml");
-        new SystemEnvironment().setProperty(SystemEnvironment.CONFIG_FILE_PROPERTY, configFile.getAbsolutePath());
+        configFile = new File(temporaryFolder, "cruise-config.xml").toPath();
+        systemEnvironment.setProperty(SystemEnvironment.CONFIG_FILE_PROPERTY, configFile.toAbsolutePath().toString());
         GoConfigFileHelper.clearConfigVersions();
         configRepository = new ConfigRepository(systemEnvironment);
         configRepository.initialize();
@@ -118,7 +115,7 @@ public class GoConfigMigratorIntegrationTest {
         resetCipher.setupDESCipherFile();
         resetCipher.setupAESCipherFile();
         exceptions = new ArrayList<>();
-        MagicalGoConfigXmlLoader xmlLoader = new MagicalGoConfigXmlLoader(configCache, registry);
+        MagicalGoConfigXmlLoader xmlLoader = new MagicalGoConfigXmlLoader(registry);
         goConfigMigrator = new GoConfigMigrator(goConfigMigration, systemEnvironment, fullConfigSaveNormalFlow, xmlLoader, new GoConfigFileReader(systemEnvironment), configRepository, serverHealthService, e -> exceptions.add(e));
     }
 
@@ -126,7 +123,7 @@ public class GoConfigMigratorIntegrationTest {
     public void tearDown() throws Exception {
         dbHelper.onTearDown();
         GoConfigFileHelper.clearConfigVersions();
-        configFile.delete();
+        Files.deleteIfExists(configFile);
         serverHealthService.removeAllLogs();
     }
 
@@ -134,13 +131,13 @@ public class GoConfigMigratorIntegrationTest {
     public void shouldNotUpgradeCruiseConfigFileUponServerStartupIfSchemaVersionMatches() throws Exception {
 
         String config = ConfigFileFixture.SERVER_WITH_ARTIFACTS_DIR;
-        FileUtils.writeStringToFile(configFile, config, UTF_8);
+        Files.writeString(configFile, config, UTF_8);
         // To create a version of this config in config.git since there wouldn't be any commit
         // in config.git at this point
         goFileConfigDataSource.forceLoad(configFile);
 
         CruiseConfig cruiseConfig = loadConfigFileWithContent(config);
-        assertThat(cruiseConfig.schemaVersion()).isEqualTo(CONFIG_SCHEMA_VERSION);
+        assertThat(cruiseConfig.schemaVersion()).isEqualTo(GoConfigSchema.VERSION);
         assertThat(configRepository.getRevision(ConfigRepository.CURRENT).getUsername()).isNotEqualTo("Upgrade");
     }
 
@@ -153,7 +150,7 @@ public class GoConfigMigratorIntegrationTest {
                  <pipeline name='does_not_exist'/>
                 </pipelines>
                 </environment>
-                </environments>""", CONFIG_SCHEMA_VERSION);
+                </environments>""", GoConfigSchema.VERSION);
         try {
             loadConfigFileWithContent(configString);
             fail("Should not upgrade invalid config file");
@@ -165,16 +162,16 @@ public class GoConfigMigratorIntegrationTest {
     @Test
     public void shouldUpgradeCruiseConfigFileIfVersionDoesNotMatch() throws Exception {
         CruiseConfig cruiseConfig = loadConfigFileWithContent(ConfigFileFixture.OLD);
-        assertThat(cruiseConfig.schemaVersion()).isEqualTo(CONFIG_SCHEMA_VERSION);
+        assertThat(cruiseConfig.schemaVersion()).isEqualTo(GoConfigSchema.VERSION);
     }
 
     @Test
     public void shouldNotUpgradeInvalidConfigFileWhenThereIsNoValidConfigVersioned() throws GitAPIException, IOException {
-        Assertions.assertThat(configRepository.getRevision(ConfigRepository.CURRENT)).isNull();
-        FileUtils.writeStringToFile(configFile, "<cruise></cruise>", UTF_8);
+        assertThat(configRepository.getRevision(ConfigRepository.CURRENT)).isNull();
+        Files.writeString(configFile, "<cruise></cruise>", UTF_8);
         goConfigMigrator.migrate();
         assertThat(exceptions.size()).isEqualTo(1);
-        assertThat(exceptions.get(0).getMessage()).contains("Cruise config file with version 0 is invalid. Unable to upgrade.");
+        assertThat(exceptions.getFirst().getMessage()).contains("Cruise config file with version 0 is invalid. Unable to upgrade.");
     }
 
     @Test
@@ -184,11 +181,11 @@ public class GoConfigMigratorIntegrationTest {
             loadConfigFileWithContent("<cruise></cruise>");
             ServerHealthStates states = serverHealthService.logsSorted();
             assertThat(states.size()).isEqualTo(1);
-            assertThat(states.get(0).getDescription()).contains("Go encountered an invalid configuration file while starting up. The invalid configuration file has been renamed to &lsquo;");
-            assertThat(states.get(0).getDescription()).contains("&rsquo; and a new configuration file has been automatically created using the last good configuration.");
-            assertThat(states.get(0).getMessage()).contains("Invalid Configuration");
-            assertThat(states.get(0).getType()).isEqualTo(HealthStateType.general(HealthStateScope.forInvalidConfig()));
-            assertThat(states.get(0).getLogLevel()).isEqualTo(HealthStateLevel.WARNING);
+            assertThat(states.getFirst().getDescription()).contains("Go encountered an invalid configuration file while starting up. The invalid configuration file has been renamed to &lsquo;");
+            assertThat(states.getFirst().getDescription()).contains("&rsquo; and a new configuration file has been automatically created using the last good configuration.");
+            assertThat(states.getFirst().getMessage()).contains("Invalid Configuration");
+            assertThat(states.getFirst().getType()).isEqualTo(HealthStateType.general(HealthStateScope.forInvalidConfig()));
+            assertThat(states.getFirst().getLogLevel()).isEqualTo(HealthStateLevel.WARNING);
         } catch (Exception e) {
             fail("Should not Throw an exception, should revert to the last valid file versioned in config.git");
         }
@@ -197,16 +194,16 @@ public class GoConfigMigratorIntegrationTest {
     @Test
     public void shouldTryToRevertConfigToTheLatestValidConfigVersionOnlyOnce() throws Exception {
         configRepository.checkin(new GoConfigRevision("<cruise></cruise>", "md5", "ps", "123", new TimeProvider()));
-        FileUtils.writeStringToFile(configFile, "<cruise></cruise>", UTF_8);
+        Files.writeString(configFile, "<cruise></cruise>", UTF_8);
         goConfigMigrator.migrate();
-        assertThat(exceptions.get(0).getMessage()).contains("Cruise config file with version 0 is invalid. Unable to upgrade.");
+        assertThat(exceptions.getFirst().getMessage()).contains("Cruise config file with version 0 is invalid. Unable to upgrade.");
     }
 
     @Test
     public void shouldMoveApprovalFromAPreviousStageToTheBeginningOfASecondStage() throws Exception {
         CruiseConfig cruiseConfig = loadConfigFileWithContent(ConfigFileFixture.VERSION_0);
 
-        PipelineConfig pipelineConfig = cruiseConfig.pipelineConfigByName(new CaseInsensitiveString("pipeline"));
+        PipelineConfig pipelineConfig = cruiseConfig.pipelineConfigByName(cis("pipeline"));
         StageConfig firstStage = pipelineConfig.get(0);
         StageConfig secondStage = pipelineConfig.get(1);
         assertThat(firstStage.requiresApproval()).isEqualTo(Boolean.FALSE);
@@ -215,80 +212,80 @@ public class GoConfigMigratorIntegrationTest {
 
     @Test
     public void shouldMigrateApprovalsCorrectlyBug2112() throws Exception {
-        File bjcruise = new File("../common/src/test/resources/data/bjcruise-cruise-config-1.0.xml");
+        Path bjcruise = Path.of("../common/src/test/resources/data/bjcruise-cruise-config-1.0.xml");
         assertThat(bjcruise).exists();
-        String xml = FileUtils.readFileToString(bjcruise, StandardCharsets.UTF_8);
+        String xml = Files.readString(bjcruise, StandardCharsets.UTF_8);
 
         CruiseConfig cruiseConfig = loadConfigFileWithContent(xml);
 
-        PipelineConfig pipeline = cruiseConfig.pipelineConfigByName(new CaseInsensitiveString("evolve"));
+        PipelineConfig pipeline = cruiseConfig.pipelineConfigByName(cis("evolve"));
 
-        StageConfig dbStage = pipeline.findBy(new CaseInsensitiveString("db"));
+        StageConfig dbStage = pipeline.findBy(cis("db"));
         assertThat(dbStage.requiresApproval()).isFalse();
 
-        StageConfig installStage = pipeline.findBy(new CaseInsensitiveString("install"));
+        StageConfig installStage = pipeline.findBy(cis("install"));
         assertThat(installStage.requiresApproval()).isTrue();
     }
 
     @Test
     public void shouldMigrateMaterialFolderAttributeToDest() throws Exception {
         CruiseConfig cruiseConfig = loadConfigFileWithContent(ConfigFileFixture.VERSION_2);
-        MaterialConfig actual = cruiseConfig.pipelineConfigByName(new CaseInsensitiveString("multiple")).materialConfigs().first();
+        MaterialConfig actual = cruiseConfig.pipelineConfigByName(cis("multiple")).materialConfigs().getFirst();
         assertThat(actual.getFolder()).isEqualTo("part1");
     }
 
     @Test
     public void shouldMigrateRevision5ToTheLatest() throws Exception {
         CruiseConfig cruiseConfig = loadConfigFileWithContent(ConfigFileFixture.VERSION_5);
-        assertThat(cruiseConfig.schemaVersion()).isEqualTo(CONFIG_SCHEMA_VERSION);
+        assertThat(cruiseConfig.schemaVersion()).isEqualTo(GoConfigSchema.VERSION);
     }
 
     @Test
     public void shouldMigrateRevision7To8() throws Exception {
         CruiseConfig cruiseConfig = loadConfigFileWithContent(ConfigFileFixture.VERSION_7);
-        HgMaterialConfig hgConfig = (HgMaterialConfig) cruiseConfig.pipelineConfigByName(new CaseInsensitiveString("framework")).materialConfigs().first();
+        HgMaterialConfig hgConfig = (HgMaterialConfig) cruiseConfig.pipelineConfigByName(cis("framework")).materialConfigs().getFirst();
         assertThat(hgConfig.getFolder()).isNull();
         assertThat(hgConfig.filter()).isNotNull();
     }
 
     @Test
     public void shouldMigrateDependsOnTagToBeADependencyMaterial() throws Exception {
-        String content = FileUtils.readFileToString(
-                new File("../common/src/test/resources/data/config/version4/cruise-config-dependency-migration.xml"), UTF_8);
+        String content = Files.readString(
+                Path.of("../common/src/test/resources/data/config/version4/cruise-config-dependency-migration.xml"), UTF_8);
         CruiseConfig cruiseConfig = loadConfigFileWithContent(content);
-        MaterialConfig actual = cruiseConfig.pipelineConfigByName(new CaseInsensitiveString("depends")).materialConfigs().first();
-        Assertions.assertThat(actual).isInstanceOf(DependencyMaterialConfig.class);
+        MaterialConfig actual = cruiseConfig.pipelineConfigByName(cis("depends")).materialConfigs().getFirst();
+        assertThat(actual).isInstanceOf(DependencyMaterialConfig.class);
         DependencyMaterialConfig depends = (DependencyMaterialConfig) actual;
-        assertThat(depends.getPipelineName()).isEqualTo(new CaseInsensitiveString("multiple"));
-        assertThat(depends.getStageName()).isEqualTo(new CaseInsensitiveString("helloworld-part2"));
+        assertThat(depends.getPipelineName()).isEqualTo(cis("multiple"));
+        assertThat(depends.getStageName()).isEqualTo(cis("helloworld-part2"));
     }
 
     @Test
     public void shouldFailIfJobsWithSameNameButDifferentCasesExistInConfig() throws Exception {
-        FileUtils.writeStringToFile(configFile, ConfigFileFixture.JOBS_WITH_DIFFERENT_CASE, UTF_8);
+        Files.writeString(configFile, ConfigFileFixture.JOBS_WITH_DIFFERENT_CASE, UTF_8);
         GoConfigHolder configHolder = goConfigMigrator.migrate();
-        Assertions.assertThat(configHolder).isNull();
-        PipelineConfig frameworkPipeline = goConfigService.getCurrentConfig().getPipelineConfigByName(new CaseInsensitiveString("framework"));
+        assertThat(configHolder).isNull();
+        PipelineConfig frameworkPipeline = goConfigService.getCurrentConfig().getPipelineConfigByName(cis("framework"));
         assertThat(frameworkPipeline).isNull();
 
         assertThat(exceptions.size()).isEqualTo(1);
-        assertThat(exceptions.get(0).getMessage()).contains("You have defined multiple Jobs called 'Test'");
+        assertThat(exceptions.getFirst().getMessage()).contains("You have defined multiple Jobs called 'Test'");
     }
 
     @Test
     public void shouldVersionControlAnUpgradedConfigIfItIsValid() throws Exception {
-        FileUtils.writeStringToFile(configFile, ConfigFileFixture.DEFAULT_XML_WITH_2_AGENTS, UTF_8);
+        Files.writeString(configFile, ConfigFileFixture.DEFAULT_XML_WITH_2_AGENTS, UTF_8);
         configRepository.checkin(new GoConfigRevision("dummy-content", "some-md5", "loser", "100.3.1", new TimeProvider()));
 
         GoConfigHolder goConfigHolder = goConfigMigrator.migrate();
-        Assertions.assertThat(goConfigHolder.config).isNotNull();
-        Assertions.assertThat(goConfigHolder.configForEdit).isNotNull();
+        assertThat(goConfigHolder.config).isNotNull();
+        assertThat(goConfigHolder.configForEdit).isNotNull();
 
         GoConfigRevision latest = configRepository.getRevision(ConfigRepository.CURRENT);
 
         assertThat(latest.getUsername()).isEqualTo("Upgrade");
 
-        String contents = FileUtils.readFileToString(configFile, UTF_8);
+        String contents = Files.readString(configFile, UTF_8);
         assertThat(latest.getContent()).isEqualTo(contents);
         assertThat(latest.getMd5()).isEqualTo(DigestUtils.md5Hex(contents));
     }
@@ -307,13 +304,15 @@ public class GoConfigMigratorIntegrationTest {
                               </job>
                             </jobs>
                           </stage>
-                        </pipeline>""", "hello"), 32);
-        FileUtils.writeStringToFile(configFile, configContent, UTF_8);
+                        </pipeline>
+                        """, "hello"), 32);
+        Files.writeString(configFile, configContent, UTF_8);
 
         goConfigMigrator.migrate();
 
-        assertThat(FileUtils.readFileToString(configFile, UTF_8)).contains("encryptedPassword=");
-        assertThat(FileUtils.readFileToString(configFile, UTF_8)).doesNotContain("password=");
+        String content = Files.readString(configFile, UTF_8);
+        assertThat(content).contains("encryptedPassword=");
+        assertThat(content).doesNotContain("password=");
     }
 
     @Test
@@ -343,24 +342,25 @@ public class GoConfigMigratorIntegrationTest {
                              </roles>
                         </security>
                     </server>
-                 </cruise>""";
+                 </cruise>
+                """;
 
-        File configFile = new File(systemEnvironment.getCruiseConfigFile());
-        FileUtils.writeStringToFile(configFile, configContent, UTF_8);
+        Path configFile = Path.of(systemEnvironment.getCruiseConfigFile());
+        Files.writeString(configFile, configContent, UTF_8);
         CruiseConfig cruiseConfig = goConfigMigrator.migrate().config;
 
         RolesConfig roles = cruiseConfig.server().security().getRoles();
         assertThat(roles.size()).isEqualTo(2);
-        Assertions.assertThat(roles.get(0)).isEqualTo(new RoleConfig(new CaseInsensitiveString("bAr"),
-                new RoleUser(new CaseInsensitiveString("quux")),
-                new RoleUser(new CaseInsensitiveString("bang")),
-                new RoleUser(new CaseInsensitiveString("LoSeR")),
-                new RoleUser(new CaseInsensitiveString("baz"))));
+        assertThat(roles.getFirst()).isEqualTo(new RoleConfig(cis("bAr"),
+                new RoleUser(cis("quux")),
+                new RoleUser(cis("bang")),
+                new RoleUser(cis("LoSeR")),
+                new RoleUser(cis("baz"))));
 
-        Assertions.assertThat(roles.get(1)).isEqualTo(new RoleConfig(new CaseInsensitiveString("Foo"),
-                new RoleUser(new CaseInsensitiveString("foo")),
-                new RoleUser(new CaseInsensitiveString("LoSeR")),
-                new RoleUser(new CaseInsensitiveString("bar"))));
+        assertThat(roles.get(1)).isEqualTo(new RoleConfig(cis("Foo"),
+                new RoleUser(cis("foo")),
+                new RoleUser(cis("LoSeR")),
+                new RoleUser(cis("bar"))));
     }
 
     @Test
@@ -385,12 +385,13 @@ public class GoConfigMigratorIntegrationTest {
                               </job>
                             </jobs>
                           </stage>
-                        </pipeline>""", 34);
-        FileUtils.writeStringToFile(configFile, configContent, UTF_8);
+                        </pipeline>
+                        """, 34);
+        Files.writeString(configFile, configContent, UTF_8);
 
         goConfigMigrator.migrate();
 
-        assertThat(FileUtils.readFileToString(configFile, UTF_8)).contains("port=\"#{param_foo}\"");
+        assertThat(Files.readString(configFile, UTF_8)).contains("port=\"#{param_foo}\"");
     }
 
     @Test
@@ -415,31 +416,32 @@ public class GoConfigMigratorIntegrationTest {
                       </admins>
                     </security>
                   </server>
-                </cruise>""";
+                </cruise>
+                """;
 
-        FileUtils.writeStringToFile(configFile, content, UTF_8);
+        Files.writeString(configFile, content, UTF_8);
 
         goConfigMigrator.migrate();
 
-        String configXml = FileUtils.readFileToString(configFile, UTF_8);
+        String configXml = Files.readString(configFile, UTF_8);
 
-        MagicalGoConfigXmlLoader loader = new MagicalGoConfigXmlLoader(new ConfigCache(), ConfigElementImplementationRegistryMother.withNoPlugins());
+        MagicalGoConfigXmlLoader loader = new MagicalGoConfigXmlLoader(ConfigElementImplementationRegistryMother.withNoPlugins());
         GoConfigHolder configHolder = loader.loadConfigHolder(configXml);
 
         CruiseConfig config = configHolder.config;
 
         ServerConfig server = config.server();
         RolesConfig roles = server.security().getRoles();
-        assertThat(roles).contains(new RoleConfig(new CaseInsensitiveString("admins"), new RoleUser(new CaseInsensitiveString("admin_one")), new RoleUser(new CaseInsensitiveString("admin_two"))));
-        assertThat(roles).contains(new RoleConfig(new CaseInsensitiveString("devs"), new RoleUser(new CaseInsensitiveString("dev_one")), new RoleUser(new CaseInsensitiveString("dev_two")),
-                new RoleUser(new CaseInsensitiveString("dev_three"))));
+        assertThat(roles).contains(new RoleConfig(cis("admins"), new RoleUser(cis("admin_one")), new RoleUser(cis("admin_two"))));
+        assertThat(roles).contains(new RoleConfig(cis("devs"), new RoleUser(cis("dev_one")), new RoleUser(cis("dev_two")),
+                new RoleUser(cis("dev_three"))));
     }
 
     @Test
-    public void shouldSetServerId_toARandomUUID_ifServerTagDoesntExist() {
+    public void shouldSetServerId_toARandomUUID_ifServerTagDoesNotExist() {
         GoConfigService.XmlPartialSaver<CruiseConfig> fileSaver = goConfigService.fileSaver(true);
         GoConfigValidity configValidity = fileSaver.saveXml("<cruise schemaVersion='" + 53 + "'>\n"
-                + "</cruise>", goConfigService.configFileMd5());
+                + "</cruise>", goConfigService.getCurrentConfig().getMd5());
         assertThat(configValidity.isValid()).as("Has no error").isTrue();
 
         CruiseConfig config = goConfigService.getCurrentConfig();
@@ -455,7 +457,8 @@ public class GoConfigMigratorIntegrationTest {
                 <cruise schemaVersion='55'>
                 <server artifactsdir="logs" siteUrl="http://go-server-site-url:8153" secureSiteUrl="https://go-server-site-url" jobTimeout="60">
                   </server>
-                </cruise>""", goConfigService.configFileMd5());
+                </cruise>
+                """, goConfigService.getCurrentConfig().getMd5());
         assertThat(configValidity.isValid()).as("Has no error").isTrue();
 
         CruiseConfig config = goConfigService.getCurrentConfig();
@@ -477,11 +480,12 @@ public class GoConfigMigratorIntegrationTest {
                       <job name='test'><tasks><exec command='echo'><runif status='passed' /></exec></tasks></job>
                     </jobs>
                   </stage>
-                </pipeline>""", 62);
+                </pipeline>
+                """, 62);
         CruiseConfig configAfterMigration = migrateConfigAndLoadTheNewConfig(oldContent);
-        String currentContent = FileUtils.readFileToString(new File(goConfigService.fileLocation()), UTF_8);
+        String currentContent = Files.readString(Path.of(goConfigDao.fileLocation()), UTF_8);
 
-        PipelineConfig pipelineConfig = configAfterMigration.pipelineConfigByName(new CaseInsensitiveString("old-timer"));
+        PipelineConfig pipelineConfig = configAfterMigration.pipelineConfigByName(cis("old-timer"));
         TimerConfig timer = pipelineConfig.getTimer();
 
         assertThat(configAfterMigration.schemaVersion()).isGreaterThan(62);
@@ -513,19 +517,19 @@ public class GoConfigMigratorIntegrationTest {
     @Test
     public void forVersion63_shouldFailWhenOnChangesValueIsEmpty() throws IOException {
         String config = configWithTimerBasedPipeline("onlyOnChanges=''");
-        FileUtils.writeStringToFile(configFile, config, UTF_8);
+        Files.writeString(configFile, config, UTF_8);
         goConfigMigrator.migrate();
         assertThat(exceptions.size()).isEqualTo(1);
-        assertThat(exceptions.get(0).getCause().getMessage()).contains("'' is not a valid value for 'boolean'");
+        assertThat(exceptions.getFirst().getCause().getMessage()).contains("'' is not a valid value for 'boolean'");
     }
 
     @Test
     public void forVersion63_shouldFailWhenOnChangesValueIsNotAValidBooleanValue() throws IOException {
         String config = configWithTimerBasedPipeline("onlyOnChanges='junk-non-boolean'");
-        FileUtils.writeStringToFile(configFile, config, UTF_8);
+        Files.writeString(configFile, config, UTF_8);
         goConfigMigrator.migrate();
         assertThat(exceptions.size()).isEqualTo(1);
-        assertThat(exceptions.get(0).getCause().getMessage()).contains("'junk-non-boolean' is not a valid value for 'boolean'");
+        assertThat(exceptions.getFirst().getCause().getMessage()).contains("'junk-non-boolean' is not a valid value for 'boolean'");
     }
 
     @Test
@@ -550,20 +554,21 @@ public class GoConfigMigratorIntegrationTest {
                              </packages>
                         </repository>
                         </repositories>
-                        </cruise>""";
+                        </cruise>
+                        """;
 
         CruiseConfig cruiseConfig = migrateConfigAndLoadTheNewConfig(configString);
         PackageRepositories packageRepositories = cruiseConfig.getPackageRepositories();
         assertThat(packageRepositories.size()).isEqualTo(1);
 
-        assertThat(packageRepositories.get(0).getId()).isEqualTo("go-repo");
-        assertThat(packageRepositories.get(0).getName()).isEqualTo("go-repo");
-        assertThat(packageRepositories.get(0).getPluginConfiguration().getId()).isEqualTo("plugin-id");
-        assertThat(packageRepositories.get(0).getPluginConfiguration().getVersion()).isEqualTo("1.0");
-        assertThat(packageRepositories.get(0).getConfiguration()).isNotNull();
-        assertThat(packageRepositories.get(0).getPackages().size()).isEqualTo(1);
+        assertThat(packageRepositories.getFirst().getId()).isEqualTo("go-repo");
+        assertThat(packageRepositories.getFirst().getName()).isEqualTo("go-repo");
+        assertThat(packageRepositories.getFirst().getPluginConfiguration().getId()).isEqualTo("plugin-id");
+        assertThat(packageRepositories.getFirst().getPluginConfiguration().getVersion()).isEqualTo("1.0");
+        assertThat(packageRepositories.getFirst().getConfiguration()).isNotNull();
+        assertThat(packageRepositories.getFirst().getPackages().size()).isEqualTo(1);
 
-        assertConfiguration(packageRepositories.get(0).getConfiguration(),
+        assertConfiguration(packageRepositories.getFirst().getConfiguration(),
                 List.of(
                     List.of("url", Boolean.FALSE, "http://fake-yum-repo"),
                     List.of("username", Boolean.FALSE, "godev"),
@@ -571,9 +576,9 @@ public class GoConfigMigratorIntegrationTest {
                 )
         );
 
-        assertThat(packageRepositories.get(0).getPackages().get(0).getId()).isEqualTo("go-server");
-        assertThat(packageRepositories.get(0).getPackages().get(0).getName()).isEqualTo("go-server");
-        assertConfiguration(packageRepositories.get(0).getPackages().get(0).getConfiguration(),
+        assertThat(packageRepositories.getFirst().getPackages().getFirst().getId()).isEqualTo("go-server");
+        assertThat(packageRepositories.getFirst().getPackages().getFirst().getName()).isEqualTo("go-server");
+        assertConfiguration(packageRepositories.getFirst().getPackages().getFirst().getConfiguration(),
                 List.of(List.of("name", Boolean.FALSE, "go-server-13.2.0-1-i386")));
 
     }
@@ -593,19 +598,20 @@ public class GoConfigMigratorIntegrationTest {
                              </configuration>
                         </repository>
                         </repositories>
-                        </cruise>""";
+                        </cruise>
+                        """;
         CruiseConfig cruiseConfig = loadConfigFileWithContent(configString);
         PackageRepositories packageRepositories = cruiseConfig.getPackageRepositories();
         assertThat(packageRepositories.size()).isEqualTo(1);
 
-        assertThat(packageRepositories.get(0).getId()).isEqualTo("go-repo");
-        assertThat(packageRepositories.get(0).getName()).isEqualTo("go-repo");
-        assertThat(packageRepositories.get(0).getPluginConfiguration().getId()).isEqualTo("plugin-id");
-        assertThat(packageRepositories.get(0).getPluginConfiguration().getVersion()).isEqualTo("1.0");
-        assertThat(packageRepositories.get(0).getConfiguration()).isNotNull();
-        assertThat(packageRepositories.get(0).getPackages().size()).isEqualTo(0);
+        assertThat(packageRepositories.getFirst().getId()).isEqualTo("go-repo");
+        assertThat(packageRepositories.getFirst().getName()).isEqualTo("go-repo");
+        assertThat(packageRepositories.getFirst().getPluginConfiguration().getId()).isEqualTo("plugin-id");
+        assertThat(packageRepositories.getFirst().getPluginConfiguration().getVersion()).isEqualTo("1.0");
+        assertThat(packageRepositories.getFirst().getConfiguration()).isNotNull();
+        assertThat(packageRepositories.getFirst().getPackages().size()).isEqualTo(0);
 
-        assertConfiguration(packageRepositories.get(0).getConfiguration(),
+        assertConfiguration(packageRepositories.getFirst().getConfiguration(),
                 List.of(
                     List.of("url", Boolean.FALSE, "http://fake-yum-repo"),
                     List.of("username", Boolean.FALSE, "godev"),
@@ -638,13 +644,14 @@ public class GoConfigMigratorIntegrationTest {
                             </jobs>
                           </stage>
                         </pipeline></pipelines>
-                        </cruise>""";
+                        </cruise>
+                        """;
         CruiseConfig cruiseConfig = loadConfigFileWithContent(configString);
-        PipelineConfig pipelineConfig = cruiseConfig.getAllPipelineConfigs().get(0);
-        JobConfig jobConfig = pipelineConfig.getFirstStageConfig().getJobs().get(0);
+        PipelineConfig pipelineConfig = cruiseConfig.getAllPipelineConfigs().getFirst();
+        JobConfig jobConfig = pipelineConfig.getFirstStageConfig().getJobs().getFirst();
         Tasks tasks = jobConfig.getTasks();
         assertThat(tasks.size()).isEqualTo(1);
-        assertThat(tasks.get(0) instanceof PluggableTask).isTrue();
+        assertThat(tasks.getFirst()).isInstanceOf(PluggableTask.class);
     }
 
     @Test
@@ -668,11 +675,12 @@ public class GoConfigMigratorIntegrationTest {
                               </stage>
                             </pipeline>
                           </pipelines>
-                        </cruise>""";
+                        </cruise>
+                        """;
         CruiseConfig migratedConfig = migrateConfigAndLoadTheNewConfig(configXml);
-        Task task = migratedConfig.tasksForJob("Test", "Functional", "Functional").get(0);
-        Assertions.assertThat(task).isInstanceOf(ExecTask.class);
-        Assertions.assertThat(task).isEqualTo(new ExecTask("c:\\program files\\cmd.exe", "arguments", (String) null));
+        Task task = migratedConfig.tasksForJob("Test", "Functional", "Functional").getFirst();
+        assertThat(task).isInstanceOf(ExecTask.class);
+        assertThat(task).isEqualTo(new ExecTask("c:\\program files\\cmd.exe", "arguments", (String) null));
     }
 
     @Test
@@ -700,15 +708,16 @@ public class GoConfigMigratorIntegrationTest {
                               </stage>
                             </pipeline>
                           </templates>
-                        </cruise>""";
+                        </cruise>
+                        """;
         CruiseConfig migratedConfig = migrateConfigAndLoadTheNewConfig(configXml);
-        Task task = migratedConfig.tasksForJob("Test", "Functional", "Functional").get(0);
-        Assertions.assertThat(task).isInstanceOf(ExecTask.class);
-        Assertions.assertThat(task).isEqualTo(new ExecTask("c:\\program files\\cmd.exe", "arguments", (String) null));
+        Task task = migratedConfig.tasksForJob("Test", "Functional", "Functional").getFirst();
+        assertThat(task).isInstanceOf(ExecTask.class);
+        assertThat(task).isEqualTo(new ExecTask("c:\\program files\\cmd.exe", "arguments", (String) null));
     }
 
     @Test
-    public void ShouldTrimEnvironmentVariables_asPartOfMigration85() throws Exception {
+    public void shouldTrimEnvironmentVariables_asPartOfMigration85() throws Exception {
         String configXml = """
                 <cruise schemaVersion='84'>
                   <pipelines group='first'>
@@ -731,15 +740,16 @@ public class GoConfigMigratorIntegrationTest {
                   </stage>
                      </pipeline>
                   </pipelines>
-                </cruise>""";
+                </cruise>
+                """;
         CruiseConfig migratedConfig = migrateConfigAndLoadTheNewConfig(configXml);
-        PipelineConfig pipelineConfig = migratedConfig.pipelineConfigByName(new CaseInsensitiveString("up42"));
+        PipelineConfig pipelineConfig = migratedConfig.pipelineConfigByName(cis("up42"));
         EnvironmentVariablesConfig variables = pipelineConfig.getVariables();
-        assertThat(variables.getPlainTextVariables().first().getName()).isEqualTo("test");
-        assertThat(variables.getPlainTextVariables().first().getValue()).isEqualTo("foobar");
-        assertThat(variables.getSecureVariables().first().getName()).isEqualTo("PATH");
+        assertThat(variables.getPlainTextVariables().getFirst().getName()).isEqualTo("test");
+        assertThat(variables.getPlainTextVariables().getFirst().getValue()).isEqualTo("foobar");
+        assertThat(variables.getSecureVariables().getFirst().getName()).isEqualTo("PATH");
         // encrypted value for "abcd" is "trMHp15AjUE=" for the cipher "269298bc31c44620"
-        assertThat(variables.getSecureVariables().first().getValue()).isEqualTo("abcd");
+        assertThat(variables.getSecureVariables().getFirst().getValue()).isEqualTo("abcd");
     }
 
     @Test
@@ -767,11 +777,12 @@ public class GoConfigMigratorIntegrationTest {
                   </stage>
                    </pipeline>
                   </pipelines>
-                </cruise>""";
+                </cruise>
+                """;
 
         CruiseConfig migratedConfig = migrateConfigAndLoadTheNewConfig(configXml);
-        PipelineConfig pipelineConfig = migratedConfig.pipelineConfigByName(new CaseInsensitiveString("up42"));
-        JobConfig jobConfig = pipelineConfig.getStages().get(0).getJobs().get(0);
+        PipelineConfig pipelineConfig = migratedConfig.pipelineConfigByName(cis("up42"));
+        JobConfig jobConfig = pipelineConfig.getStages().getFirst().getJobs().getFirst();
 
         assertThat(migratedConfig.schemaVersion()).isGreaterThan(86);
 
@@ -781,7 +792,7 @@ public class GoConfigMigratorIntegrationTest {
         ElasticProfile expectedProfile = new ElasticProfile(jobConfig.getElasticProfileId(), "no-op-cluster-for-docker",
                 new ConfigurationProperty(new ConfigurationKey("instance-type"), new ConfigurationValue("m1.small")));
 
-        ElasticProfile elasticProfile = profiles.get(0);
+        ElasticProfile elasticProfile = profiles.getFirst();
         assertThat(elasticProfile).isEqualTo(expectedProfile);
     }
 
@@ -826,18 +837,19 @@ public class GoConfigMigratorIntegrationTest {
                   </stage>
                    </pipeline>
                   </pipelines>
-                </cruise>""";
+                </cruise>
+                """;
 
         CruiseConfig migratedConfig = migrateConfigAndLoadTheNewConfig(configXml);
-        PipelineConfig pipelineConfig = migratedConfig.pipelineConfigByName(new CaseInsensitiveString("up42"));
-        JobConfigs jobs = pipelineConfig.getStages().get(0).getJobs();
+        PipelineConfig pipelineConfig = migratedConfig.pipelineConfigByName(cis("up42"));
+        JobConfigs jobs = pipelineConfig.getStages().getFirst().getJobs();
 
         ElasticProfiles profiles = migratedConfig.getElasticConfig().getProfiles();
         assertThat(profiles.size()).isEqualTo(2);
 
-        ElasticProfile expectedDockerProfile = new ElasticProfile(jobs.get(0).getElasticProfileId(), "no-op-cluster-for-docker",
+        ElasticProfile expectedDockerProfile = new ElasticProfile(jobs.getFirst().getElasticProfileId(), "no-op-cluster-for-docker",
                 new ConfigurationProperty(new ConfigurationKey("instance-type"), new ConfigurationValue("m1.small")));
-        assertThat(profiles.get(0)).isEqualTo(expectedDockerProfile);
+        assertThat(profiles.getFirst()).isEqualTo(expectedDockerProfile);
 
         ElasticProfile expectedAWSProfile = new ElasticProfile(jobs.get(1).getElasticProfileId(), "no-op-cluster-for-aws",
                 new ConfigurationProperty(new ConfigurationKey("ami"), new ConfigurationValue("some.ami")),
@@ -899,17 +911,18 @@ public class GoConfigMigratorIntegrationTest {
                   </stage>
                    </pipeline>
                   </pipelines>
-                </cruise>""";
+                </cruise>
+                """;
 
         CruiseConfig migratedConfig = migrateConfigAndLoadTheNewConfig(configXml);
-        PipelineConfig pipelineConfig = migratedConfig.pipelineConfigByName(new CaseInsensitiveString("up42"));
+        PipelineConfig pipelineConfig = migratedConfig.pipelineConfigByName(cis("up42"));
         JobConfigs buildJobs = pipelineConfig.getStages().get(0).getJobs();
         JobConfigs distJobs = pipelineConfig.getStages().get(1).getJobs();
 
         ElasticProfiles profiles = migratedConfig.getElasticConfig().getProfiles();
         assertThat(profiles.size()).isEqualTo(3);
 
-        ElasticProfile expectedDockerProfile = new ElasticProfile(buildJobs.get(0).getElasticProfileId(), "no-op-cluster-for-docker",
+        ElasticProfile expectedDockerProfile = new ElasticProfile(buildJobs.getFirst().getElasticProfileId(), "no-op-cluster-for-docker",
                 new ConfigurationProperty(new ConfigurationKey("instance-type"), new ConfigurationValue("m1.small")));
         assertThat(profiles.get(0)).isEqualTo(expectedDockerProfile);
 
@@ -919,7 +932,7 @@ public class GoConfigMigratorIntegrationTest {
                 new ConfigurationProperty(new ConfigurationKey("diskSpace"), new ConfigurationValue("10G")));
         assertThat(profiles.get(1)).isEqualTo(expectedAWSProfile);
 
-        ElasticProfile expectedSecondDockerProfile = new ElasticProfile(distJobs.get(0).getElasticProfileId(), "no-op-cluster-for-docker",
+        ElasticProfile expectedSecondDockerProfile = new ElasticProfile(distJobs.getFirst().getElasticProfileId(), "no-op-cluster-for-docker",
                 new ConfigurationProperty(new ConfigurationKey("instance-type"), new ConfigurationValue("m1.small")));
         assertThat(profiles.get(2)).isEqualTo(expectedSecondDockerProfile);
     }
@@ -974,22 +987,23 @@ public class GoConfigMigratorIntegrationTest {
                   </stage>
                    </pipeline>
                   </pipelines>
-                </cruise>""";
+                </cruise>
+                """;
 
         CruiseConfig migratedConfig = migrateConfigAndLoadTheNewConfig(configXml);
-        PipelineConfig up42 = migratedConfig.pipelineConfigByName(new CaseInsensitiveString("up42"));
-        PipelineConfig up43 = migratedConfig.pipelineConfigByName(new CaseInsensitiveString("up43"));
-        JobConfigs up42Jobs = up42.getStages().get(0).getJobs();
-        JobConfigs up43Jobs = up43.getStages().get(0).getJobs();
+        PipelineConfig up42 = migratedConfig.pipelineConfigByName(cis("up42"));
+        PipelineConfig up43 = migratedConfig.pipelineConfigByName(cis("up43"));
+        JobConfigs up42Jobs = up42.getStages().getFirst().getJobs();
+        JobConfigs up43Jobs = up43.getStages().getFirst().getJobs();
 
         ElasticProfiles profiles = migratedConfig.getElasticConfig().getProfiles();
         assertThat(profiles.size()).isEqualTo(2);
 
-        ElasticProfile expectedDockerProfile = new ElasticProfile(up42Jobs.get(0).getElasticProfileId(), "no-op-cluster-for-docker",
+        ElasticProfile expectedDockerProfile = new ElasticProfile(up42Jobs.getFirst().getElasticProfileId(), "no-op-cluster-for-docker",
                 new ConfigurationProperty(new ConfigurationKey("instance-type"), new ConfigurationValue("m1.small")));
         assertThat(profiles.get(0)).isEqualTo(expectedDockerProfile);
 
-        ElasticProfile expectedAWSProfile = new ElasticProfile(up43Jobs.get(0).getElasticProfileId(), "no-op-cluster-for-aws",
+        ElasticProfile expectedAWSProfile = new ElasticProfile(up43Jobs.getFirst().getElasticProfileId(), "no-op-cluster-for-aws",
                 new ConfigurationProperty(new ConfigurationKey("ami"), new ConfigurationValue("some.ami")),
                 new ConfigurationProperty(new ConfigurationKey("ram"), new ConfigurationValue("1024")),
                 new ConfigurationProperty(new ConfigurationKey("diskSpace"), new ConfigurationValue("10G")));
@@ -997,34 +1011,31 @@ public class GoConfigMigratorIntegrationTest {
     }
 
     @Test
-    public void shouldAddTokenGenerationKeyAttributeOnServerAsPartOf99To100Migration() {
-        try {
-            String configXml = """
-                    <cruise schemaVersion='99'><server artifactsdir="artifacts" agentAutoRegisterKey="041b5c7e-dab2-11e5-a908-13f95f3c6ef6" webhookSecret="5f8b5eac-1148-4145-aa01-7b2934b6e1ab" commandRepositoryLocation="default" serverId="dev-id">
-                        <security>
-                          <authConfigs>
-                            <authConfig id="9cad79b0-4d9e-4a62-829c-eb4d9488062f" pluginId="cd.go.authentication.passwordfile">
-                              <property>
-                                <key>PasswordFilePath</key>
-                                <value>../manual-testing/ant_hg/password.properties</value>
-                              </property>
-                            </authConfig>
-                          </authConfigs>
-                          <roles>
-                            <role name="xyz" />
-                          </roles>
-                          <admins>
-                            <user>admin</user>
-                          </admins>
-                        </security>
-                      </server>
-                    </cruise>""";
+    public void shouldAddTokenGenerationKeyAttributeOnServerAsPartOf99To100Migration() throws Exception {
+        String configXml = """
+                <cruise schemaVersion='99'><server artifactsdir="artifacts" agentAutoRegisterKey="041b5c7e-dab2-11e5-a908-13f95f3c6ef6" webhookSecret="5f8b5eac-1148-4145-aa01-7b2934b6e1ab" commandRepositoryLocation="default" serverId="dev-id">
+                    <security>
+                      <authConfigs>
+                        <authConfig id="9cad79b0-4d9e-4a62-829c-eb4d9488062f" pluginId="cd.go.authentication.passwordfile">
+                          <property>
+                            <key>PasswordFilePath</key>
+                            <value>../manual-testing/ant_hg/password.properties</value>
+                          </property>
+                        </authConfig>
+                      </authConfigs>
+                      <roles>
+                        <role name="xyz" />
+                      </roles>
+                      <admins>
+                        <user>admin</user>
+                      </admins>
+                    </security>
+                  </server>
+                </cruise>
+            """;
 
-            final CruiseConfig cruiseConfig = migrateConfigAndLoadTheNewConfig(configXml);
-            assertThat(StringUtils.isNotBlank(cruiseConfig.server().getTokenGenerationKey())).isTrue();
-        } catch (Exception e) {
-            System.err.println("jyoti singh: " + e.getMessage());
-        }
+        final CruiseConfig cruiseConfig = migrateConfigAndLoadTheNewConfig(configXml);
+        assertThat(isNotBlank(cruiseConfig.server().getTokenGenerationKey())).isTrue();
     }
 
     @Test
@@ -1063,15 +1074,16 @@ public class GoConfigMigratorIntegrationTest {
                       </configuration>
                     </scm>
                   </scms>
-                </cruise>""";
+                </cruise>
+                """;
 
         final CruiseConfig cruiseConfig = migrateConfigAndLoadTheNewConfig(configXml);
-        Assertions.assertThat(cruiseConfig.getElasticConfig()).isNotNull();
+        assertThat(cruiseConfig.getElasticConfig()).isNotNull();
         assertThat(cruiseConfig.server().getAgentAutoRegisterKey()).isEqualTo("041b5c7e-dab2-11e5-a908-13f95f3c6ef6");
         assertThat(cruiseConfig.server().getWebhookSecret()).isEqualTo("5f8b5eac-1148-4145-aa01-7b2934b6e1ab");
         assertThat(cruiseConfig.server().artifactsDir()).isEqualTo("artifactsDir");
         assertThat(cruiseConfig.getElasticConfig().getProfiles()).hasSize(1);
-        assertThat(cruiseConfig.getElasticConfig().getProfiles().get(0)).isEqualTo(new ElasticProfile("dev-build", "no-op-cluster-for-cd.go.contrib.elastic-agent.docker-swarm",
+        assertThat(cruiseConfig.getElasticConfig().getProfiles().getFirst()).isEqualTo(new ElasticProfile("dev-build", "no-op-cluster-for-cd.go.contrib.elastic-agent.docker-swarm",
                 ConfigurationPropertyMother.create("Image", false, "bar"),
                 ConfigurationPropertyMother.create("ReservedMemory", false, "3GB"),
                 ConfigurationPropertyMother.create("MaxMemory", false, "3GB")
@@ -1114,18 +1126,19 @@ public class GoConfigMigratorIntegrationTest {
                       </configuration>
                     </scm>
                   </scms>
-                </cruise>""";
+                </cruise>
+                """;
 
         final CruiseConfig cruiseConfig = migrateConfigAndLoadTheNewConfig(configXml);
         assertThat(cruiseConfig.server().getAgentAutoRegisterKey()).isEqualTo("041b5c7e-dab2-11e5-a908-13f95f3c6ef6");
         assertThat(cruiseConfig.server().getWebhookSecret()).isEqualTo("5f8b5eac-1148-4145-aa01-7b2934b6e1ab");
         assertThat(cruiseConfig.server().artifactsDir()).isEqualTo("artifactsDir");
-        Assertions.assertThat(cruiseConfig.server().security()).isEqualTo(new SecurityConfig());
+        assertThat(cruiseConfig.server().security()).isEqualTo(new SecurityConfig());
         assertThat(cruiseConfig.getSCMs()).hasSize(1);
     }
 
     @Test
-    public void shouldSkipParamResoulutionForElasticConfig_asPartOf100To101Migration() throws Exception {
+    public void shouldSkipParamResolutionForElasticConfig_asPartOf100To101Migration() throws Exception {
         String configXml = """
                 <cruise schemaVersion='100'>
                 <server artifactsdir="artifactsDir" agentAutoRegisterKey="041b5c7e-dab2-11e5-a908-13f95f3c6ef6" webhookSecret="5f8b5eac-1148-4145-aa01-7b2934b6e1ab" commandRepositoryLocation="default" serverId="dev-id">
@@ -1140,10 +1153,11 @@ public class GoConfigMigratorIntegrationTest {
                       </profiles>
                     </elastic>
                   </server>
-                </cruise>""";
+                </cruise>
+                """;
 
         final CruiseConfig cruiseConfig = migrateConfigAndLoadTheNewConfig(configXml);
-        assertThat(cruiseConfig.getElasticConfig().getProfiles().get(0)).isEqualTo(new ElasticProfile("dev-build", "no-op-cluster-for-cd.go.contrib.elastic-agent.docker-swarm",
+        assertThat(cruiseConfig.getElasticConfig().getProfiles().getFirst()).isEqualTo(new ElasticProfile("dev-build", "no-op-cluster-for-cd.go.contrib.elastic-agent.docker-swarm",
                 ConfigurationPropertyMother.create("Image", false, "#bar")
         ));
     }
@@ -1221,25 +1235,25 @@ public class GoConfigMigratorIntegrationTest {
 
         final CruiseConfig cruiseConfig = migrateConfigAndLoadTheNewConfig(configXml);
 
-        assertThat(cruiseConfig.pipelines("first").findBy(str("up42")).getTrackingTool().getLink()).isEqualTo("http://github.com/gocd/gocd/issues/${ID}");
-        assertThat(cruiseConfig.pipelines("first").findBy(str("up43")).getTrackingTool().getLink()).isEqualTo("https://github.com/gocd/gocd/issues/${ID}");
-        assertThat(cruiseConfig.pipelines("second").findBy(str("up12")).getTrackingTool().getLink()).isEqualTo("http://github.com/gocd/gocd/issues/${ID}");
-        assertThat(cruiseConfig.pipelines("second").findBy(str("up13")).getTrackingTool().getLink()).isEqualTo("http://github.com/gocd/gocd/issues/${ID}");
+        assertThat(cruiseConfig.pipelines("first").findBy(cis("up42")).getTrackingTool().getLink()).isEqualTo("http://github.com/gocd/gocd/issues/${ID}");
+        assertThat(cruiseConfig.pipelines("first").findBy(cis("up43")).getTrackingTool().getLink()).isEqualTo("https://github.com/gocd/gocd/issues/${ID}");
+        assertThat(cruiseConfig.pipelines("second").findBy(cis("up12")).getTrackingTool().getLink()).isEqualTo("http://github.com/gocd/gocd/issues/${ID}");
+        assertThat(cruiseConfig.pipelines("second").findBy(cis("up13")).getTrackingTool().getLink()).isEqualTo("http://github.com/gocd/gocd/issues/${ID}");
     }
 
     @Test
     public void shouldRunMigration59_convertLogTypeToArtifact() throws Exception {
         final CruiseConfig cruiseConfig = migrateConfigAndLoadTheNewConfig(ConfigFileFixture.WITH_LOG_ARTIFACT_CONFIG);
 
-        ArtifactTypeConfigs artifactTypeConfigs = cruiseConfig.getAllPipelineConfigs().get(0).getStage(new CaseInsensitiveString("mingle")).getJobs().getJob(
-                new CaseInsensitiveString("bluemonkeybutt")).artifactTypeConfigs();
+        ArtifactTypeConfigs artifactTypeConfigs = cruiseConfig.getAllPipelineConfigs().getFirst().getStage(cis("mingle")).getJobs().getJob(
+                cis("bluemonkeybutt")).artifactTypeConfigs();
 
         assertThat(artifactTypeConfigs.getBuiltInArtifactConfigs().get(0).getSource()).isEqualTo("from1");
-        assertThat("").isEqualTo(artifactTypeConfigs.getBuiltInArtifactConfigs().get(0).getDestination());
+        assertThat(artifactTypeConfigs.getBuiltInArtifactConfigs().get(0).getDestination()).isEqualTo("");
         assertThat(artifactTypeConfigs.getBuiltInArtifactConfigs().get(1).getSource()).isEqualTo("from2");
         assertThat(artifactTypeConfigs.getBuiltInArtifactConfigs().get(1).getDestination()).isEqualTo("to2");
         assertThat(artifactTypeConfigs.getBuiltInArtifactConfigs().get(2).getSource()).isEqualTo("from3");
-        assertThat("").isEqualTo(artifactTypeConfigs.getBuiltInArtifactConfigs().get(2).getDestination());
+        assertThat(artifactTypeConfigs.getBuiltInArtifactConfigs().get(2).getDestination()).isEqualTo("");
         assertThat(artifactTypeConfigs.getBuiltInArtifactConfigs().get(3).getSource()).isEqualTo("from4");
         assertThat(artifactTypeConfigs.getBuiltInArtifactConfigs().get(3).getDestination()).isEqualTo("to4");
     }
@@ -1268,15 +1282,16 @@ public class GoConfigMigratorIntegrationTest {
                             </jobs>
                           </stage>
                         </pipeline></pipelines>
-                        </cruise>""";
+                        </cruise>
+                        """;
 
         CruiseConfig cruiseConfig = migrateConfigAndLoadTheNewConfig(oldConfigWithNameInTask);
-        String newConfigWithoutNameInTask = FileUtils.readFileToString(configFile, UTF_8);
+        String newConfigWithoutNameInTask = Files.readString(configFile, UTF_8);
 
         XmlAssert.assertThat(newConfigWithoutNameInTask).hasXPath("//cruise/pipelines/pipeline/stage/jobs/job/tasks/task");
         XmlAssert.assertThat(newConfigWithoutNameInTask).doesNotHaveXPath("//cruise/pipelines/pipeline/stage/jobs/job/tasks/task[@name]");
-        PipelineConfig pipelineConfig = cruiseConfig.getAllPipelineConfigs().get(0);
-        JobConfig jobConfig = pipelineConfig.getFirstStageConfig().getJobs().get(0);
+        PipelineConfig pipelineConfig = cruiseConfig.getAllPipelineConfigs().getFirst();
+        JobConfig jobConfig = pipelineConfig.getFirstStageConfig().getJobs().getFirst();
 
         Configuration configuration = new Configuration(
                 create("url", false, "http://fake-yum-repo"),
@@ -1285,7 +1300,7 @@ public class GoConfigMigratorIntegrationTest {
 
         Tasks tasks = jobConfig.getTasks();
         assertThat(tasks.size()).isEqualTo(1);
-        Assertions.assertThat(tasks.get(0)).isEqualTo(new PluggableTask(new PluginConfiguration("plugin-id", "1.0"), configuration));
+        assertThat(tasks.getFirst()).isEqualTo(new PluggableTask(new PluginConfiguration("plugin-id", "1.0"), configuration));
     }
 
     @Test
@@ -1327,10 +1342,11 @@ public class GoConfigMigratorIntegrationTest {
                   </elastic>\
                 """;
 
-        String configXml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-                + "<cruise schemaVersion=\"118\">\n"
-                + configContent
-                + "</cruise>";
+        String configXml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <cruise schemaVersion="118">
+            %s</cruise>
+            """.formatted(configContent);
 
         ClusterProfile azureProfile = new ClusterProfile("no-op-cluster-for-com.thoughtworks.gocd.elastic-agent.azure", "com.thoughtworks.gocd.elastic-agent.azure");
         ClusterProfile dockerProfile = new ClusterProfile("no-op-cluster-for-cd.go.contrib.elastic-agent.docker", "cd.go.contrib.elastic-agent.docker");
@@ -1392,14 +1408,15 @@ public class GoConfigMigratorIntegrationTest {
                   </agents>\
                 """;
 
-        String configXml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-                + "<cruise schemaVersion=\"127\">\n"
-                + configContent
-                + "</cruise>";
+        String configXml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <cruise schemaVersion="127">
+            %s</cruise>
+            """.formatted(configContent);
 
         int initialAgentCountInDb = agentDao.getAllAgents().size();
         migrateConfigAndLoadTheNewConfig(configXml);
-        String newConfigFile = FileUtils.readFileToString(configFile, UTF_8);
+        String newConfigFile = Files.readString(configFile, UTF_8);
 
         // clearing out the hibernate cache so that the service fetches from the DB
         Cache cache = sessionFactory.getCache();
@@ -1411,8 +1428,8 @@ public class GoConfigMigratorIntegrationTest {
 
         Agent staticAgent = agentDao.fetchAgentFromDBByUUID("one");
 
-        assertThat(staticAgent.getResourcesAsList()).contains("repos", "db");
-        assertThat(staticAgent.getEnvironmentsAsList()).contains("foo");
+        assertThat(staticAgent.getResourcesAsStream()).contains("repos", "db");
+        assertThat(staticAgent.getEnvironmentsAsStream()).contains("foo");
         assertThat(staticAgent.getHostname()).isEqualTo("one-host");
         assertThat(staticAgent.getIpaddress()).isEqualTo("127.0.0.1");
         assertThat(staticAgent.isDisabled()).isFalse();
@@ -1429,7 +1446,7 @@ public class GoConfigMigratorIntegrationTest {
 
         Agent elasticAgent = agentDao.fetchAgentFromDBByUUID("elastic-two");
 
-        assertThat(elasticAgent.getEnvironmentsAsList()).contains("foo", "baz");
+        assertThat(elasticAgent.getEnvironmentsAsStream()).contains("foo", "baz");
         assertThat(elasticAgent.getHostname()).isEqualTo("two-elastic-host");
         assertThat(elasticAgent.getIpaddress()).isEqualTo("172.10.20.31");
         assertThat(elasticAgent.getElasticPluginId()).isEqualTo("docker");
@@ -1471,20 +1488,21 @@ public class GoConfigMigratorIntegrationTest {
                   </agents>\
                 """;
 
-        String configXml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-                + "<cruise schemaVersion=\"127\">\n"
-                + configContent
-                + "</cruise>";
+        String configXml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <cruise schemaVersion="127">
+            %s</cruise>
+            """.formatted(configContent);
 
         Agent agent = new Agent("one", "old-host", "old-ip", "cookie");
         agentDao.saveOrUpdate(agent);
 
         migrateConfigAndLoadTheNewConfig(configXml);
-        String newConfigFile = FileUtils.readFileToString(configFile, UTF_8);
+        String newConfigFile = Files.readString(configFile, UTF_8);
 
         Agent staticAgent = agentDao.fetchAgentFromDBByUUID("one");
 
-        assertThat(staticAgent.getResourcesAsList()).contains("repos", "db");
+        assertThat(staticAgent.getResourcesAsStream()).contains("repos", "db");
         assertThat(staticAgent.getEnvironments()).isEqualTo("foo");
         assertThat(staticAgent.getHostname()).isEqualTo("one-host");
         assertThat(staticAgent.getIpaddress()).isEqualTo("127.0.0.1");
@@ -1498,33 +1516,33 @@ public class GoConfigMigratorIntegrationTest {
         final String content = configWithTimerBasedPipeline(valueForOnChangesInTimer);
         CruiseConfig configAfterMigration = migrateConfigAndLoadTheNewConfig(content);
 
-        PipelineConfig pipelineConfig = configAfterMigration.pipelineConfigByName(new CaseInsensitiveString("old-timer"));
+        PipelineConfig pipelineConfig = configAfterMigration.pipelineConfigByName(cis("old-timer"));
         return pipelineConfig.getTimer();
     }
 
     private String configWithTimerBasedPipeline(String valueForOnChangesInTimer) {
-        return ConfigFileFixture.configWithPipeline("<pipeline name='old-timer'>\n"
-                + "  <timer " + valueForOnChangesInTimer + ">0 0 1 * * ?</timer>\n"
-                + "  <materials>\n"
-                + "    <git url='/tmp/git' />\n"
-                + "  </materials>\n"
-                + "  <stage name='dist'>\n"
-                + "    <jobs>\n"
-                + "      <job name='test'><tasks><exec command='echo'><runif status='passed' /></exec></tasks></job>\n"
-                + "    </jobs>\n"
-                + "  </stage>\n"
-                + "</pipeline>", 63);
+        return ConfigFileFixture.configWithPipeline("""
+            <pipeline name='old-timer'>
+              <timer %s>0 0 1 * * ?</timer>
+              <materials>
+                <git url='/tmp/git' />
+              </materials>
+              <stage name='dist'>
+                <jobs>
+                  <job name='test'><tasks><exec command='echo'><runif status='passed' /></exec></tasks></job>
+                </jobs>
+              </stage>
+            </pipeline>
+            """.formatted(valueForOnChangesInTimer), 63);
     }
 
     private CruiseConfig migrateConfigAndLoadTheNewConfig(String content) throws Exception {
-        FileUtils.writeStringToFile(configFile, content, UTF_8);
-        GoConfigHolder configHolder = goConfigMigrator.migrate();
-        assert configHolder != null;
-        return configHolder.config;
+        Files.writeString(configFile, content, UTF_8);
+        return goConfigMigrator.migrate().config;
     }
 
     private CruiseConfig loadConfigFileWithContent(String content) throws Exception {
-        FileUtils.writeStringToFile(configFile, content, UTF_8);
+        Files.writeString(configFile, content, UTF_8);
         goConfigMigrator.migrate();
         return goFileConfigDataSource.forceLoad(configFile).config;
     }

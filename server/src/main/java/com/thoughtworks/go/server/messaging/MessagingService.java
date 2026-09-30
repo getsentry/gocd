@@ -17,8 +17,6 @@ package com.thoughtworks.go.server.messaging;
 
 import com.thoughtworks.go.server.messaging.activemq.JMSMessageListenerAdapter;
 
-import javax.jms.JMSException;
-
 public interface MessagingService<T extends GoMessage> {
     MessageSender createSender(String topic);
 
@@ -26,7 +24,7 @@ public interface MessagingService<T extends GoMessage> {
 
     void removeQueue(String queueName);
 
-    void stop() throws JMSException;
+    void stop() throws Exception;
     JMSMessageListenerAdapter<T> addQueueListener(String topic, GoMessageListener<T> listener);
 
     MessageSender createQueueSender(String queueName);

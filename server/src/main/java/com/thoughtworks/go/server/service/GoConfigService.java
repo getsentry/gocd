@@ -33,30 +33,25 @@ import com.thoughtworks.go.domain.packagerepository.PackageDefinition;
 import com.thoughtworks.go.domain.packagerepository.PackageRepositories;
 import com.thoughtworks.go.domain.packagerepository.PackageRepository;
 import com.thoughtworks.go.domain.scm.SCMs;
-import com.thoughtworks.go.i18n.LocalizedMessage;
 import com.thoughtworks.go.listener.BaseUrlChangeListener;
 import com.thoughtworks.go.listener.ConfigChangedListener;
-import com.thoughtworks.go.presentation.ConfigForEdit;
-import com.thoughtworks.go.presentation.TriStateSelection;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.domain.PipelineConfigDependencyGraph;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.initializers.Initializer;
 import com.thoughtworks.go.server.security.GoAcl;
-import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
 import com.thoughtworks.go.server.service.result.LocalizedOperationResult;
-import com.thoughtworks.go.serverhealth.HealthStateScope;
-import com.thoughtworks.go.serverhealth.HealthStateType;
-import com.thoughtworks.go.service.ConfigRepository;
 import com.thoughtworks.go.util.Clock;
 import com.thoughtworks.go.util.Pair;
 import com.thoughtworks.go.util.SystemTimeClock;
 import org.dom4j.Document;
-import org.dom4j.DocumentFactory;
+import org.dom4j.DocumentException;
 import org.dom4j.Element;
 import org.dom4j.Node;
 import org.dom4j.io.SAXReader;
-import org.jdom2.input.JDOMParseException;
+import org.jdom2.JDOMException;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,13 +61,18 @@ import org.xml.sax.InputSource;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
 import java.io.StringReader;
+import java.time.Duration;
 import java.util.*;
+import java.util.stream.Stream;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.config.validation.GoConfigValidity.*;
 import static com.thoughtworks.go.i18n.LocalizedMessage.forbiddenToEditPipeline;
 import static com.thoughtworks.go.serverhealth.HealthStateScope.forPipeline;
-import static com.thoughtworks.go.serverhealth.HealthStateType.*;
+import static com.thoughtworks.go.serverhealth.HealthStateType.forbiddenForPipeline;
+import static com.thoughtworks.go.serverhealth.HealthStateType.general;
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
 import static java.lang.String.format;
 
@@ -87,30 +87,28 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
     private final GoConfigMigration upgrader;
     private final GoCache goCache;
     private final ConfigRepository configRepository;
-    private final ConfigCache configCache;
     private final GoConfigCloner cloner = new GoConfigCloner();
-    private Clock clock = new SystemTimeClock();
     private final InstanceFactory instanceFactory;
     private final MagicalGoConfigXmlLoader xmlLoader;
+
+    private Clock clock = new SystemTimeClock();
 
     @Autowired
     public GoConfigService(GoConfigDao goConfigDao,
                            GoConfigMigration upgrader,
                            GoCache goCache,
                            ConfigRepository configRepository,
-                           ConfigCache configCache,
                            ConfigElementImplementationRegistry registry,
                            InstanceFactory instanceFactory,
                            CachedGoPartials cachedGoPartials) {
         this.goConfigDao = goConfigDao;
         this.goCache = goCache;
         this.configRepository = configRepository;
-        this.configCache = configCache;
         this.registry = registry;
         this.upgrader = upgrader;
         this.instanceFactory = instanceFactory;
         this.cachedGoPartials = cachedGoPartials;
-        this.xmlLoader = new MagicalGoConfigXmlLoader(configCache, registry);
+        this.xmlLoader = new MagicalGoConfigXmlLoader(registry);
     }
 
     @TestOnly
@@ -122,13 +120,13 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
                            ConfigElementImplementationRegistry registry,
                            InstanceFactory instanceFactory,
                            CachedGoPartials cachedGoPartials) {
-        this(goConfigDao, upgrader, goCache, configRepository, new ConfigCache(), registry, instanceFactory, cachedGoPartials);
+        this(goConfigDao, upgrader, goCache, configRepository, registry, instanceFactory, cachedGoPartials);
         this.clock = clock;
     }
 
     @Override
     public void initialize() {
-        this.goConfigDao.load();
+        this.goConfigDao.currentConfig();
         register(new BaseUrlChangeListener(serverConfig().getSiteUrl(), serverConfig().getSecureSiteUrl(), goCache));
         File dir = artifactsDir();
         if (!dir.exists()) {
@@ -145,46 +143,14 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         }
     }
 
-    @Override
-    public void startDaemon() {
-
-    }
-
-    public ConfigForEdit<PipelineConfig> loadForEdit(String pipelineName,
-                                                     Username username,
-                                                     HttpLocalizedOperationResult result) {
-        if (!canEditPipeline(pipelineName, username, result)) {
-            return null;
-        }
-        GoConfigHolder configHolder = getConfigHolder();
-        configHolder = cloner.deepClone(configHolder);
-        PipelineConfig config = configHolder.configForEdit.pipelineConfigByName(new CaseInsensitiveString(pipelineName));
-        return new ConfigForEdit<>(config, configHolder);
-    }
-
     boolean canEditPipeline(String pipelineName, Username username, LocalizedOperationResult result) {
-        return canEditPipeline(pipelineName, username, result, findGroupNameByPipeline(new CaseInsensitiveString(pipelineName)));
-    }
-
-    @TestOnly
-    //do not use this method as it is coupled with the origin.
-    // ideally these should be two different checks:
-    // - pipeline is editable (Not defined in config repository)
-    // - whether a user has permissions to edit the pipeline
-    public boolean canEditPipeline(String pipelineName, Username username) {
-        PipelineConfig pipelineConfig;
-        try {
-            pipelineConfig = pipelineConfigNamed(new CaseInsensitiveString(pipelineName));
-        } catch (RecordNotFoundException e) {
-            return false;
-        }
-        return pipelineConfig != null && pipelineConfig.isLocal() && isUserAdminOfGroup(username.getUsername(), findGroupNameByPipeline(pipelineConfig.name()));
+        return canEditPipeline(pipelineName, username, result, findGroupNameByPipelineOptional(cis(pipelineName)).orElse(null));
     }
 
     public boolean canEditPipeline(String pipelineName,
                                    Username username,
                                    LocalizedOperationResult result,
-                                   String groupName) {
+                                   @Nullable String groupName) {
         if (!doesPipelineExist(pipelineName, result)) {
             return false;
         }
@@ -196,7 +162,7 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
     }
 
     public boolean doesPipelineExist(String pipelineName, LocalizedOperationResult result) {
-        if (!getCurrentConfig().hasPipelineNamed(new CaseInsensitiveString(pipelineName))) {
+        if (!getCurrentConfig().hasPipelineNamed(cis(pipelineName))) {
             result.notFound(EntityType.Pipeline.notFoundMessage(pipelineName), general(forPipeline(pipelineName)));
             return false;
         }
@@ -225,11 +191,11 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
     }
 
     CruiseConfig cruiseConfig() {
-        return goConfigDao.load();
+        return goConfigDao.currentConfig();
     }
 
     public StageConfig stageConfigNamed(String pipelineName, String stageName) {
-        return getCurrentConfig().stageConfigByName(new CaseInsensitiveString(pipelineName), new CaseInsensitiveString(stageName));
+        return getCurrentConfig().stageConfigByName(cis(pipelineName), cis(stageName));
     }
 
     public boolean hasPipelineNamed(final CaseInsensitiveString pipelineName) {
@@ -237,15 +203,11 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
     }
 
     public PipelineConfig editablePipelineConfigNamed(final String name) {
-        return getMergedConfigForEditing().pipelineConfigByName(new CaseInsensitiveString(name));
+        return getMergedConfigForEditing().pipelineConfigByName(cis(name));
     }
 
     public PipelineConfig pipelineConfigNamed(final CaseInsensitiveString name) {
         return getCurrentConfig().pipelineConfigByName(name);
-    }
-
-    public boolean stageHasTests(String pipelineName, String stageName) {
-        return stageConfigNamed(pipelineName, stageName).hasTests();
     }
 
     public boolean stageExists(String pipelineName, String stageName) {
@@ -257,35 +219,29 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         }
     }
 
-    public String fileLocation() {
-        return goConfigDao.fileLocation();
-    }
-
     public File artifactsDir() {
         ServerConfig serverConfig = serverConfig();
         String s = serverConfig.artifactsDir();
         return new File(s);
     }
 
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean hasStageConfigNamed(String pipelineName, String stageName) {
-        return getCurrentConfig().hasStageConfigNamed(new CaseInsensitiveString(pipelineName), new CaseInsensitiveString(stageName), true);
+        return getCurrentConfig().hasStageConfigNamed(cis(pipelineName), cis(stageName), true);
     }
 
-    public ConfigSaveState updateConfig(UpdateConfigCommand command) {
-        return goConfigDao.updateConfig(command);
+    public void updateConfig(UpdateConfigCommand command) {
+        goConfigDao.updateConfig(command);
     }
 
     public void updateConfig(EntityConfigUpdateCommand<?> command, Username currentUser) {
         goConfigDao.updateConfig(command, currentUser);
     }
 
-    public long getUnresponsiveJobTerminationThreshold(JobIdentifier identifier) {
+    public Duration getUnresponsiveJobTerminationThreshold(JobIdentifier identifier) {
         JobConfig jobConfig = getJob(identifier);
-        if (jobConfig == null) {
-            return toMillis(Long.parseLong(serverConfig().getJobTimeout()));
-        }
-        String timeout = jobConfig.getTimeout();
-        return timeout != null ? toMillis(Long.parseLong(timeout)) : toMillis(Long.parseLong(serverConfig().getJobTimeout()));
+        String jobTimeout = jobConfig != null ? jobConfig.getTimeout() : null;
+        return Duration.ofMinutes(Long.parseLong(jobTimeout != null ? jobTimeout : serverConfig().getJobTimeout()));
     }
 
     private JobConfig getJob(JobIdentifier identifier) {
@@ -295,10 +251,6 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         } catch (Exception ignored) {
         }
         return jobConfig;
-    }
-
-    private long toMillis(final long minutes) {
-        return minutes * 60 * 1000;
     }
 
     public boolean canCancelJobIfHung(JobIdentifier jobIdentifier) {
@@ -316,57 +268,13 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         return timeout != null;
     }
 
-    @TestOnly
-    public ConfigSaveState updateServerConfig(final MailHost mailHost,
-                                              final String md5,
-                                              final String artifactsDir,
-                                              final Double purgeStart,
-                                              final Double purgeUpto,
-                                              final String jobTimeout,
-                                              final String siteUrl,
-                                              final String secureSiteUrl) {
-        final List<ConfigSaveState> result = new ArrayList<>();
-        result.add(updateConfig(
-                new GoConfigDao.NoOverwriteCompositeConfigCommand(md5,
-                        goConfigDao.mailHostUpdater(mailHost),
-                        serverConfigUpdater(artifactsDir, purgeStart, purgeUpto, jobTimeout, siteUrl, secureSiteUrl))));
-        //should not reach here with empty result
-        return result.get(0);
-    }
-
-    @TestOnly
-    private UpdateConfigCommand serverConfigUpdater(final String artifactsDir,
-                                                    final Double purgeStart,
-                                                    final Double purgeUpto,
-                                                    final String jobTimeout,
-                                                    final String siteUrl,
-                                                    final String secureSiteUrl) {
-        return cruiseConfig -> {
-            ServerConfig server = cruiseConfig.server();
-            server.setArtifactsDir(artifactsDir);
-            server.setPurgeLimits(purgeStart, purgeUpto);
-            server.setJobTimeout(jobTimeout);
-            server.setSiteUrl(siteUrl);
-            server.setSecureSiteUrl(secureSiteUrl);
-            return cruiseConfig;
-        };
-    }
-
-    public void addEnvironment(EnvironmentConfig environmentConfig) {
-        goConfigDao.addEnvironment(environmentConfig);
-    }
-
-    public void addPipeline(PipelineConfig pipeline, String groupName) {
-        goConfigDao.addPipeline(pipeline, groupName);
-    }
-
     public void register(ConfigChangedListener listener) {
         goConfigDao.registerListener(listener);
     }
 
     GoAcl readAclBy(String pipelineName, String stageName) {
-        PipelineConfig pipelineConfig = pipelineConfigNamed(new CaseInsensitiveString(pipelineName));
-        StageConfig stageConfig = pipelineConfig.findBy(new CaseInsensitiveString(stageName));
+        PipelineConfig pipelineConfig = pipelineConfigNamed(cis(pipelineName));
+        StageConfig stageConfig = pipelineConfig.findBy(cis(stageName));
         AdminsConfig adminsConfig = stageConfig.getApproval().getAuthConfig();
         List<CaseInsensitiveString> users = getAuthorizedUsers(adminsConfig);
         return new GoAcl(users);
@@ -397,10 +305,8 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         return GoSmtpMailSender.createSender(serverConfig().mailHost());
     }
 
-    public List<String> allGroups() {
-        List<String> allGroup = new ArrayList<>();
-        getCurrentConfig().groups(allGroup);
-        return allGroup;
+    public List<String> allGroupNames() {
+        return getCurrentConfig().getGroups().stream().map(PipelineConfigs::getGroup).toList();
     }
 
     public PipelineGroups groups() {
@@ -415,20 +321,20 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         return currentCruiseConfig().isSmtpEnabled();
     }
 
-    public void accept(PipelineConfigVisitor visitor) {
-        getCurrentConfig().accept(visitor);
+    public @NotNull String findGroupNameByPipeline(@NotNull CaseInsensitiveString pipelineName) {
+        return getCurrentConfig().getGroups().findGroupByPipeline(pipelineName).getGroup();
     }
 
-    public void accept(PipelineGroupVisitor visitor) {
-        getCurrentConfig().accept(visitor);
+    public @NotNull Optional<String> findGroupNameByPipelineOptional(@NotNull CaseInsensitiveString pipelineName) {
+        return getCurrentConfig().getGroups().findGroupByPipelineOptional(pipelineName).map(PipelineConfigs::getGroup);
     }
 
-    public String findGroupNameByPipeline(final CaseInsensitiveString pipelineName) {
-        return getCurrentConfig().getGroups().findGroupNameByPipeline(pipelineName);
-    }
-
-    public PipelineConfigs findGroupByPipeline(CaseInsensitiveString pipelineName) {
+    public @NotNull PipelineConfigs findGroupByPipeline(CaseInsensitiveString pipelineName) {
         return getCurrentConfig().getGroups().findGroupByPipeline(pipelineName);
+    }
+
+    public @NotNull Optional<PipelineConfigs> findGroupByPipelineOptional(CaseInsensitiveString pipelineName) {
+        return getCurrentConfig().getGroups().findGroupByPipelineOptional(pipelineName);
     }
 
     public MailHost getMailHost() {
@@ -436,11 +342,11 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
     }
 
     public JobConfigIdentifier translateToActualCase(JobConfigIdentifier identifier) {
-        PipelineConfig pipelineConfig = getCurrentConfig().pipelineConfigByName(new CaseInsensitiveString(identifier.getPipelineName()));
+        PipelineConfig pipelineConfig = getCurrentConfig().pipelineConfigByName(cis(identifier.getPipelineName()));
         String translatedPipelineName = CaseInsensitiveString.str(pipelineConfig.name());
-        StageConfig stageConfig = pipelineConfig.findBy(new CaseInsensitiveString(identifier.getStageName()));
+        StageConfig stageConfig = pipelineConfig.findBy(cis(identifier.getStageName()));
         if (stageConfig == null) {
-            throw new StageNotFoundException(new CaseInsensitiveString(identifier.getPipelineName()), new CaseInsensitiveString(identifier.getStageName()));
+            throw new StageNotFoundException(cis(identifier.getPipelineName()), cis(identifier.getStageName()));
         }
         String translatedStageName = CaseInsensitiveString.str(stageConfig.name());
         JobConfig plan = stageConfig.jobConfigByInstanceName(identifier.getJobName(), true);
@@ -456,7 +362,7 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
     }
 
     public CommentRenderer getCommentRendererFor(String pipelineName) {
-        return pipelineConfigNamed(new CaseInsensitiveString(pipelineName)).getCommentRenderer();
+        return pipelineConfigNamed(cis(pipelineName)).getCommentRenderer();
     }
 
     public List<PipelineConfig> getAllPipelineConfigs() {
@@ -468,18 +374,6 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
      */
     public List<PipelineConfig> getAllLocalPipelineConfigs() {
         return getCurrentConfig().getAllLocalPipelineConfigs(true);
-    }
-
-    public List<PipelineConfig> getAllPipelineConfigsForEditForUser(Username username) {
-        List<PipelineConfig> pipelineConfigs = new ArrayList<>();
-
-        List<String> groupsForUser = getConfigForEditing().getGroupsForUser(username.getUsername(), rolesForUser(username.getUsername()));
-
-        for (String groupName : groupsForUser) {
-            pipelineConfigs.addAll(getAllPipelinesForEditInGroup(groupName).getPipelines());
-        }
-
-        return pipelineConfigs;
     }
 
     public String adminEmail() {
@@ -506,8 +400,8 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         HashSet<DependencyMaterialConfig> dependencyMaterials = new HashSet<>();
 
         for (MaterialConfig materialConfig : getSchedulableMaterials()) {
-            if (materialConfig instanceof DependencyMaterialConfig) {
-                dependencyMaterials.add((DependencyMaterialConfig) materialConfig);
+            if (materialConfig instanceof DependencyMaterialConfig dependencyMaterialConfig) {
+                dependencyMaterials.add(dependencyMaterialConfig);
             }
         }
 
@@ -515,8 +409,8 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
     }
 
     public Stage scheduleStage(String pipelineName, String stageName, SchedulingContext context) {
-        PipelineConfig pipelineConfig = getCurrentConfig().pipelineConfigByName(new CaseInsensitiveString(pipelineName));
-        return instanceFactory.createStageInstance(pipelineConfig, new CaseInsensitiveString(stageName), context, getCurrentConfig().getMd5(), clock);
+        PipelineConfig pipelineConfig = getCurrentConfig().pipelineConfigByName(cis(pipelineName));
+        return instanceFactory.createStageInstance(pipelineConfig, cis(stageName), context, getCurrentConfig().getMd5(), clock);
     }
 
     public MaterialConfig findMaterial(final CaseInsensitiveString pipeline, String pipelineUniqueFingerprint) {
@@ -562,7 +456,7 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
     }
 
     public MaterialConfig materialForPipelineWithFingerprint(String pipelineName, String fingerprint) {
-        for (MaterialConfig materialConfig : pipelineConfigNamed(new CaseInsensitiveString(pipelineName)).materialConfigs()) {
+        for (MaterialConfig materialConfig : pipelineConfigNamed(cis(pipelineName)).materialConfigs()) {
             if (materialConfig.getFingerprint().equals(fingerprint)) {
                 return materialConfig;
             }
@@ -578,31 +472,8 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         return getCurrentConfig().isPipelineUnlockableWhenFinished(pipelineName);
     }
 
-    public GoConfigDao.CompositeConfigCommand modifyRolesCommand(List<String> users,
-                                                                 List<TriStateSelection> roleSelections) {
-        GoConfigDao.CompositeConfigCommand command = new GoConfigDao.CompositeConfigCommand();
-        for (String user : users) {
-            for (TriStateSelection roleSelection : roleSelections) {
-                command.addCommand(new GoConfigDao.ModifyRoleCommand(user, roleSelection));
-            }
-        }
-        return command;
-    }
-
-    public UpdateConfigCommand modifyAdminPrivilegesCommand(List<String> users, TriStateSelection adminPrivilege) {
-        GoConfigDao.CompositeConfigCommand command = new GoConfigDao.CompositeConfigCommand();
-        for (String user : users) {
-            command.addCommand(new GoConfigDao.ModifyAdminPrivilegeCommand(user, adminPrivilege));
-        }
-        return command;
-    }
-
-    public List<String> getResourceList() {
-        List<String> resources = new ArrayList<>();
-        for (ResourceConfig res : getCurrentConfig().getAllResources()) {
-            resources.add(res.getName());
-        }
-        return resources;
+    public Stream<String> getResourceNames() {
+        return getCurrentConfig().getAllResources().stream().map(ResourceConfig::getName);
     }
 
     public List<CaseInsensitiveString> pipelines(String group) {
@@ -612,10 +483,6 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
             pipelines.add(config.name());
         }
         return pipelines;
-    }
-
-    public PipelineConfigs getAllPipelinesForEditInGroup(String group) {
-        return getConfigForEditing().pipelines(group);
     }
 
     public GoConfigValidity checkConfigFileValid() {
@@ -634,17 +501,12 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         return getCurrentConfig().server();
     }
 
-    public boolean hasNextStage(String pipelineName, String lastStageName) {
-        return getCurrentConfig().hasNextStage(new CaseInsensitiveString(pipelineName), new CaseInsensitiveString(lastStageName));
-    }
-
-    public boolean hasPreviousStage(String pipelineName, String lastStageName) {
-        return getCurrentConfig().hasPreviousStage(new CaseInsensitiveString(pipelineName), new CaseInsensitiveString(lastStageName));
+    public boolean hasNextStage(String pipelineName, String stageName) {
+        return getCurrentConfig().hasNextStage(cis(pipelineName), cis(stageName));
     }
 
     public boolean isFirstStage(String pipelineName, String stageName) {
-        boolean hasPreviousStage = getCurrentConfig().hasPreviousStage(new CaseInsensitiveString(pipelineName), new CaseInsensitiveString(stageName));
-        return !hasPreviousStage;
+        return !getCurrentConfig().hasPreviousStage(cis(pipelineName), cis(stageName));
     }
 
     public boolean requiresApproval(final CaseInsensitiveString pipelineName, final CaseInsensitiveString stageName) {
@@ -652,15 +514,15 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
     }
 
     public StageConfig findFirstStageOfPipeline(final CaseInsensitiveString pipelineName) {
-        return getCurrentConfig().pipelineConfigByName(pipelineName).first();
+        return getCurrentConfig().pipelineConfigByName(pipelineName).getFirst();
     }
 
     public StageConfig nextStage(String pipelineName, String lastStageName) {
-        return getCurrentConfig().nextStage(new CaseInsensitiveString(pipelineName), new CaseInsensitiveString(lastStageName));
+        return getCurrentConfig().nextStage(cis(pipelineName), cis(lastStageName));
     }
 
     public StageConfig previousStage(String pipelineName, String lastStageName) {
-        return getCurrentConfig().previousStage(new CaseInsensitiveString(pipelineName), new CaseInsensitiveString(lastStageName));
+        return getCurrentConfig().previousStage(cis(pipelineName), cis(lastStageName));
     }
 
     public Tabs getCustomizedTabs(String pipelineName, String stageName, String buildName) {
@@ -680,20 +542,6 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         return new XmlPartialFileSaver(shouldUpgrade, registry);
     }
 
-    public String configFileMd5() {
-        return goConfigDao.md5OfConfigFile();
-    }
-
-    public List<PipelineConfig> downstreamPipelinesOf(String pipelineName) {
-        List<PipelineConfig> dependencies = new ArrayList<>();
-        for (PipelineConfig config : getAllPipelineConfigs()) {
-            if (config.dependsOn(new CaseInsensitiveString(pipelineName))) {
-                dependencies.add(config);
-            }
-        }
-        return dependencies;
-    }
-
     public boolean hasVariableInScope(String pipelineName, String variableName) {
         return cruiseConfig().hasVariableInScope(pipelineName, variableName);
     }
@@ -708,7 +556,7 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
     }
 
     public PipelineConfigDependencyGraph upstreamDependencyGraphOf(String pipelineName, CruiseConfig currentConfig) {
-        return findUpstream(currentConfig.pipelineConfigByName(new CaseInsensitiveString(pipelineName)));
+        return findUpstream(currentConfig.pipelineConfigByName(cis(pipelineName)));
     }
 
     private PipelineConfigDependencyGraph findUpstream(PipelineConfig currentPipeline) {
@@ -736,74 +584,23 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         return getCurrentConfig().getEnvironments().hasEnvironmentNamed(environmentName);
     }
 
-    public boolean shouldFetchMaterials(String pipelineName, String stageName) {
-        return stageConfigNamed(pipelineName, stageName).isFetchMaterials();
-    }
-
-    public boolean isUserAdminOfGroup(final CaseInsensitiveString userName, String groupName) {
+    public boolean isUserAdminOfGroup(final CaseInsensitiveString userName, @Nullable String groupName) {
         if (!isSecurityEnabled()) {
             return true;
         }
-        PipelineConfigs group = null;
-        if (groupName != null) {
-            group = getCurrentConfig().findGroup(groupName);
-        }
+
+        // Ensure group exists
+        PipelineConfigs group = groupName == null ? null : getCurrentConfig().findGroup(groupName);
+
         return isUserAdmin(new Username(userName)) || isUserAdminOfGroup(userName, group);
     }
 
-    public boolean isUserAdminOfGroup(final CaseInsensitiveString userName, PipelineConfigs group) {
+    public boolean isUserAdminOfGroup(final CaseInsensitiveString userName, @Nullable PipelineConfigs group) {
         return group != null && group.isUserAnAdmin(userName, rolesForUser(userName));
     }
 
     public boolean isUserAdmin(Username username) {
         return isAdministrator(CaseInsensitiveString.str(username.getUsername()));
-    }
-
-    private boolean isUserTemplateAdmin(Username username) {
-        return getCurrentConfig().getTemplates().canViewAndEditTemplate(username.getUsername(), rolesForUser(username.getUsername()));
-    }
-
-    public GoConfigRevision getConfigAtVersion(String version) {
-        GoConfigRevision goConfigRevision = null;
-        try {
-            goConfigRevision = configRepository.getRevision(version);
-        } catch (Exception e) {
-            LOGGER.info("[Go Config Service] Could not fetch cruise config xml at version={}", version, e);
-        }
-        return goConfigRevision;
-    }
-
-    public List<PipelineConfig> pipelinesForFetchArtifacts(String pipelineName) {
-        return currentCruiseConfig().pipelinesForFetchArtifacts(pipelineName);
-    }
-
-    private boolean isValidGroup(String groupName, CruiseConfig cruiseConfig, HttpLocalizedOperationResult result) {
-        if (!cruiseConfig.hasPipelineGroup(groupName)) {
-            result.notFound(EntityType.PipelineGroup.notFoundMessage(groupName), HealthStateType.general(HealthStateScope.forGroup(groupName)));
-            return false;
-        }
-        return true;
-    }
-
-    private boolean isAdminOfGroup(String toGroupName, Username username, HttpLocalizedOperationResult result) {
-        if (!isUserAdminOfGroup(username.getUsername(), toGroupName)) {
-            result.forbidden(EntityType.PipelineGroup.forbiddenToEdit(toGroupName, username.getUsername()), forbidden());
-            return false;
-        }
-        return true;
-    }
-
-    @Deprecated
-    public GoConfigHolder getConfigHolder() {
-        return goConfigDao.loadConfigHolder();
-    }
-
-    @TestOnly
-    public CruiseConfig loadCruiseConfigForEdit(Username username, HttpLocalizedOperationResult result) {
-        if (!isUserAdmin(username) && !isUserTemplateAdmin(username)) {
-            result.forbidden(LocalizedMessage.forbiddenToEdit(), HealthStateType.forbidden());
-        }
-        return clonedConfigForEdit();
     }
 
     public CruiseConfig clonedConfigForEdit() {
@@ -819,29 +616,11 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         return config;
     }
 
-    public ConfigForEdit<PipelineConfigs> loadGroupForEditing(String groupName,
-                                                              Username username,
-                                                              HttpLocalizedOperationResult result) {
-        GoConfigHolder configForEdit = cloner.deepClone(getConfigHolder());
-        if (!isValidGroup(groupName, configForEdit.configForEdit, result)) {
-            return null;
-        }
-
-        if (!isAdminOfGroup(groupName, username, result)) {
-            return null;
-        }
-        PipelineConfigs config = cloner.deepClone(configForEdit.configForEdit.findGroup(groupName));
-        return new ConfigForEdit<>(config, configForEdit);
-    }
-
-    public boolean doesMd5Match(String md5) {
-        return configFileMd5().equals(md5);
-    }
-
     public String getServerId() {
         return serverConfig().getServerId();
     }
 
+    @SuppressWarnings("unused") // Used by Rails code
     public String configChangesFor(String laterMd5, String earlierMd5, LocalizedOperationResult result) {
         try {
             return configRepository.configChangesFor(laterMd5, earlierMd5);
@@ -854,7 +633,7 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
     }
 
     public boolean isPipelineEditable(String pipelineName) {
-        return isPipelineEditable(new CaseInsensitiveString(pipelineName));
+        return isPipelineEditable(cis(pipelineName));
     }
 
     public boolean isPipelineEditable(CaseInsensitiveString pipelineName) {
@@ -881,7 +660,7 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
     }
 
     public PackageRepository getPackageRepository(String repoId) {
-        return cruiseConfig().getPackageRepositories().find(repoId);
+        return cruiseConfig().getPackageRepositories().findByRepoId(repoId);
     }
 
     public PackageRepositories getPackageRepositories() {
@@ -915,7 +694,7 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
     private String configAsXml(CruiseConfig cruiseConfig) {
         final ByteArrayOutputStream outStream = new ByteArrayOutputStream();
         try {
-            new MagicalGoConfigXmlWriter(configCache, registry).write(cruiseConfig, outStream, true);
+            new MagicalGoConfigXmlWriter(registry).write(cruiseConfig, outStream, true);
             return outStream.toString();
         } catch (Exception e) {
             throw bomb(e);
@@ -927,23 +706,20 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         goConfigDao.reloadListeners();
     }
 
-    public ConfigElementImplementationRegistry getRegistry() {
-        return registry;
-    }
-
-    public PipelineConfig findPipelineByName(CaseInsensitiveString pipelineName) {
-        List<PipelineConfig> pipelineConfigs = getAllPipelineConfigs()
-                .stream()
-                .filter((pipelineConfig) -> pipelineConfig.getName().equals(pipelineName))
-                .toList();
-        if (!pipelineConfigs.isEmpty()) {
-            return pipelineConfigs.get(0);
-        }
-        return null;
+    public @Nullable PipelineConfig findPipelineByName(CaseInsensitiveString pipelineName) {
+        return getAllPipelineConfigs()
+            .stream()
+            .filter(pipelineConfig -> pipelineConfig.getName().equals(pipelineName))
+            .findFirst()
+            .orElse(null);
     }
 
     public SecretConfig getSecretConfigById(String secretConfigId) {
         return this.cruiseConfig().getSecretConfigs().find(secretConfigId);
+    }
+
+    PipelineTemplateConfig findTemplateByName(CaseInsensitiveString templateName) {
+        return goConfigDao.loadConfigHolder().configForEdit.findTemplate(templateName);
     }
 
     public abstract class XmlPartialSaver<T> {
@@ -957,12 +733,12 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
             reader.setEntityResolver((publicId, systemId) -> new InputSource(new StringReader("")));
         }
 
-        protected ConfigSaveState updatePartial(String xmlPartial, final String md5) throws Exception {
+        protected ConfigSaveState updatePartial(String xmlPartial, final String md5) throws IOException, JDOMException, DocumentException {
             LOGGER.debug("[Config Save] Updating partial");
             Document document = documentRoot();
             Element root = document.getRootElement();
 
-            Element configElement = ((Element) root.selectSingleNode(getXpath()));
+            Element configElement = (Element) root.selectSingleNode(getXpath());
             List<Node> nodes = configElement.getParent().content();
             int index = nodes.indexOf(configElement);
 
@@ -974,9 +750,9 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
 
         }
 
-        protected ConfigSaveState saveConfig(final String xmlString, final String md5) throws Exception {
+        protected ConfigSaveState saveConfig(final String xmlString, final String md5) throws JDOMException {
             LOGGER.debug("[Config Save] Started saving XML");
-            final MagicalGoConfigXmlLoader configXmlLoader = new MagicalGoConfigXmlLoader(configCache, registry);
+            final MagicalGoConfigXmlLoader configXmlLoader = new MagicalGoConfigXmlLoader(registry);
 
             LOGGER.debug("[Config Save] Updating config");
             final CruiseConfig deserializedConfig = configXmlLoader.deserializeConfig(xmlString);
@@ -992,22 +768,17 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
             return goConfigDao.updateFullConfig(new FullConfigUpdateCommand(cruiseConfig, md5));
         }
 
-        protected Document documentRoot() throws Exception {
+        protected Document documentRoot() throws IOException, JDOMException, DocumentException {
             CruiseConfig cruiseConfig = goConfigDao.loadForEditing();
             ByteArrayOutputStream out = new ByteArrayOutputStream();
-            new MagicalGoConfigXmlWriter(configCache, registry).write(cruiseConfig, out, true);
-            Document document = reader.read(new StringReader(out.toString()));
-            Map<String, String> map = new HashMap<>();
-            map.put("go", MagicalGoConfigXmlWriter.XML_NS);
-            DocumentFactory factory = DocumentFactory.getInstance();
-            factory.setXPathNamespaceURIs(map);
-            return document;
+            new MagicalGoConfigXmlWriter(registry).write(cruiseConfig, out, true);
+            return reader.read(new StringReader(out.toString()));
         }
 
         protected abstract T valid();
 
         public String asXml() {
-            return new MagicalGoConfigXmlWriter(configCache, registry).toXmlPartial(valid());
+            return new MagicalGoConfigXmlWriter(registry).toXmlPartial(valid());
         }
 
         public GoConfigValidity saveXml(String xmlPartial, String expectedMd5) {
@@ -1018,19 +789,24 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
 
             try {
                 return GoConfigValidity.valid(updatePartial(xmlPartial, expectedMd5));
-            } catch (JDOMParseException jsonException) {
+            } catch (JDOMException jsonException) {
                 return fromConflict(String.format("%s - %s", INVALID_CRUISE_CONFIG_XML, jsonException.getMessage()));
-            } catch (ConfigMergePreValidationException e) {
-                return mergePreValidationError(e.getMessage());
             } catch (Exception e) {
-                if (e.getCause() instanceof ConfigMergePostValidationException) {
-                    return mergePostValidationError(e.getCause().getMessage());
-                }
-                if (e.getCause() instanceof ConfigMergeException) {
-                    return mergeConflict(e.getCause().getMessage());
-                }
-                return fromConflict(e.getMessage());
+                return toMergeInvalidResult(e)
+                    .or(() -> toMergeInvalidResult(e.getCause()))
+                    .orElseGet(() -> fromConflict(e.getMessage()));
             }
+        }
+
+        private static @NotNull Optional<InvalidGoConfig> toMergeInvalidResult(Throwable e) {
+            if (e instanceof ConfigMergePreValidationException) {
+                return Optional.of(mergePreValidationError(e.getMessage()));
+            } else if (e instanceof ConfigMergePostValidationException) {
+                return Optional.of(mergePostValidationError(e.getMessage()));
+            } else if (e instanceof ConfigMergeException) {
+                return Optional.of(mergeConflict(e.getMessage()));
+            }
+            return Optional.empty();
         }
 
         private GoConfigValidity checkValidity() {
@@ -1067,7 +843,7 @@ public class GoConfigService implements Initializer, CruiseConfigProvider {
         }
 
         @Override
-        protected ConfigSaveState updatePartial(String xmlFile, final String md5) throws Exception {
+        protected ConfigSaveState updatePartial(String xmlFile, final String md5) throws JDOMException {
             if (shouldUpgrade) {
                 xmlFile = upgrader.upgradeIfNecessary(xmlFile);
             }

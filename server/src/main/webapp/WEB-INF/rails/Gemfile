@@ -1,16 +1,24 @@
 source 'https://rubygems.org'
-ruby '3.1.4'
+ruby '~> 3.1.0'
 
 platforms :jruby do
-  gem 'rails', '~> 7.0.8'
+  RAILS_VERSION = '~> 7.2.0'
+  RACK_VERSION = '~> 2.2.24' # Keep the Rack 2 interface used by the servlet bridge.
+
+  gem 'railties', RAILS_VERSION
+  gem 'irb', path: '.bundle/vendor/irb-stub', require: false # Stub 'irb' from railties; since we should not need it.
+  gem 'activesupport', RAILS_VERSION
+  gem 'actionpack', RAILS_VERSION
+  gem 'actionview', RAILS_VERSION
   gem 'sprockets-rails'
+  gem 'rack', RACK_VERSION
 
   # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
   gem 'tzinfo-data', platforms: [:mingw, :mswin, :x64_mingw, :jruby]
 
   group :assets do
     gem 'dartsass-sprockets'
-    gem 'js-routes'
+    gem 'js-routes', '~> 1.4'
     gem 'ts_routes'
   end
 

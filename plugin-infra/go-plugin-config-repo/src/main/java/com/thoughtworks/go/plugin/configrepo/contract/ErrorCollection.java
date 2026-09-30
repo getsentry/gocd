@@ -29,9 +29,9 @@ public class ErrorCollection {
     @Override
     public String toString() {
         StringBuilder builder = new StringBuilder();
-        if (this.isEmpty())
+        if (this.isEmpty()) {
             builder.append("No errors");
-        else {
+        } else {
             builder.append(this.getErrorCount());
             builder.append(" errors in partial configuration");
         }
@@ -60,6 +60,7 @@ public class ErrorCollection {
                 sb.append('\n').append("  ").append('-').append(' ').append(message);
             }
             if (it.hasNext()) {
+                //noinspection TextBlockMigration
                 sb.append("\n\n");
             }
         }
@@ -69,22 +70,18 @@ public class ErrorCollection {
     public String getErrorsAsText() {
         StringBuilder errorsBuilder = new StringBuilder();
         for (Map.Entry<String, List<String>> entry : this.errors.entrySet()) {
-            errorsBuilder.append('\n');
             errorsBuilder.append(entry.getKey()).append(';');
 
             for (int i = 1; i <= entry.getValue().size(); i++) {
                 errorsBuilder.append('\n').append(i).append(". ").append(entry.getValue().get(i - 1));
             }
-            errorsBuilder.append("\n");
+            errorsBuilder.append('\n');
         }
         return errorsBuilder.toString();
     }
 
     public List<String> getOrCreateErrorList(String location) {
-        if (!errors.containsKey(location))
-            errors.put(location, new ArrayList<>());
-
-        return errors.get(location);
+        return errors.computeIfAbsent(location, k -> new ArrayList<>());
     }
 
     public void checkMissing(String location, String fieldName, Object value) {

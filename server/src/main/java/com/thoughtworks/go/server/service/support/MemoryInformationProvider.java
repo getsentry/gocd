@@ -30,12 +30,11 @@ public class MemoryInformationProvider extends AbstractMemoryInformationProvider
     }
 
     @Override
-    public Map<String, Object> asJson() {
+    public Map<String, Object> asJsonCompatibleMap() {
         MemoryMXBean memoryMXBean = ManagementFactory.getMemoryMXBean();
         LinkedHashMap<String, Object> json = new LinkedHashMap<>();
         json.put("Heap", formatInJson(memoryMXBean.getHeapMemoryUsage()));
         json.put("Non Heap", formatInJson(memoryMXBean.getNonHeapMemoryUsage()));
-        json.put("Pending Finalization", memoryMXBean.getObjectPendingFinalizationCount());
         return json;
     }
 

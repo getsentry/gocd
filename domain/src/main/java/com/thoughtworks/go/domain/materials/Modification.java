@@ -20,15 +20,16 @@ import com.thoughtworks.go.domain.MaterialInstance;
 import com.thoughtworks.go.domain.ModificationVisitor;
 import com.thoughtworks.go.domain.PersistentObject;
 import com.thoughtworks.go.domain.materials.mercurial.StringRevision;
-import com.thoughtworks.go.util.GoConstants;
 import com.thoughtworks.go.util.json.JsonHelper;
-import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.TestOnly;
 
 import java.io.Serializable;
-import java.text.SimpleDateFormat;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.regex.Matcher;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 /**
  * data structure for holding data about a single modification
@@ -40,10 +41,7 @@ import java.util.regex.Matcher;
  * </modification>
  */
 public class Modification extends PersistentObject implements Comparable<Modification>, Serializable {
-
-    private static final long serialVersionUID = 6102576575583133520L;
-
-    public static final Modification NEVER = new Modification(GoConstants.NEVER);
+    private static final DateTimeFormatter TO_STRING_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss").withZone(ZoneOffset.systemDefault());
     public static final String ANONYMOUS = "anonymous";
 
     private String userName;
@@ -115,7 +113,7 @@ public class Modification extends PersistentObject implements Comparable<Modific
 
     public void setAdditionalData(String additionalData) {
         this.additionalData = additionalData;
-        this.additionalDataMap = JsonHelper.safeFromJson(this.additionalData, new TypeToken<HashMap<String, String>>() {}.getType());
+        this.additionalDataMap = JsonHelper.safeFromJsonExposeOnly(this.additionalData, new TypeToken<HashMap<String, String>>() {}.getType());
     }
 
     public void setUserName(String name) {
@@ -166,7 +164,7 @@ public class Modification extends PersistentObject implements Comparable<Modific
     }
 
     public String getUserDisplayName() {
-        return StringUtils.isBlank(userName) ? ANONYMOUS : userName;
+        return isBlank(userName) ? ANONYMOUS : userName;
     }
 
     public String getRevision() {
@@ -183,14 +181,11 @@ public class Modification extends PersistentObject implements Comparable<Modific
 
     @Override
     public String toString() {
-        SimpleDateFormat formatter =
-            new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
         StringBuilder sb = new StringBuilder();
         if (materialInstance != null) {
             sb.append("Material: ").append(materialInstance).append('\n');
         }
-        String timeString = modifiedTime == null ? "" : formatter.format(modifiedTime);
-        sb.append("Last Modified: ").append(timeString).append('\n');
+        sb.append("Last Modified: ").append(modifiedTime == null ? "" : TO_STRING_FORMAT.format(modifiedTime.toInstant())).append('\n');
         sb.append("Revision: ").append(revision).append('\n');
         sb.append("UserName: ").append(userName).append('\n');
         sb.append("EmailAddress: ").append(emailAddress).append('\n');
@@ -203,7 +198,7 @@ public class Modification extends PersistentObject implements Comparable<Modific
         if (modifications.isEmpty()) {
             throw new RuntimeException("Cannot find latest revision.");
         } else {
-            return new StringRevision(modifications.get(0).getRevision());
+            return new StringRevision(modifications.getFirst().getRevision());
         }
     }
 
@@ -219,12 +214,9 @@ public class Modification extends PersistentObject implements Comparable<Modific
         if (this == o) {
             return true;
         }
-        if (!(o instanceof Modification that)) {
-            return false;
-        }
-
         // Doesn't include additionalDataMap or materialInstance
-        return Objects.equals(userName, that.userName) &&
+        return o instanceof Modification that &&
+            Objects.equals(userName, that.userName) &&
             Objects.equals(comment, that.comment) &&
             Objects.equals(emailAddress, that.emailAddress) &&
             Objects.equals(revision, that.revision) &&
@@ -299,7 +291,7 @@ public class Modification extends PersistentObject implements Comparable<Modific
         if (modifications.isEmpty()) {
             throw new RuntimeException("Cannot find oldest revision.");
         } else {
-            return new StringRevision(modifications.get(modifications.size() - 1).getRevision());
+            return new StringRevision(modifications.getLast().getRevision());
         }
     }
 

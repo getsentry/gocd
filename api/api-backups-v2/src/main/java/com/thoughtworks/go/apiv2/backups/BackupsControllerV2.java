@@ -17,13 +17,14 @@ package com.thoughtworks.go.apiv2.backups;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv2.backups.representers.BackupRepresenter;
 import com.thoughtworks.go.config.exceptions.BadRequestException;
 import com.thoughtworks.go.config.exceptions.EntityType;
 import com.thoughtworks.go.config.exceptions.RecordNotFoundException;
 import com.thoughtworks.go.server.domain.ServerBackup;
 import com.thoughtworks.go.server.service.BackupService;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.RequestContext;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
@@ -44,13 +45,13 @@ public class BackupsControllerV2 extends ApiController implements SparkSpringCon
     private static final String RETRY_INTERVAL_IN_SECONDS = "5";
     private static final String RUNNING = "running";
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final BackupService backupService;
 
     @Autowired
-    public BackupsControllerV2(ApiAuthenticationHelper apiAuthenticationHelper, BackupService backupService) {
+    public BackupsControllerV2(ApiAuthorizationHelper apiAuthorizationHelper, BackupService backupService) {
         super(ApiVersion.v2);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.backupService = backupService;
     }
 
@@ -60,15 +61,15 @@ public class BackupsControllerV2 extends ApiController implements SparkSpringCon
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
 
             before("", mimeType, this::verifyContentType);
 
-            before("", this.mimeType, this.apiAuthenticationHelper::checkAdminUserAnd403);
-            before("/*", this.mimeType, this.apiAuthenticationHelper::checkAdminUserAnd403);
+            before("", this.mimeType, this.apiAuthorizationHelper::checkAdminUserAnd403);
+            before("/*", this.mimeType, this.apiAuthorizationHelper::checkAdminUserAnd403);
 
             post("", mimeType, this::create);
             get(ID_PATH, mimeType, this::show);
@@ -78,7 +79,7 @@ public class BackupsControllerV2 extends ApiController implements SparkSpringCon
     public String create(Request request, Response response) {
         ServerBackup backup = backupService.scheduleBackup(currentUsername());
         RequestContext requestContext = RequestContext.requestContext(request);
-        String backupPath = requestContext.pathWithContext(Routes.Backups.serverBackup(String.valueOf(backup.getId())));
+        String backupPath = requestContext.pathFor(Routes.Backups.serverBackup(String.valueOf(backup.getId())));
         response.status(202);
         response.header("Location", backupPath);
         response.header("Retry-After", RETRY_INTERVAL_IN_SECONDS);

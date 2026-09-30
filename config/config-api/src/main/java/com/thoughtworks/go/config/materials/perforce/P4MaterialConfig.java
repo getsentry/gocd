@@ -15,14 +15,19 @@
  */
 package com.thoughtworks.go.config.materials.perforce;
 
-import com.thoughtworks.go.config.*;
+import com.thoughtworks.go.config.ConfigAttribute;
+import com.thoughtworks.go.config.ConfigSubtag;
+import com.thoughtworks.go.config.ConfigTag;
+import com.thoughtworks.go.config.ParamsAttributeAware;
 import com.thoughtworks.go.config.materials.PasswordAwareMaterial;
 import com.thoughtworks.go.config.materials.ScmMaterialConfig;
 import com.thoughtworks.go.util.command.UrlArgument;
-import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.TestOnly;
 
 import java.util.Map;
+import java.util.Objects;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @ConfigTag(value = "p4", label = "Perforce")
 public class P4MaterialConfig extends ScmMaterialConfig implements ParamsAttributeAware, PasswordAwareMaterial {
@@ -104,21 +109,10 @@ public class P4MaterialConfig extends ScmMaterialConfig implements ParamsAttribu
 
         P4MaterialConfig that = (P4MaterialConfig) o;
 
-        if (serverAndPort != null ? !serverAndPort.equals(that.serverAndPort) : that.serverAndPort != null) {
-            return false;
-        }
-        if (useTickets != null ? !useTickets.equals(that.useTickets) : that.useTickets != null) {
-            return false;
-        }
-        if (view != null ? !view.equals(that.view) : that.view != null) {
-            return false;
-        }
-
-        if (userName != null ? !userName.equals(that.userName) : that.userName != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(serverAndPort, that.serverAndPort) &&
+            Objects.equals(useTickets, that.useTickets) &&
+            Objects.equals(view, that.view) &&
+            Objects.equals(userName, that.userName);
     }
 
     @Override
@@ -132,11 +126,11 @@ public class P4MaterialConfig extends ScmMaterialConfig implements ParamsAttribu
     }
 
     @Override
-    public void validateConcreteScmMaterial(ValidationContext validationContext) {
+    public void validateConcreteScmMaterial() {
         if (getView() == null || getView().trim().isEmpty()) {
             errors.add(VIEW, "P4 view cannot be empty.");
         }
-        if (StringUtils.isBlank(getServerAndPort())) {
+        if (isBlank(getServerAndPort())) {
             errors.add(SERVER_AND_PORT, "P4 port cannot be empty.");
         }
 
@@ -196,10 +190,5 @@ public class P4MaterialConfig extends ScmMaterialConfig implements ParamsAttribu
 
     public void setUseTickets(boolean useTickets) {
         this.useTickets = useTickets;
-    }
-
-    @Override
-    public String getFolder() {
-        return folder;
     }
 }

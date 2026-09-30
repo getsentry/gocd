@@ -40,9 +40,10 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.nio.file.Path;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static com.thoughtworks.go.domain.buildcause.BuildCause.APPROVER_AUTOMATICALLY_TRIGGERED;
 import static com.thoughtworks.go.helper.ModificationsMother.modifySomeFiles;
 import static com.thoughtworks.go.server.dao.DatabaseAccessHelper.AGENT_UUID;
-import static com.thoughtworks.go.util.GoConstants.DEFAULT_APPROVED_BY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ExtendWith(SpringExtension.class)
@@ -62,7 +63,7 @@ public class StageIntegrationTest {
     @Autowired private ScheduleHelper scheduleHelper;
     @Autowired private AgentService agentService;
 
-    private static final GoConfigFileHelper CONFIG_HELPER = new GoConfigFileHelper();
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
     private PipelineConfig mingle;
     private static final String DEV_STAGE = "dev";
     private static final String FT_STAGE = "ft";
@@ -73,21 +74,21 @@ public class StageIntegrationTest {
     @BeforeEach
     public void setUp(@TempDir Path tempDir) throws Exception {
         dbHelper.onSetUp();
-        CONFIG_HELPER.usingCruiseConfigDao(goConfigDao);
-        CONFIG_HELPER.onSetUp();
+        configHelper.usingCruiseConfigDao(goConfigDao);
+        configHelper.onSetUp();
 
         TestRepo svnTestRepo = new SvnTestRepo(tempDir);
 
         svnRepo = new SvnCommand(null, svnTestRepo.projectRepositoryUrl());
-        CONFIG_HELPER.addPipeline(PIPELINE_NAME, DEV_STAGE, svnRepo, "foo");
-        mingle = CONFIG_HELPER.addStageToPipeline(PIPELINE_NAME, FT_STAGE, "bar");
+        configHelper.addPipeline(PIPELINE_NAME, DEV_STAGE, svnRepo, "foo");
+        mingle = configHelper.addStageToPipeline(PIPELINE_NAME, FT_STAGE, "bar");
         agentService.saveOrUpdate(new Agent(AGENT_UUID, HOSTNAME, "127.0.0.1", "cookie1"));
     }
 
     @AfterEach
     public void teardown() throws Exception {
         dbHelper.onTearDown();
-        CONFIG_HELPER.onTearDown();
+        configHelper.onTearDown();
     }
 
     @Test
@@ -101,7 +102,7 @@ public class StageIntegrationTest {
     private Stage createPipelineWithFirstStageCompletedAndNextStageBuilding(StageState stageState) throws Exception {
         Pipeline newPipeline = createPipelineWithFirstStageBuilding();
         Stage mostRecent = newPipeline.getFirstStage();
-        JobInstance job = mostRecent.getJobInstances().first();
+        JobInstance job = mostRecent.getJobInstances().getFirst();
         if (stageState.equals(StageState.Failed)) {
             dbHelper.failStage(mostRecent);
         } else {
@@ -109,7 +110,7 @@ public class StageIntegrationTest {
         }
         buildRepositoryService.updateStatusFromAgent(getBuildIdentifier(job.getId()), JobState.Completed,
                 AGENT_UUID);
-        Stage nextStage = stageDao.mostRecentWithBuilds(PIPELINE_NAME, mingle.findBy(new CaseInsensitiveString(FT_STAGE)));
+        Stage nextStage = stageDao.mostRecentWithBuilds(PIPELINE_NAME, mingle.findBy(cis(FT_STAGE)));
         dbHelper.buildingBuildInstance(nextStage);
         return nextStage;
     }
@@ -126,7 +127,7 @@ public class StageIntegrationTest {
     }
 
     private Pipeline schedulePipeline() {
-        return scheduleHelper.schedule(mingle, modifySomeFiles(mingle), DEFAULT_APPROVED_BY);
+        return scheduleHelper.schedule(mingle, modifySomeFiles(mingle), APPROVER_AUTOMATICALLY_TRIGGERED);
     }
 
 }

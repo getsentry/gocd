@@ -21,7 +21,7 @@ import com.thoughtworks.go.domain.MaterialInstance;
 import com.thoughtworks.go.domain.materials.Modification;
 import com.thoughtworks.go.domain.materials.ModifiedAction;
 import com.thoughtworks.go.domain.materials.ModifiedFile;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.util.GoConfigFileHelper;
 import com.thoughtworks.go.util.ReflectionUtil;
@@ -93,7 +93,7 @@ public class TransactionCacheInterceptorTest {
             hibernateDaoSupport.getHibernateTemplate().update(materialInstance);
             hibernateDaoSupport.getHibernateTemplate().flush();
         });
-        assertThat((Object) ReflectionUtil.getField(hibernateDaoSupport.getHibernateTemplate().load(MaterialInstance.class, materialInstance.getId()), "url")).isEqualTo("loser-name");
+        assertThat(ReflectionUtil.<Object>getField(hibernateDaoSupport.getHibernateTemplate().load(MaterialInstance.class, materialInstance.getId()), "url")).isEqualTo("loser-name");
     }
 
     @Test
@@ -155,7 +155,7 @@ public class TransactionCacheInterceptorTest {
     }
 
     private MaterialInstance hgInstance() {
-        HgMaterial hgMaterial = new HgMaterial("http://google.com", null);
+        HgMaterial hgMaterial = new HgMaterial("https://google.com", null);
         return hgMaterial.createMaterialInstance();
     }
 }

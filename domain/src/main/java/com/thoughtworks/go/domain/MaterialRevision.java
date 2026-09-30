@@ -20,7 +20,6 @@ import com.thoughtworks.go.config.materials.dependency.DependencyMaterial;
 import com.thoughtworks.go.domain.materials.*;
 import com.thoughtworks.go.util.command.ConsoleOutputStreamConsumer;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
-import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
 import java.io.Serializable;
@@ -32,6 +31,7 @@ import java.util.Objects;
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
 import static com.thoughtworks.go.util.ExceptionUtils.bombIfNull;
 import static java.lang.String.format;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 public class MaterialRevision implements Serializable {
     private final Material material;
@@ -63,7 +63,7 @@ public class MaterialRevision implements Serializable {
 
     public Date getDateOfLatestModification() {
         if (!modifications.isEmpty()) {
-            return modifications.get(0).getModifiedTime();
+            return modifications.getFirst().getModifiedTime();
         } else {
             return null;
         }
@@ -127,7 +127,7 @@ public class MaterialRevision implements Serializable {
     @Override
     public int hashCode() {
         int result;
-        result = (material != null ? material.hashCode() : 0);
+        result = material != null ? material.hashCode() : 0;
         result = 31 * result + (modifications != null ? modifications.hashCode() : 0);
         return result;
     }
@@ -150,7 +150,7 @@ public class MaterialRevision implements Serializable {
     }
 
     private boolean sameMaterial(MaterialRevision original) {
-        return (material.equals(original.material));
+        return material.equals(original.material);
     }
 
     private boolean sameRevision(MaterialRevision original) {
@@ -161,7 +161,7 @@ public class MaterialRevision implements Serializable {
         if (newModifications.isEmpty()) {
             List<Modification> result = new ArrayList<>();
             if (!oldModifications.isEmpty()) {
-                result.add(new Modification(oldModifications.get(0)));
+                result.add(new Modification(oldModifications.getFirst()));
             }
             MaterialRevision materialRevision = new MaterialRevision(newMaterial, result);
             materialRevision.markAsNotChanged();
@@ -222,12 +222,12 @@ public class MaterialRevision implements Serializable {
 
     public Modification getLatestModification() {
         assertHasModifications();
-        return modifications.get(0);
+        return modifications.getFirst();
     }
 
     public Modification getOldestModification() {
         assertHasModifications();
-        return modifications.get(modifications.size() - 1);
+        return modifications.getLast();
     }
 
     private void assertHasModifications() {
@@ -239,7 +239,7 @@ public class MaterialRevision implements Serializable {
     public void populateEnvironmentVariables(EnvironmentVariableContext context, File workingDir) {
         material.populateEnvironmentContext(context, this, workingDir);
         String materialNameForEnvironmentVariable = material.getMaterialNameForEnvironmentVariable();
-        if (StringUtils.isNotBlank(materialNameForEnvironmentVariable)) {
+        if (isNotBlank(materialNameForEnvironmentVariable)) {
             context.setPropertyWithEscape(format("GO_MATERIAL_%s_HAS_CHANGED", materialNameForEnvironmentVariable), Boolean.toString(isChanged()));
         } else {
             context.setPropertyWithEscape("GO_MATERIAL_HAS_CHANGED", Boolean.toString(isChanged()));

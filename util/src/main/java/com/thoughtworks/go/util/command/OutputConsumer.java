@@ -15,15 +15,17 @@
  */
 package com.thoughtworks.go.util.command;
 
+import org.jetbrains.annotations.NotNull;
+
 public class OutputConsumer implements StreamConsumer {
-    private ConsoleOutputStreamConsumer consoleOutputStreamConsumer;
+    private final ConsoleOutputStreamConsumer consoleOutputStreamConsumer;
 
     public OutputConsumer(ConsoleOutputStreamConsumer consoleOutputStreamConsumer) {
         this.consoleOutputStreamConsumer = consoleOutputStreamConsumer;
     }
 
     @Override
-    public void consumeLine(String line) {
+    public void consumeLine(@NotNull String line) {
         consoleOutputStreamConsumer.stdOutput(line);
     }
 }

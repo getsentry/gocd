@@ -23,16 +23,15 @@ configurations {
 }
 
 dependencies {
-  implementation project(path: ':agent', configuration: 'runtimeElements')
-  implementation project(path: ':base', configuration: 'runtimeElements')
-  implementation project(path: ':util', configuration: 'runtimeElements')
-  copyOnly project(path: ':plugin-infra:go-plugin-activator', configuration: 'runtimeElements')
+  testFixturesImplementation project(':agent')
+  testFixturesImplementation project(':base')
+  copyOnly project(':plugin-infra:go-plugin-activator')
 }
 
 def generatedResourcesOutput = file("resources-generated")
 
 sourceSets {
-  main {
+  testFixtures {
     resources {
       output.dir generatedResourcesOutput, builtBy: 'generateResources'
       srcDirs += generatedResourcesOutput
@@ -49,19 +48,18 @@ clean {
   delete 'plugins_work'
 }
 
-task generateResources(type: Copy) {
+tasks.register('generateResources', Copy) {
+  dependsOn configurations.copyOnly
   outputs.dir(generatedResourcesOutput)
 
   into generatedResourcesOutput
-  from(project.configurations.copyOnly) {
+  from({ configurations.copyOnly }) {
     rename "(.*)-${project.version}.(jar|zip)", '$1.$2'
   }
 }
+checkLicenseTestFixtures.dependsOn generateResources
+processTestFixturesResources.dependsOn generateResources
 
-processResources {
-  dependsOn generateResources
-}
-
-task prepare {
+tasks.register('prepare') {
   dependsOn generateResources
 }

@@ -26,7 +26,7 @@ import com.thoughtworks.go.domain.config.Configuration;
 import com.thoughtworks.go.domain.config.ConfigurationProperty;
 import com.thoughtworks.go.domain.config.PluginConfiguration;
 import com.thoughtworks.go.domain.config.SecureKeyInfoProvider;
-import com.thoughtworks.go.plugin.access.packagematerial.AbstractMetaDataStore;
+import com.thoughtworks.go.plugin.access.packagematerial.AbstractPackageMetaDataStore;
 import com.thoughtworks.go.plugin.access.packagematerial.PackageConfiguration;
 import com.thoughtworks.go.plugin.access.packagematerial.PackageConfigurations;
 import com.thoughtworks.go.plugin.access.packagematerial.RepositoryMetadataStore;
@@ -41,7 +41,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
-import static java.lang.String.format;
 import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 
@@ -87,11 +86,6 @@ public class PackageRepository implements Serializable, Validatable, SecretParam
 
     public String getId() {
         return id;
-    }
-
-    //used in erb as it cannot access id attribute as it treats 'id' as keyword
-    public String getRepoId() {
-        return getId();
     }
 
     public void setId(String id) {
@@ -166,19 +160,11 @@ public class PackageRepository implements Serializable, Validatable, SecretParam
 
         PackageRepository that = (PackageRepository) o;
 
-        if (!Objects.equals(configuration, that.configuration)) {
-            return false;
-        }
-        if (!Objects.equals(id, that.id)) {
-            return false;
-        }
-        if (!Objects.equals(name, that.name)) {
-            return false;
-        }
-        if (!Objects.equals(packages, that.packages)) {
-            return false;
-        }
-        return Objects.equals(pluginConfiguration, that.pluginConfiguration);
+        return Objects.equals(configuration, that.configuration) &&
+            Objects.equals(id, that.id) &&
+            Objects.equals(name, that.name) &&
+            Objects.equals(packages, that.packages) &&
+            Objects.equals(pluginConfiguration, that.pluginConfiguration);
     }
 
     @Override
@@ -220,7 +206,7 @@ public class PackageRepository implements Serializable, Validatable, SecretParam
 
     public String getConfigForDisplay() {
         String pluginId = pluginConfiguration.getId();
-        AbstractMetaDataStore metadataStore = RepositoryMetadataStore.getInstance();
+        AbstractPackageMetaDataStore metadataStore = RepositoryMetadataStore.getInstance();
         List<ConfigurationProperty> propertiesToBeUsedForDisplay = ConfigurationDisplayUtil.getConfigurationPropertiesToBeUsedForDisplay(metadataStore, pluginId, configuration);
 
         String prefix = metadataStore.hasPlugin(pluginId) ? "" : "WARNING! Plugin missing for ";
@@ -249,10 +235,10 @@ public class PackageRepository implements Serializable, Validatable, SecretParam
 
     public void setConfigAttributes(Map<String, ?> attributes) {
         if (attributes.containsKey(NAME)) {
-            name = ((String) attributes.get(NAME));
+            name = (String) attributes.get(NAME);
         }
         if (attributes.containsKey(REPO_ID)) {
-            id = ((String) attributes.get(REPO_ID));
+            id = (String) attributes.get(REPO_ID);
         }
         if (attributes.containsKey(PLUGIN_CONFIGURATION)) {
             pluginConfiguration.setConfigAttributes(attributes.get(PLUGIN_CONFIGURATION));
@@ -292,16 +278,9 @@ public class PackageRepository implements Serializable, Validatable, SecretParam
     }
 
     public void removePackage(String packageId) {
-        PackageDefinition entryToBeDeleted = null;
-        for (PackageDefinition packageDefinition : packages) {
-            if (packageDefinition.getId().equals(packageId)) {
-                entryToBeDeleted = packageDefinition;
-            }
+        if (!packages.removeFirstIf(packageDefinition -> packageDefinition.getId().equals(packageId))) {
+            throw new RuntimeException("Could not find package with id: " + packageId);
         }
-        if (entryToBeDeleted == null) {
-            throw new RuntimeException(format("Could not find package with id:[%s]", packageId));
-        }
-        packages.remove(entryToBeDeleted);
     }
 
     public PackageDefinition findOrCreatePackageDefinition(Map<String, Object> attributes) {
@@ -330,7 +309,7 @@ public class PackageRepository implements Serializable, Validatable, SecretParam
 
     @PostConstruct
     public void ensureIdExists() {
-        if (isBlank(getId())) {
+        if (getId() == null || getId().isBlank()) {
             setId(UUID.randomUUID().toString());
         }
     }

@@ -15,8 +15,6 @@
  */
 package com.thoughtworks.go.config.materials.scm;
 
-import com.google.gson.Gson;
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.PipelineConfig;
 import com.thoughtworks.go.config.SecretParam;
 import com.thoughtworks.go.config.materials.PluggableSCMMaterial;
@@ -38,9 +36,9 @@ import com.thoughtworks.go.plugin.access.scm.SCMMetadataStore;
 import com.thoughtworks.go.plugin.access.scm.SCMView;
 import com.thoughtworks.go.security.CryptoException;
 import com.thoughtworks.go.security.GoCipher;
-import com.thoughtworks.go.util.CachedDigestUtils;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
 import com.thoughtworks.go.util.json.JsonHelper;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -52,6 +50,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.domain.packagerepository.ConfigurationPropertyMother.create;
 import static com.thoughtworks.go.util.command.EnvironmentVariableContext.EnvironmentVariable.MASK_VALUE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -76,7 +75,7 @@ class PluggableSCMMaterialTest {
 
         assertThat(materialInstance).isNotNull();
         assertThat(materialInstance.getFlyweightName()).isNotNull();
-        assertThat(materialInstance.getConfiguration()).isEqualTo(JsonHelper.toJsonString(material));
+        assertThat(materialInstance.getConfiguration()).isEqualTo(JsonHelper.toJsonExposeOnly(material));
     }
 
     @Test
@@ -103,7 +102,7 @@ class PluggableSCMMaterialTest {
         PluggableSCMMaterial material = new PluggableSCMMaterial();
         material.setSCMConfig(scmConfig);
 
-        assertThat(material.getFingerprint()).isEqualTo(CachedDigestUtils.sha256Hex("plugin-id=pluginid<|>k1=v1<|>secure-key=secure-value"));
+        assertThat(material.getFingerprint()).isEqualTo(DigestUtils.sha256Hex("plugin-id=pluginid<|>k1=v1<|>secure-key=secure-value"));
     }
 
     @Test
@@ -169,11 +168,11 @@ class PluggableSCMMaterialTest {
         PluggableSCMMaterial pluggableSCMMaterial = new PluggableSCMMaterial();
         pluggableSCMMaterial.setSCMConfig(scmConfig);
 
-        String json = JsonHelper.toJsonString(pluggableSCMMaterial);
+        String json = JsonHelper.toJsonExposeOnly(pluggableSCMMaterial);
 
-        String expected = "{\"scm\":{\"plugin\":{\"id\":\"plugin-id\",\"version\":\"1.0\"},\"config\":[{\"configKey\":{\"name\":\"secure-key\"},\"encryptedConfigValue\":{\"value\":" + new Gson().toJson(encryptedPassword) + "}},{\"configKey\":{\"name\":\"non-secure-key\"},\"configValue\":{\"value\":\"value\"}}]}}";
+        String expected = "{\"scm\":{\"plugin\":{\"id\":\"plugin-id\",\"version\":\"1.0\"},\"config\":[{\"configKey\":{\"name\":\"secure-key\"},\"encryptedConfigValue\":{\"value\":" + JsonHelper.toJson(encryptedPassword) + "}},{\"configKey\":{\"name\":\"non-secure-key\"},\"configValue\":{\"value\":\"value\"}}]}}";
         assertThat(json).isEqualTo(expected);
-        assertThat(JsonHelper.fromJson(expected, PluggableSCMMaterial.class)).isEqualTo(pluggableSCMMaterial);
+        assertThat(JsonHelper.fromJsonExposeOnly(expected, PluggableSCMMaterial.class)).isEqualTo(pluggableSCMMaterial);
     }
 
     @Test
@@ -247,7 +246,7 @@ class PluggableSCMMaterialTest {
         SCM scmConfig = SCMMother.create("scm-id", "tw-dev", "pluginid", "version", new Configuration(k1, k2));
         PluggableSCMMaterial material = new PluggableSCMMaterial();
         material.setSCMConfig(scmConfig);
-        material.setName(new CaseInsensitiveString("tw-dev:go-agent"));
+        material.setName(cis("tw-dev:go-agent"));
         Modifications modifications = new Modifications(new Modification(null, null, null, new Date(), "revision-123"));
         EnvironmentVariableContext environmentVariableContext = new EnvironmentVariableContext();
         material.populateEnvironmentContext(environmentVariableContext, new MaterialRevision(material, modifications), null);
@@ -264,10 +263,10 @@ class PluggableSCMMaterialTest {
         SCM scmConfig = SCMMother.create("scm-id", "tw-dev", "pluginid", "version", new Configuration(k1));
         PluggableSCMMaterial material = new PluggableSCMMaterial();
         material.setSCMConfig(scmConfig);
-        material.setName(new CaseInsensitiveString("tw-dev:go-agent"));
+        material.setName(cis("tw-dev:go-agent"));
         Map<String, String> map = new HashMap<>();
         map.put("MY_NEW_KEY", "my_value");
-        Modification modification = new Modification("loser", "comment", "email", new Date(), "revision-123", JsonHelper.toJsonString(map));
+        Modification modification = new Modification("loser", "comment", "email", new Date(), "revision-123", JsonHelper.toJsonExposeOnly(map));
         Modifications modifications = new Modifications(modification);
 
         EnvironmentVariableContext environmentVariableContext = new EnvironmentVariableContext();
@@ -286,12 +285,12 @@ class PluggableSCMMaterialTest {
         SCM scmConfig = SCMMother.create("scm-id", "tw-dev", "pluginid", "version", new Configuration(k1, k2));
         PluggableSCMMaterial material = new PluggableSCMMaterial();
         material.setSCMConfig(scmConfig);
-        material.setName(new CaseInsensitiveString("tw-dev:go-agent"));
+        material.setName(cis("tw-dev:go-agent"));
         Map<String, String> map = new HashMap<>();
         map.put("ADDITIONAL_DATA_ONE", "foobar:!secure_value:with_special_chars");
         map.put("ADDITIONAL_DATA_URL_ENCODED", "something:%21secure_value%3Awith_special_chars");
         map.put("ADDITIONAL_DATA_TWO", "foobar:secure_value_with_regular_chars");
-        Modification modification = new Modification("loser", "comment", "email", new Date(), "revision-123", JsonHelper.toJsonString(map));
+        Modification modification = new Modification("loser", "comment", "email", new Date(), "revision-123", JsonHelper.toJsonExposeOnly(map));
         Modifications modifications = new Modifications(modification);
 
         EnvironmentVariableContext environmentVariableContext = new EnvironmentVariableContext();
@@ -315,7 +314,7 @@ class PluggableSCMMaterialTest {
         SCM scmConfig = SCMMother.create("scm-id", "tw-dev", "pluginid", "version", new Configuration(k1));
         PluggableSCMMaterial material = new PluggableSCMMaterial();
         material.setSCMConfig(scmConfig);
-        material.setName(new CaseInsensitiveString("tw-dev:go-agent"));
+        material.setName(cis("tw-dev:go-agent"));
         Modifications modifications = new Modifications(new Modification("loser", "comment", "email", new Date(), "revision-123", null));
         EnvironmentVariableContext environmentVariableContext = new EnvironmentVariableContext();
 
@@ -331,7 +330,7 @@ class PluggableSCMMaterialTest {
         SCM scmConfig = SCMMother.create("scm-id", "tw-dev", "pluginid", "version", new Configuration(k1));
         PluggableSCMMaterial material = new PluggableSCMMaterial();
         material.setSCMConfig(scmConfig);
-        material.setName(new CaseInsensitiveString("tw-dev:go-agent"));
+        material.setName(cis("tw-dev:go-agent"));
         Modifications modifications = new Modifications(new Modification("loser", "comment", "email", new Date(), "revision-123", "salkdfjdsa-jjgkj!!!vcxknbvkjk"));
         EnvironmentVariableContext environmentVariableContext = new EnvironmentVariableContext();
 
@@ -381,9 +380,9 @@ class PluggableSCMMaterialTest {
     @Test
     void shouldPassEqualsCheckIfFingerprintIsSame() {
         PluggableSCMMaterial material1 = MaterialsMother.pluggableSCMMaterial();
-        material1.setName(new CaseInsensitiveString("name1"));
+        material1.setName(cis("name1"));
         PluggableSCMMaterial material2 = MaterialsMother.pluggableSCMMaterial();
-        material2.setName(new CaseInsensitiveString("name2"));
+        material2.setName(cis("name2"));
 
         assertThat(material1.equals(material2)).isTrue();
     }
@@ -391,7 +390,7 @@ class PluggableSCMMaterialTest {
     @Test
     void shouldFailEqualsCheckIfFingerprintDiffers() {
         PluggableSCMMaterial material1 = MaterialsMother.pluggableSCMMaterial();
-        material1.getScmConfig().getConfiguration().first().setConfigurationValue(new ConfigurationValue("new-url"));
+        material1.getScmConfig().getConfiguration().getFirst().setConfigurationValue(new ConfigurationValue("new-url"));
         PluggableSCMMaterial material2 = MaterialsMother.pluggableSCMMaterial();
 
         assertThat(material1.equals(material2)).isFalse();
@@ -556,11 +555,11 @@ class PluggableSCMMaterialTest {
     @Test
     void shouldPopulateEnvironmentContextWithConfigurationWithSecretParamsAsSecure() {
         ConfigurationProperty k1 = ConfigurationPropertyMother.create("k1", false, "{{SECRET:[secret_config_id][lookup_username]}}");
-        k1.getSecretParams().get(0).setValue("some-resolved-value");
+        k1.getSecretParams().getFirst().setValue("some-resolved-value");
         ConfigurationProperty k2 = ConfigurationPropertyMother.create("scm-secure", true, "value");
         PluggableSCMMaterial material = new PluggableSCMMaterial();
         material.setSCMConfig(SCMMother.create("scm-id", "tw-dev", "pluginid", "version", new Configuration(k1, k2)));
-        material.setName(new CaseInsensitiveString("tw-dev:go-agent"));
+        material.setName(cis("tw-dev:go-agent"));
         Modifications modifications = new Modifications(new Modification(null, null, null, new Date(), "revision-123"));
         EnvironmentVariableContext environmentVariableContext = new EnvironmentVariableContext();
         material.populateEnvironmentContext(environmentVariableContext, new MaterialRevision(material, modifications), null);

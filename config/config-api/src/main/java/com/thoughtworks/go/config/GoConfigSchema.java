@@ -15,33 +15,35 @@
  */
 package com.thoughtworks.go.config;
 
-import com.thoughtworks.go.util.GoConstants;
-
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
 
 public class GoConfigSchema {
 
-    public static URL getCurrentSchema() {
-        return getResource(currentSchemaVersion());
+    public static final int VERSION = 139;
+
+    public static URI getCurrentSchema() {
+        return getResource(VERSION);
     }
 
-    public static URL getResource(int version) {
+    public static URI getResource(int version) {
         String schema = resolveSchemaFile(version);
         URL resource = GoConfigSchema.class.getResource(schema);
         if (resource == null) {
             throw bomb("Unable to find resource for " + schema);
         }
-        return resource;
-    }
-
-    public static int currentSchemaVersion() {
-        return GoConstants.CONFIG_SCHEMA_VERSION;
+        try {
+            return resource.toURI();
+        } catch (URISyntaxException e) {
+            throw bomb("Unable to convert resource URI for " + schema, e);
+        }
     }
 
     static String resolveSchemaFile(int version) {
-        if (version == currentSchemaVersion()) {
+        if (version == VERSION) {
             return "/cruise-config.xsd";
         } else {
             return "/schemas/" + version + "_cruise-config.xsd";

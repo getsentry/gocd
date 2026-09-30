@@ -15,27 +15,24 @@
  */
 package com.thoughtworks.go.domain.valuestreammap;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.domain.MaterialRevision;
 import com.thoughtworks.go.domain.materials.Material;
-import com.thoughtworks.go.domain.materials.Modification;
 import com.thoughtworks.go.domain.materials.Modifications;
 
 import java.util.*;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
 import static com.thoughtworks.go.util.ExceptionUtils.bombIfNull;
 
-
 public class SCMDependencyNode extends Node {
-    private final Set<Revision> revisions = new HashSet<>();
     private final String materialType;
     private final Set<String> materialNames = new LinkedHashSet<>();
     private final Set<MaterialRevisionWrapper> materialRevisionWrappers = new HashSet<>();
     private final List<MaterialRevision> materialRevisions = new ArrayList<>();
 
     public SCMDependencyNode(String nodeId, String nodeName, String materialType) {
-        super(DependencyNodeType.MATERIAL, new CaseInsensitiveString(nodeId), nodeName);
+        super(DependencyNodeType.MATERIAL, cis(nodeId), nodeName);
         this.materialType = materialType;
     }
 
@@ -46,19 +43,13 @@ public class SCMDependencyNode extends Node {
 
     @Override
     public List<Revision> revisions() {
-        List<Revision> revisions = new ArrayList<>(this.revisions);
-        for (MaterialRevision revision : materialRevisions) {
-            for (Modification modification : revision.getModifications()) {
-                revisions.add(new SCMRevision(modification));
-            }
-        }
-        revisions.sort(Comparator.comparing(o -> ((SCMRevision) o)));
-        return revisions;
-    }
-
-    @Override
-    public void addRevisions(List<Revision> revisions) {
-        bomb("SCMDependencyNode can have only MaterialRevisions, revisions are derived from material revisions.");
+        return materialRevisions
+            .stream()
+            .flatMap(r -> r.getModifications().stream())
+            .map(SCMRevision::new)
+            .sorted(Comparator.comparing(o -> o))
+            .map(o -> (Revision) o)
+            .toList();
     }
 
     public String getMaterialType() {
@@ -93,12 +84,18 @@ public class SCMDependencyNode extends Node {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
 
             MaterialRevisionWrapper that = (MaterialRevisionWrapper) o;
 
-            if (this.materialRevision == that.materialRevision) return true;
+            if (this.materialRevision == that.materialRevision) {
+                return true;
+            }
 
             return sameMaterial(that.materialRevision.getMaterial()) &&
                     sameModifications(that.materialRevision.getModifications());
@@ -107,22 +104,24 @@ public class SCMDependencyNode extends Node {
         @Override
         public int hashCode() {
             int result;
-            result = (materialRevision.getMaterial() != null ? materialRevision.getMaterial().getFingerprint().hashCode() : 0);
+            result = materialRevision.getMaterial() != null ? materialRevision.getMaterial().getFingerprint().hashCode() : 0;
             result = 31 * result + (materialRevision.getModifications() != null ? materialRevision.getModifications().hashCode() : 0);
             return result;
         }
 
-        private boolean sameMaterial(Material thatMaterial) {
+        private boolean sameMaterial(Material otherMaterial) {
             Material material = this.materialRevision.getMaterial();
 
-            if (material == thatMaterial) return true;
-            return material != null ? (thatMaterial != null && material.getFingerprint().equals(thatMaterial.getFingerprint())) : thatMaterial == null;
+            if (material == otherMaterial) {
+                return true;
+            }
+            return material != null && otherMaterial != null && material.getFingerprint().equals(otherMaterial.getFingerprint());
         }
 
-        private boolean sameModifications(Modifications thatModifications) {
+        private boolean sameModifications(Modifications otherModifications) {
             Modifications modifications = this.materialRevision.getModifications();
 
-            return modifications != null ? modifications.equals(thatModifications) : thatModifications == null;
+            return Objects.equals(modifications, otherModifications);
         }
     }
 }

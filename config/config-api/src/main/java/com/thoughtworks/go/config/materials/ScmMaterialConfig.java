@@ -25,6 +25,7 @@ import com.thoughtworks.go.util.command.UrlUserInfo;
 
 import javax.annotation.PostConstruct;
 import java.util.Map;
+import java.util.Objects;
 
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
 import static java.lang.String.format;
@@ -87,10 +88,6 @@ public abstract class ScmMaterialConfig extends AbstractMaterialConfig implement
             regex = regex.substring(1);
         }
         return name.matches(regex);
-    }
-
-    public final GoCipher getGoCipher() {
-        return goCipher;
     }
 
     public final void setUserName(String userName) {
@@ -163,6 +160,10 @@ public abstract class ScmMaterialConfig extends AbstractMaterialConfig implement
 
     public abstract boolean isCheckExternals();
 
+    /**
+     * @return The raw configured url/uri. Note that this MAY include unredacted credentials.
+     * @see #getUriForDisplay() for the redacted version
+     */
     public abstract String getUrl();
 
     public abstract void setUrl(String url);
@@ -246,10 +247,8 @@ public abstract class ScmMaterialConfig extends AbstractMaterialConfig implement
 
         ScmMaterialConfig that = (ScmMaterialConfig) o;
 
-        if (folder != null ? !folder.equals(that.folder) : that.folder != null) {
-            return false;
-        }
-        return super.equals(that);
+        return Objects.equals(folder, that.folder) &&
+            super.equals(that);
     }
 
     @Override
@@ -263,10 +262,10 @@ public abstract class ScmMaterialConfig extends AbstractMaterialConfig implement
     protected final void validateConcreteMaterial(ValidationContext validationContext) {
         validateNotOutsideSandbox();
         validateDestFolderPath();
-        validateConcreteScmMaterial(validationContext);
+        validateConcreteScmMaterial();
     }
 
-    public abstract void validateConcreteScmMaterial(ValidationContext validationContext);
+    public abstract void validateConcreteScmMaterial();
 
     private void validateDestFolderPath() {
         if (isBlank(folder)) {
@@ -326,14 +325,9 @@ public abstract class ScmMaterialConfig extends AbstractMaterialConfig implement
         if (dest == null) {
             return;
         }
-        if (!(FilenameUtil.isNormalizedPathOutsideWorkingDir(dest))) {
+        if (!FilenameUtil.isNormalizedPathOutsideWorkingDir(dest)) {
             setDestinationFolderError(format("Dest folder '%s' is not valid. It must be a sub-directory of the working folder.", dest));
         }
-    }
-
-    @Override
-    public Boolean isUsedInFetchArtifact(PipelineConfig pipelineConfig) {
-        return false;
     }
 
     // TODO: Consider renaming this to dest since we use that word in the UI & Config

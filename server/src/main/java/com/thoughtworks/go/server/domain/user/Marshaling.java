@@ -17,13 +17,14 @@ package com.thoughtworks.go.server.domain.user;
 
 import com.google.gson.*;
 import com.thoughtworks.go.config.CaseInsensitiveString;
-import org.apache.commons.lang3.StringUtils;
 
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static java.lang.String.format;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 public class Marshaling {
 
@@ -60,7 +61,7 @@ public class Marshaling {
 
             final List<DashboardFilter> viewFilters = new ArrayList<>();
 
-            filters.getAsJsonArray().forEach((f) -> viewFilters.add(context.deserialize(f, DashboardFilter.class)));
+            filters.getAsJsonArray().forEach(f -> viewFilters.add(context.deserialize(f, DashboardFilter.class)));
 
             return new Filters(viewFilters);
         }
@@ -96,7 +97,9 @@ public class Marshaling {
             jsonObject.addProperty(KEY_NAME, name);
 
             final String type = defensivelyGetString(jsonObject, KEY_TYPE);
-            if (StringUtils.isBlank(type)) throw new JsonParseException("Missing filter type");
+            if (isBlank(type)) {
+                throw new JsonParseException("Missing filter type");
+            }
 
             return switch (type) {
                 case TYPE_INCLUDES -> context.deserialize(jsonObject,
@@ -119,7 +122,7 @@ public class Marshaling {
     public static class CaseInsensitiveStringDeserializer implements JsonDeserializer<CaseInsensitiveString> {
         @Override
         public CaseInsensitiveString deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
-            return new CaseInsensitiveString(json.getAsString());
+            return cis(json.getAsString());
         }
     }
 

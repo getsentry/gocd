@@ -26,7 +26,7 @@ RSpec.configure do |config|
   config.include AuthenticationSpecHelper
   config.include MiscSpecExtensions
 
-# clear flash messages for every spec
+  # clear flash messages for every spec
   config.before(:each) do
     com.thoughtworks.go.server.web.FlashMessageService.useFlash(com.thoughtworks.go.server.web.FlashMessageService::Flash.new)
   end
@@ -34,6 +34,13 @@ RSpec.configure do |config|
   config.after(:each) do
     com.thoughtworks.go.ClearSingleton.clearSingletons
     ServiceCacheStrategy.instance.clear_services
+  end
+
+  # Force any spring context to be closed after all tests to avoid rspec hanging waiting
+  config.after(:suite) do
+    if defined? Spring.test_close_context
+      Spring.test_close_context
+    end
   end
 
   config.example_status_persistence_file_path = Rails.root.join('tmp/rspec_failures.txt')

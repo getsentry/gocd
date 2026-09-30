@@ -17,7 +17,6 @@ package com.thoughtworks.go.config.materials.git;
 
 import com.thoughtworks.go.config.ConfigAttribute;
 import com.thoughtworks.go.config.ConfigTag;
-import com.thoughtworks.go.config.ValidationContext;
 import com.thoughtworks.go.config.materials.PasswordAwareMaterial;
 import com.thoughtworks.go.config.materials.ScmMaterialConfig;
 import com.thoughtworks.go.util.command.UrlArgument;
@@ -70,9 +69,15 @@ public class GitMaterialConfig extends ScmMaterialConfig implements PasswordAwar
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        if (!super.equals(o)) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        if (!super.equals(o)) {
+            return false;
+        }
         GitMaterialConfig that = (GitMaterialConfig) o;
         return Objects.equals(url, that.url) &&
                 Objects.equals(branch, that.branch) &&
@@ -85,7 +90,7 @@ public class GitMaterialConfig extends ScmMaterialConfig implements PasswordAwar
     }
 
     @Override
-    public void validateConcreteScmMaterial(ValidationContext validationContext) {
+    public void validateConcreteScmMaterial() {
         validateMaterialUrl(this.url);
         validateBranchOrRefSpec(this.branch);
         validateCredentials();
@@ -94,7 +99,7 @@ public class GitMaterialConfig extends ScmMaterialConfig implements PasswordAwar
 
     @Override
     public String getUriForDisplay() {
-        return this.url.forDisplay();
+        return url != null ? url.forDisplay() : null;
     }
 
     @Override
@@ -121,13 +126,6 @@ public class GitMaterialConfig extends ScmMaterialConfig implements PasswordAwar
     @Override
     public boolean isCheckExternals() {
         return false;
-    }
-
-    @Override
-    public String getShortRevision(String revision) {
-        if (revision == null) return null;
-        if (revision.length() < 7) return revision;
-        return revision.substring(0, 7);
     }
 
     @Override

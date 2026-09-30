@@ -18,14 +18,14 @@ package com.thoughtworks.go.security;
 import com.thoughtworks.go.config.EncryptedVariableValueConfig;
 import com.thoughtworks.go.domain.config.EncryptedConfigurationValue;
 import com.thoughtworks.go.util.SystemEnvironment;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 
 import java.io.Serializable;
 import java.util.Objects;
 
 public class GoCipher implements Serializable {
 
-    final Encrypter aesEncrypter;
+    private final Encrypter aesEncrypter;
 
     public GoCipher() {
         this(Encrypter.from(new SystemEnvironment()));
@@ -60,10 +60,7 @@ public class GoCipher implements Serializable {
             return false;
         }
 
-        String password1 = p1.getValue();
-        String password2 = p2.getValue();
-
-        return passwordEquals(password1, password2);
+        return passwordEquals(p1.getValue(), p2.getValue());
     }
 
     public boolean passwordEquals(EncryptedVariableValueConfig p1, EncryptedVariableValueConfig p2) {
@@ -75,32 +72,20 @@ public class GoCipher implements Serializable {
             return false;
         }
 
-        String password1 = p1.getValue();
-        String password2 = p2.getValue();
-
-        return passwordEquals(password1, password2);
+        return passwordEquals(p1.getValue(), p2.getValue());
     }
 
     public int passwordHashcode(EncryptedVariableValueConfig value) {
-        if (value == null) {
-            return 0;
-        }
-
-        return passwordHashcode(value.getValue());
+        return value == null ? 0 : passwordHashcode(value.getValue());
     }
 
     public int passwordHashcode(EncryptedConfigurationValue value) {
-        if (value == null) {
-            return 0;
-        }
-
-        return passwordHashcode(value.getValue());
+        return value == null ? 0 : passwordHashcode(value.getValue());
     }
 
     public int passwordHashcode(String cipherText) {
         try {
-            String decrypt = decrypt(cipherText);
-            return decrypt.hashCode();
+            return decrypt(cipherText).hashCode();
         } catch (CryptoException e) {
             return ("bad-password-" + cipherText).hashCode();
         }
@@ -112,7 +97,7 @@ public class GoCipher implements Serializable {
         }
 
         try {
-            if (StringUtils.startsWith(p1, "AES:") && StringUtils.startsWith(p2, "AES:")) {
+            if (Strings.CS.startsWith(p1, "AES:") && Strings.CS.startsWith(p2, "AES:")) {
                 return decrypt(p1).equals(decrypt(p2));
             }
         } catch (Exception e) {

@@ -20,7 +20,6 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonSerializer;
-import com.thoughtworks.go.config.ConfigCache;
 import com.thoughtworks.go.config.EnvironmentVariableConfig;
 import com.thoughtworks.go.config.MagicalGoConfigXmlWriter;
 import com.thoughtworks.go.config.registry.ConfigElementImplementationRegistry;
@@ -38,18 +37,18 @@ import java.util.stream.Collectors;
 
 @Component
 public class EntityHashes implements DigestMixin {
-    private static final Gson GSON = new GsonBuilder().
-            registerTypeAdapter(ConfigurationProperty.class, Serializers.CONFIGURATION_PROPERTY).
-            registerTypeAdapter(EnvironmentVariableConfig.class, Serializers.ENVIRONMENT_VARIABLE).
-            registerTypeAdapter(PluginInfo.class, Serializers.PLUGIN_INFO).
-            registerTypeAdapter(Modification.class, Serializers.MODIFICATION).
-            create();
+    private static final Gson GSON = new GsonBuilder()
+        .registerTypeAdapter(ConfigurationProperty.class, Serializers.CONFIGURATION_PROPERTY)
+        .registerTypeAdapter(EnvironmentVariableConfig.class, Serializers.ENVIRONMENT_VARIABLE)
+        .registerTypeAdapter(PluginInfo.class, Serializers.PLUGIN_INFO)
+        .registerTypeAdapter(Modification.class, Serializers.MODIFICATION)
+        .create();
 
     private final MagicalGoConfigXmlWriter xmlSerializer;
 
     @Autowired
-    public EntityHashes(ConfigCache configCache, ConfigElementImplementationRegistry registry) {
-        xmlSerializer = new MagicalGoConfigXmlWriter(configCache, registry);
+    public EntityHashes(ConfigElementImplementationRegistry registry) {
+        xmlSerializer = new MagicalGoConfigXmlWriter(registry);
     }
 
     /**
@@ -63,9 +62,7 @@ public class EntityHashes implements DigestMixin {
             return null;
         }
 
-        return digest(entities.stream().
-                map(this::digestDomainConfigEntity).
-                collect(Collectors.joining(SEP_CHAR)));
+        return digest(entities.stream().map(this::digestDomainConfigEntity).collect(Collectors.joining(SEP_CHAR)));
     }
 
     public String digestDomainConfigEntity(Object entity) {

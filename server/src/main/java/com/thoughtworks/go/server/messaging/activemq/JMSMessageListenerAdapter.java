@@ -22,26 +22,29 @@ import com.thoughtworks.go.serverhealth.HealthStateType;
 import com.thoughtworks.go.serverhealth.ServerHealthService;
 import com.thoughtworks.go.serverhealth.ServerHealthState;
 import com.thoughtworks.go.util.SystemEnvironment;
+import jakarta.jms.JMSException;
+import jakarta.jms.Message;
+import jakarta.jms.MessageConsumer;
+import jakarta.jms.ObjectMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.jms.JMSException;
-import javax.jms.Message;
-import javax.jms.MessageConsumer;
-import javax.jms.ObjectMessage;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.thoughtworks.go.serverhealth.HealthStateScope.GLOBAL;
 
 public class JMSMessageListenerAdapter<T extends GoMessage> implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(JMSMessageListenerAdapter.class);
+    private static final ConcurrentMap<Class<?>, AtomicInteger> THREAD_COUNT = new ConcurrentHashMap<>();
 
     private final MessageConsumer consumer;
     private final GoMessageListener<T> listener;
     private final DaemonThreadStatsCollector daemonThreadStatsCollector;
     private final SystemEnvironment systemEnvironment;
     private final ServerHealthService serverHealthService;
-
-    public Thread thread;
+    private final Thread thread;
 
     private JMSMessageListenerAdapter(MessageConsumer consumer, GoMessageListener<T> listener, DaemonThreadStatsCollector daemonThreadStatsCollector,
                                       SystemEnvironment systemEnvironment, ServerHealthService serverHealthService) {
@@ -52,8 +55,10 @@ public class JMSMessageListenerAdapter<T extends GoMessage> implements Runnable 
         this.serverHealthService = serverHealthService;
 
         thread = new Thread(this);
-        String threadNameSuffix = "MessageListener for " + listener.getClass().getSimpleName();
-        thread.setName(thread.getId() + "@" + threadNameSuffix);
+        thread.setName(String.format("%s-%s",
+            listener.getClass().getSimpleName(),
+            THREAD_COUNT.computeIfAbsent(listener.getClass(), clz -> new AtomicInteger(0)).incrementAndGet()
+        ));
         thread.setDaemon(true);
         thread.start();
     }
@@ -80,7 +85,7 @@ public class JMSMessageListenerAdapter<T extends GoMessage> implements Runnable 
             }
 
             ObjectMessage om = (ObjectMessage) message;
-            daemonThreadStatsCollector.captureStats(thread.getId());
+            daemonThreadStatsCollector.captureStats(thread.threadId());
             @SuppressWarnings("unchecked") T object = (T) om.getObject();
             listener.onMessage(object);
         } catch (JMSException e) {
@@ -88,7 +93,7 @@ public class JMSMessageListenerAdapter<T extends GoMessage> implements Runnable 
         } catch (Exception e) {
             LOG.error("Exception thrown in message handling by listener {}", listener, e);
         } finally {
-            daemonThreadStatsCollector.clearStats(thread.getId());
+            daemonThreadStatsCollector.clearStats(thread.threadId());
         }
         return false;
     }
@@ -107,8 +112,11 @@ public class JMSMessageListenerAdapter<T extends GoMessage> implements Runnable 
         }
     }
 
-    public static <T extends GoMessage> JMSMessageListenerAdapter<T> startListening(MessageConsumer consumer, GoMessageListener<T> listener, DaemonThreadStatsCollector daemonThreadStatsCollector, SystemEnvironment systemEnvironment, ServerHealthService serverHealthService) {
+    static <T extends GoMessage> JMSMessageListenerAdapter<T> startListening(MessageConsumer consumer, GoMessageListener<T> listener, DaemonThreadStatsCollector daemonThreadStatsCollector, SystemEnvironment systemEnvironment, ServerHealthService serverHealthService) {
         return new JMSMessageListenerAdapter<>(consumer, listener, daemonThreadStatsCollector, systemEnvironment, serverHealthService);
     }
 
+    public String listenerThreadName() {
+        return thread.getName();
+    }
 }

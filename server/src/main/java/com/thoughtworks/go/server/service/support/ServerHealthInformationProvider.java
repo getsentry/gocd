@@ -32,7 +32,7 @@ import java.util.Map;
 @Component
 public class ServerHealthInformationProvider implements ServerInfoProvider {
 
-    private ServerHealthService service;
+    private final ServerHealthService service;
 
     @Override
     public double priority() {
@@ -45,7 +45,7 @@ public class ServerHealthInformationProvider implements ServerInfoProvider {
     }
 
     @Override
-    public Map<String, Object> asJson() {
+    public Map<String, Object> asJsonCompatibleMap() {
         LinkedHashMap<String, Object> json = new LinkedHashMap<>();
         ServerHealthStates allLogs = service.logsSorted();
         json.put("Messages Count", allLogs.size());

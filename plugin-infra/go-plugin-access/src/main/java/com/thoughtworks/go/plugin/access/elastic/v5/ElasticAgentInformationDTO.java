@@ -31,11 +31,11 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 class ElasticAgentInformationDTO implements Serializable {
-    private static final Gson GSON = new GsonBuilder().
-            excludeFieldsWithoutExposeAnnotation().
-            serializeNulls().
-            setFieldNamingStrategy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).
-            create();
+    private static final Gson GSON = new GsonBuilder()
+        .excludeFieldsWithoutExposeAnnotation()
+        .serializeNulls()
+        .setFieldNamingStrategy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
+        .create();
 
     @Expose
     @SerializedName("plugin_settings")
@@ -73,8 +73,12 @@ class ElasticAgentInformationDTO implements Serializable {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         ElasticAgentInformationDTO that = (ElasticAgentInformationDTO) o;
         return Objects.equals(pluginSettings, that.pluginSettings) &&
                 Objects.equals(clusterProfilesDTO, that.clusterProfilesDTO) &&

@@ -15,12 +15,11 @@
  */
 package com.thoughtworks.go.server.materials;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.materials.SubprocessExecutionContext;
 import com.thoughtworks.go.config.materials.dependency.DependencyMaterial;
 import com.thoughtworks.go.domain.*;
 import com.thoughtworks.go.domain.materials.Modification;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.dao.DependencyMaterialSourceDao;
 import com.thoughtworks.go.server.persistence.MaterialRepository;
@@ -45,6 +44,7 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -52,27 +52,34 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(locations = {
-        "classpath:/applicationContext-global.xml",
-        "classpath:/applicationContext-dataLocalAccess.xml",
-        "classpath:/testPropertyConfigurer.xml",
-        "classpath:/spring-all-servlet.xml",
+    "classpath:/applicationContext-global.xml",
+    "classpath:/applicationContext-dataLocalAccess.xml",
+    "classpath:/testPropertyConfigurer.xml",
+    "classpath:/spring-all-servlet.xml",
 })
 public class MaterialDatabaseDependencyUpdaterTest {
-    @Autowired private DatabaseAccessHelper dbHelper;
-    @Autowired protected MaterialRepository materialRepository;
-    @Autowired private GoCache goCache;
-    @Autowired private TransactionTemplate transactionTemplate;
-    @Autowired private MaterialService materialService;
-    @Autowired private LegacyMaterialChecker legacyMaterialChecker;
-    @Autowired private SubprocessExecutionContext subprocessExecutionContext;
-    @Autowired private MaterialExpansionService materialExpansionService;
-    @Autowired private GoConfigService goConfigService;
+    @Autowired
+    private DatabaseAccessHelper dbHelper;
+    @Autowired
+    protected MaterialRepository materialRepository;
+    @Autowired
+    private GoCache goCache;
+    @Autowired
+    private TransactionTemplate transactionTemplate;
+    @Autowired
+    private MaterialService materialService;
+    @Autowired
+    private LegacyMaterialChecker legacyMaterialChecker;
+    @Autowired
+    private SubprocessExecutionContext subprocessExecutionContext;
+    @Autowired
+    private MaterialExpansionService materialExpansionService;
+    @Autowired
+    private GoConfigService goConfigService;
 
     protected MaterialDatabaseUpdater updater;
     private DependencyMaterialSourceDao dependencyMaterialSourceDao;
     private ServerHealthService healthService;
-    private DependencyMaterialUpdater dependencyMaterialUpdater;
-    private ScmMaterialUpdater scmMaterialUpdater;
 
     @BeforeEach
     public void setUp() throws Exception {
@@ -80,9 +87,13 @@ public class MaterialDatabaseDependencyUpdaterTest {
         goCache.clear();
         dependencyMaterialSourceDao = mock(DependencyMaterialSourceDao.class);
         healthService = mock(ServerHealthService.class);
-        dependencyMaterialUpdater = new DependencyMaterialUpdater(dependencyMaterialSourceDao, materialRepository);
-        scmMaterialUpdater = new ScmMaterialUpdater(materialRepository, legacyMaterialChecker, subprocessExecutionContext, materialService);
-        updater = new MaterialDatabaseUpdater(materialRepository, healthService, transactionTemplate, dependencyMaterialUpdater, scmMaterialUpdater, null, null, materialExpansionService, goConfigService);
+        updater = new MaterialDatabaseUpdater(
+            materialRepository,
+            healthService,
+            transactionTemplate,
+            new DependencyMaterialUpdater(dependencyMaterialSourceDao, materialRepository),
+            new ScmMaterialUpdater(materialRepository, legacyMaterialChecker, subprocessExecutionContext, materialService),
+            null, null, materialExpansionService, goConfigService);
     }
 
     @AfterEach
@@ -91,8 +102,8 @@ public class MaterialDatabaseDependencyUpdaterTest {
     }
 
     @Test
-    public void shouldCreateEntriesForCompletedPipelines() throws Exception {
-        DependencyMaterial dependencyMaterial = new DependencyMaterial(new CaseInsensitiveString("pipeline-name"), new CaseInsensitiveString("stage-name"));
+    public void shouldCreateEntriesForCompletedPipelines() {
+        DependencyMaterial dependencyMaterial = new DependencyMaterial(cis("pipeline-name"), cis("stage-name"));
 
         stubStageServiceGetHistory(stages(9));
 
@@ -101,18 +112,18 @@ public class MaterialDatabaseDependencyUpdaterTest {
         List<Modification> modification = materialRepository.findLatestModification(dependencyMaterial).getMaterialRevision(0).getModifications();
 
         assertThat(modification.size()).isEqualTo(1);
-        assertThat(modification.get(0).getRevision()).isEqualTo("pipeline-name/9/stage-name/0");
-        assertThat(modification.get(0).getPipelineLabel()).isEqualTo("LABEL-9");
+        assertThat(modification.getFirst().getRevision()).isEqualTo("pipeline-name/9/stage-name/0");
+        assertThat(modification.getFirst().getPipelineLabel()).isEqualTo("LABEL-9");
     }
 
     @Test
     public void shouldUpdateServerHealthIfCheckFails() {
-        DependencyMaterial dependencyMaterial = new DependencyMaterial(new CaseInsensitiveString("pipeline-name"), new CaseInsensitiveString("stage-name"));
+        DependencyMaterial dependencyMaterial = new DependencyMaterial(cis("pipeline-name"), cis("stage-name"));
 
         RuntimeException runtimeException = new RuntimeException("Description of error");
-        when(dependencyMaterialSourceDao.getPassedStagesByName(new DependencyMaterial(new CaseInsensitiveString("pipeline-name"), new CaseInsensitiveString("stage-name")),
-                Pagination.pageStartingAt(0, null, MaterialDatabaseUpdater.STAGES_PER_PAGE)))
-                .thenThrow(runtimeException);
+        when(dependencyMaterialSourceDao.getPassedStagesByName(new DependencyMaterial(cis("pipeline-name"), cis("stage-name")),
+            Pagination.pageByOffsetUnknownTotal(0, MaterialDatabaseUpdater.STAGES_PER_PAGE)))
+            .thenThrow(runtimeException);
 
         try {
             updater.updateMaterial(dependencyMaterial);
@@ -122,17 +133,17 @@ public class MaterialDatabaseDependencyUpdaterTest {
         }
 
         HealthStateType scope = HealthStateType.general(HealthStateScope.forMaterial(dependencyMaterial));
-        ServerHealthState state = ServerHealthState.errorWithHtml("Modification check failed for material: pipeline-name [ stage-name ]\nNo pipelines affected, may only affect configuration repositories.", "Description of error", scope);
+        ServerHealthState state = ServerHealthState.error("Modification check failed for material: pipeline-name [ stage-name ]\nNo pipelines affected, may only affect configuration repositories.", "Description of error", scope);
         verify(healthService).update(state);
     }
 
     @Test
-    public void shouldClearServerHealthIfCheckSucceeds() throws Exception {
-        DependencyMaterial dependencyMaterial = new DependencyMaterial(new CaseInsensitiveString("pipeline-name"), new CaseInsensitiveString("stage-name"));
+    public void shouldClearServerHealthIfCheckSucceeds() {
+        DependencyMaterial dependencyMaterial = new DependencyMaterial(cis("pipeline-name"), cis("stage-name"));
 
-        when(dependencyMaterialSourceDao.getPassedStagesByName(new DependencyMaterial(new CaseInsensitiveString("pipeline-name"), new CaseInsensitiveString("stage-name")),
-                Pagination.pageStartingAt(0, null, MaterialDatabaseUpdater.STAGES_PER_PAGE)))
-                .thenReturn(new ArrayList<>());
+        when(dependencyMaterialSourceDao.getPassedStagesByName(new DependencyMaterial(cis("pipeline-name"), cis("stage-name")),
+            Pagination.pageByOffsetUnknownTotal(0, MaterialDatabaseUpdater.STAGES_PER_PAGE)))
+            .thenReturn(new ArrayList<>());
 
         updater.updateMaterial(dependencyMaterial);
 
@@ -140,8 +151,8 @@ public class MaterialDatabaseDependencyUpdaterTest {
     }
 
     @Test
-    public void shouldReturnNoNewModificationsIfNoNewPipelineHasBennCompleted() throws Exception {
-        DependencyMaterial dependencyMaterial = new DependencyMaterial(new CaseInsensitiveString("pipeline-name"), new CaseInsensitiveString("stage-name"));
+    public void shouldReturnNoNewModificationsIfNoNewPipelineHasBennCompleted() {
+        DependencyMaterial dependencyMaterial = new DependencyMaterial(cis("pipeline-name"), cis("stage-name"));
 
         stubStageServiceGetHistory(stages(9));
         updater.updateMaterial(dependencyMaterial);
@@ -158,31 +169,28 @@ public class MaterialDatabaseDependencyUpdaterTest {
     }
 
     private void stubStageServiceGetHistoryAfter(DependencyMaterial material, int pipelineCounter, Stages... stageses) {
-        if(material == null){
-            material = new DependencyMaterial(new CaseInsensitiveString("pipeline-name"), new CaseInsensitiveString("stage-name"));
+        if (material == null) {
+            material = new DependencyMaterial(cis("pipeline-name"), cis("stage-name"));
         }
         StageIdentifier identifier = new StageIdentifier(String.format("%s/%s/%s/0", material.getPipelineName().toString(), pipelineCounter, material.getStageName().toString()));
         for (int i = 0; i < stageses.length; i++) {
-            Stages stages = stageses[i];
             List<Modification> mods = new ArrayList<>();
-            for (Stage stage : stages) {
+            for (Stage stage : stageses[i]) {
                 StageIdentifier id = stage.getIdentifier();
                 mods.add(new Modification(stage.completedDate(), id.stageLocator(), id.getPipelineLabel(), stage.getPipelineId()));
             }
             when(dependencyMaterialSourceDao.getPassedStagesAfter(identifier.stageLocator(),
-                    material,
-                    Pagination.pageStartingAt(i * MaterialDatabaseUpdater.STAGES_PER_PAGE, null, MaterialDatabaseUpdater.STAGES_PER_PAGE)
+                Pagination.pageByOffsetUnknownTotal(i * MaterialDatabaseUpdater.STAGES_PER_PAGE, MaterialDatabaseUpdater.STAGES_PER_PAGE)
             )).thenReturn(mods);
         }
         when(dependencyMaterialSourceDao.getPassedStagesAfter(identifier.stageLocator(),
-                material,
-                Pagination.pageStartingAt(MaterialDatabaseUpdater.STAGES_PER_PAGE * stageses.length, null, MaterialDatabaseUpdater.STAGES_PER_PAGE)
+            Pagination.pageByOffsetUnknownTotal(MaterialDatabaseUpdater.STAGES_PER_PAGE * stageses.length, MaterialDatabaseUpdater.STAGES_PER_PAGE)
         )).thenReturn(new ArrayList<>());
     }
 
     @Test
-    public void shouldReturnNoNewModificationsIfPipelineHasNeverBeenScheduled() throws Exception {
-        DependencyMaterial dependencyMaterial = new DependencyMaterial(new CaseInsensitiveString("pipeline-name"), new CaseInsensitiveString("stage-name"));
+    public void shouldReturnNoNewModificationsIfPipelineHasNeverBeenScheduled() {
+        DependencyMaterial dependencyMaterial = new DependencyMaterial(cis("pipeline-name"), cis("stage-name"));
 
         stubStageServiceGetHistory();
         updater.updateMaterial(dependencyMaterial);
@@ -193,8 +201,8 @@ public class MaterialDatabaseDependencyUpdaterTest {
     }
 
     @Test
-    public void shouldReturnLatestPipelineIfThereHasBeenANewOne() throws Exception {
-        DependencyMaterial dependencyMaterial = new DependencyMaterial(new CaseInsensitiveString("pipeline-name"), new CaseInsensitiveString("stage-name"));
+    public void shouldReturnLatestPipelineIfThereHasBeenANewOne() {
+        DependencyMaterial dependencyMaterial = new DependencyMaterial(cis("pipeline-name"), cis("stage-name"));
 
         stubStageServiceGetHistory(stages(9));
         updater.updateMaterial(dependencyMaterial);
@@ -207,13 +215,13 @@ public class MaterialDatabaseDependencyUpdaterTest {
         List<Modification> newModifications = materialRepository.findModificationsSince(dependencyMaterial, new MaterialRevision(dependencyMaterial, modification));
 
         assertThat(newModifications.size()).isEqualTo(1);
-        assertThat(newModifications.get(0).getRevision()).isEqualTo("pipeline-name/10/stage-name/0");
-        assertThat(newModifications.get(0).getPipelineLabel()).isEqualTo("LABEL-10");
+        assertThat(newModifications.getFirst().getRevision()).isEqualTo("pipeline-name/10/stage-name/0");
+        assertThat(newModifications.getFirst().getPipelineLabel()).isEqualTo("LABEL-10");
     }
 
     @Test
-    public void shouldInsertAllHistoricRunsOfUpstreamStageTheFirstTime() throws Exception {
-        DependencyMaterial dependencyMaterial = new DependencyMaterial(new CaseInsensitiveString("pipeline-name"), new CaseInsensitiveString("stage-name"));
+    public void shouldInsertAllHistoricRunsOfUpstreamStageTheFirstTime() {
+        DependencyMaterial dependencyMaterial = new DependencyMaterial(cis("pipeline-name"), cis("stage-name"));
 
         stubStageServiceGetHistory(stages(9, 10, 11), stages(12, 13));
 
@@ -228,9 +236,9 @@ public class MaterialDatabaseDependencyUpdaterTest {
     }
 
     @Test
-    public void shouldUpdateMaterialCorrectlyIfCaseOfPipelineNameIsDifferentInConfigurationOfDependencyMaterial() throws Exception {
+    public void shouldUpdateMaterialCorrectlyIfCaseOfPipelineNameIsDifferentInConfigurationOfDependencyMaterial() {
 
-        DependencyMaterial dependencyMaterial = new DependencyMaterial(new CaseInsensitiveString("PIPEline-name"), new CaseInsensitiveString("STAge-name"));
+        DependencyMaterial dependencyMaterial = new DependencyMaterial(cis("PIPEline-name"), cis("STAge-name"));
         stubStageServiceGetHistory(stages(1));
 
         // create the material instance
@@ -247,8 +255,8 @@ public class MaterialDatabaseDependencyUpdaterTest {
         // update subsequently should hit database
         updater.updateMaterial(dependencyMaterial);
 
-        verify(dependencyMaterialSourceDao, times(2)).getPassedStagesAfter(any(String.class), any(DependencyMaterial.class), any(Pagination.class));
-        verify(dependencyMaterialSourceDao, times(2)).getPassedStagesByName(any(DependencyMaterial.class), any(Pagination.class));
+        verify(dependencyMaterialSourceDao, times(2)).getPassedStagesAfter(any(), any());
+        verify(dependencyMaterialSourceDao, times(2)).getPassedStagesByName(any(), any());
     }
 
     private Stages stages(int... pipelineCounters) {
@@ -266,7 +274,7 @@ public class MaterialDatabaseDependencyUpdaterTest {
     }
 
     private void stubStageServiceGetHistory(Stages... stageses) {
-        DependencyMaterial dependencyMaterial = new DependencyMaterial(new CaseInsensitiveString("pipeline-name"), new CaseInsensitiveString("stage-name"));
+        DependencyMaterial dependencyMaterial = new DependencyMaterial(cis("pipeline-name"), cis("stage-name"));
         for (int i = 0; i < stageses.length; i++) {
             List<Modification> mods = new ArrayList<>();
             for (Stage stage : stageses[i]) {
@@ -274,11 +282,11 @@ public class MaterialDatabaseDependencyUpdaterTest {
                 mods.add(new Modification(stage.completedDate(), id.stageLocator(), id.getPipelineLabel(), stage.getPipelineId()));
             }
             when(dependencyMaterialSourceDao.getPassedStagesByName(dependencyMaterial,
-                    Pagination.pageStartingAt(i * MaterialDatabaseUpdater.STAGES_PER_PAGE, null, MaterialDatabaseUpdater.STAGES_PER_PAGE)))
-                    .thenReturn(mods);
+                Pagination.pageByOffsetUnknownTotal(i * MaterialDatabaseUpdater.STAGES_PER_PAGE, MaterialDatabaseUpdater.STAGES_PER_PAGE)))
+                .thenReturn(mods);
         }
         when(dependencyMaterialSourceDao.getPassedStagesByName(dependencyMaterial,
-                Pagination.pageStartingAt(MaterialDatabaseUpdater.STAGES_PER_PAGE * stageses.length, null, MaterialDatabaseUpdater.STAGES_PER_PAGE)
+            Pagination.pageByOffsetUnknownTotal(MaterialDatabaseUpdater.STAGES_PER_PAGE * stageses.length, MaterialDatabaseUpdater.STAGES_PER_PAGE)
         )).thenReturn(new ArrayList<>());
     }
 }

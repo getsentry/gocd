@@ -36,14 +36,7 @@ class YarnInstallTask extends DefaultTask {
   YarnInstallTask(ExecOperations execOperations) {
     this.execOperations = execOperations
     inputs.property('os', OperatingSystem.current().toString())
-    project.afterEvaluate({
-      inputs.file(project.file("${getWorkingDir()}/package.json"))
-      inputs.file(project.file("${getWorkingDir()}/yarn.lock"))
-      inputs.file(project.file("${getWorkingDir()}/.yarnrc.yml"))
-      inputs.dir(project.file("${getWorkingDir()}/.yarn/patches"))
-      inputs.dir(project.file("${getWorkingDir()}/.yarn/plugins"))
-      inputs.dir(project.file("${getWorkingDir()}/.yarn/releases"))
-    })
+    outputs.cacheIf { false }
   }
 
   @Input // not an @InputFile/InputDirectory, because we don't care about the contents of the workingDir itself
@@ -58,16 +51,18 @@ class YarnInstallTask extends DefaultTask {
 
   void setWorkingDir(File workingDir) {
     this.workingDir = workingDir
+    inputs.file("${getWorkingDir()}/package.json")
+    inputs.file("${getWorkingDir()}/yarn.lock")
+    inputs.file("${getWorkingDir()}/.yarnrc.yml")
+    inputs.dir("${getWorkingDir()}/node-vendor")
   }
 
   @TaskAction
   def install() {
     execOperations.exec { execTask ->
       execTask.environment("FORCE_COLOR", "true")
-      execTask.standardOutput = System.out
-      execTask.errorOutput = System.err
       execTask.workingDir = this.getWorkingDir()
-      execTask.commandLine = OperatingSystem.current().isWindows() ? ["yarn.cmd", "install", "--no-immutable"] : ["yarn", "install", "--immutable"]
+      execTask.commandLine = [YarnRunTask.yarnExecutable(execTask.workingDir), "install", "--immutable"]
     }  
   }
 }

@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-import path from "path";
+import {ConfigOptions} from "config/variables";
+import path from "node:path";
 import webpack from "webpack";
-import {ConfigOptions} from "../variables";
-import {getCacheLoader} from "./cache-loader";
 import {threadLoader} from "./thread-loader";
 
 export function getTypescriptLoader(configOptions: ConfigOptions): webpack.RuleSetRule {
@@ -30,7 +29,6 @@ export function getTypescriptLoader(configOptions: ConfigOptions): webpack.RuleS
   }
 
   loaders.push(
-    getCacheLoader(configOptions),
     {
       loader: "babel-loader",
       options: {
@@ -41,9 +39,9 @@ export function getTypescriptLoader(configOptions: ConfigOptions): webpack.RuleS
       loader: loaderName,
       options: {
         configFile: path.join(configOptions.railsRoot, "tsconfig.json"),
-        transpileOnly: configOptions.watch, // perform typechecking using fork-ts-checker-webpack-plugin
+        transpileOnly: true, // perform typechecking using fork-ts-checker-webpack-plugin
         // technically, we do not use happypack, but this is still required.
-        happyPackMode: configOptions.watch,
+        happyPackMode: true,
         reportFiles: [
           "**/*.{ts,tsx}"
         ]

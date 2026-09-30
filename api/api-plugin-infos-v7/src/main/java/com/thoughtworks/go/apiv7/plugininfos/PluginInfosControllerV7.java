@@ -17,7 +17,7 @@ package com.thoughtworks.go.apiv7.plugininfos;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv7.plugininfos.representers.PluginInfoRepresenter;
 import com.thoughtworks.go.apiv7.plugininfos.representers.PluginInfosRepresenter;
 import com.thoughtworks.go.config.exceptions.RecordNotFoundException;
@@ -29,9 +29,9 @@ import com.thoughtworks.go.plugin.infra.DefaultPluginManager;
 import com.thoughtworks.go.plugin.infra.plugininfo.GoPluginDescriptor;
 import com.thoughtworks.go.server.service.EntityHashingService;
 import com.thoughtworks.go.server.service.plugins.builder.DefaultPluginInfoFinder;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import spark.Request;
@@ -41,21 +41,22 @@ import java.io.IOException;
 import java.util.*;
 
 import static com.thoughtworks.go.api.util.HaltApiMessages.notFoundMessage;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static spark.Spark.*;
 
 @Component
 public class PluginInfosControllerV7 extends ApiController implements SparkSpringController {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final EntityHashingService entityHashingService;
     private final DefaultPluginManager defaultPluginManager;
     private final ExtensionsRegistry extensionsRegistry;
     private final DefaultPluginInfoFinder pluginInfoFinder;
 
     @Autowired
-    public PluginInfosControllerV7(ApiAuthenticationHelper apiAuthenticationHelper, DefaultPluginInfoFinder pluginInfoFinder, EntityHashingService entityHashingService, DefaultPluginManager defaultPluginManager, ExtensionsRegistry extensionsRegistry) {
+    public PluginInfosControllerV7(ApiAuthorizationHelper apiAuthorizationHelper, DefaultPluginInfoFinder pluginInfoFinder, EntityHashingService entityHashingService, DefaultPluginManager defaultPluginManager, ExtensionsRegistry extensionsRegistry) {
         super(ApiVersion.v7);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.pluginInfoFinder = pluginInfoFinder;
         this.entityHashingService = entityHashingService;
         this.defaultPluginManager = defaultPluginManager;
@@ -68,13 +69,13 @@ public class PluginInfosControllerV7 extends ApiController implements SparkSprin
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
 
-            before("", this.mimeType, this.apiAuthenticationHelper::checkUserAnd403);
-            before(Routes.PluginInfoAPI.ID, this.mimeType, this.apiAuthenticationHelper::checkUserAnd403);
+            before("", this.mimeType, this.apiAuthorizationHelper::checkUserAnd403);
+            before(Routes.PluginInfoAPI.ID, this.mimeType, this.apiAuthorizationHelper::checkUserAnd403);
 
             get("", mimeType, this::index);
             get(Routes.PluginInfoAPI.ID, mimeType, this::show);
@@ -85,7 +86,7 @@ public class PluginInfosControllerV7 extends ApiController implements SparkSprin
         String pluginType = request.queryParams("type");
         boolean includeBad = Boolean.parseBoolean(request.queryParams("include_bad"));
 
-        if (StringUtils.isNotBlank(pluginType) && !extensionsRegistry.allRegisteredExtensions().contains(pluginType)) {
+        if (isNotBlank(pluginType) && !extensionsRegistry.allRegisteredExtensions().contains(pluginType)) {
             throw new UnprocessableEntityException(String.format("Invalid plugin type '%s'. It has to be one of '%s'.", pluginType, String.join(", ", extensionsRegistry.allRegisteredExtensions())));
         }
 

@@ -21,20 +21,23 @@ import com.thoughtworks.go.config.validation.NameTypeValidator;
 import com.thoughtworks.go.domain.BaseCollection;
 import com.thoughtworks.go.domain.ConfigErrors;
 import com.thoughtworks.go.domain.PipelineConfigVisitor;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.Serializable;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.BiPredicate;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @ConfigTag(value = "pipelines", label = "PipelineGroup")
 @ConfigCollection(PipelineConfig.class)
 public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> implements PipelineConfigs, Serializable {
-
 
     @ConfigAttribute(value = "group", optional = true)
     @SkipParameterResolution
@@ -72,11 +75,6 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
     }
 
     @Override
-    public boolean contains(PipelineConfig pipelineConfig) {
-        return super.contains(pipelineConfig);
-    }
-
-    @Override
     public ConfigOrigin getOrigin() {
         return configOrigin;
     }
@@ -91,14 +89,11 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
     }
 
     @Override
-    public PipelineConfig findBy(final CaseInsensitiveString pipelineName) {
-        for (int i = 0; i < this.size(); i++) {
-            PipelineConfig pipelineConfig = this.get(i);
-            if (pipelineConfig.name().equals(pipelineName)) {
-                return pipelineConfig;
-            }
-        }
-        return null;
+    public @Nullable PipelineConfig findBy(final CaseInsensitiveString pipelineName) {
+        return stream()
+            .filter(p -> p.name().equals(pipelineName))
+            .findFirst()
+            .orElse(null);
     }
 
     @Override
@@ -158,7 +153,7 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
     }
 
     public static String sanitizedGroupName(String group) {
-        return StringUtils.isBlank(group) ? DEFAULT_GROUP : group;
+        return isBlank(group) ? DEFAULT_GROUP : group;
     }
 
     @Override
@@ -172,11 +167,8 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
         if (!isSameGroup(groupName)) {
             return;
         }
-        this.set(getIndex(pipelineName), pipeline);
-    }
-
-    private int getIndex(String pipelineName) {
-        return this.indexOf(this.findBy(new CaseInsensitiveString(pipelineName)));
+        CaseInsensitiveString caseName = cis(pipelineName);
+        this.replaceIfNotEmpty(c -> c.name().equals(caseName), pipeline);
     }
 
     @Override
@@ -190,27 +182,12 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
     }
 
     private boolean isSameGroup(String groupName) {
-        return StringUtils.equalsIgnoreCase(groupName, this.getGroup());
-    }
-
-    @Override
-    public void add(List<String> allGroup) {
-        allGroup.add(group);
-    }
-
-    @Override
-    public boolean exist(int pipelineIndex) {
-        return pipelineIndex < this.size();
+        return Strings.CI.equals(groupName, this.getGroup());
     }
 
     @Override
     public boolean hasPipeline(CaseInsensitiveString pipelineName) {
-        for (PipelineConfig pipelineConfig : this) {
-            if (pipelineConfig.name().equals(pipelineName)) {
-                return true;
-            }
-        }
-        return false;
+        return this.stream().anyMatch(pipelineConfig -> pipelineConfig.name().equals(pipelineName));
     }
 
     @Override
@@ -231,8 +208,8 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
     }
 
     @Override
-    public boolean hasViewPermission(final CaseInsensitiveString username, UserRoleMatcher userRoleMatcher, boolean everyoneIsAllowedToViewIfNoAuthIsDefined) {
-        return (!hasAuthorizationDefined() && everyoneIsAllowedToViewIfNoAuthIsDefined) || authorization.hasViewPermission(username, userRoleMatcher);
+    public boolean hasViewPermission(final CaseInsensitiveString username, UserRoleMatcher userRoleMatcher) {
+        return authorization.hasViewPermission(username, userRoleMatcher);
     }
 
     @Override
@@ -246,8 +223,8 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
     }
 
     @Override
-    public boolean hasOperatePermission(final CaseInsensitiveString username, UserRoleMatcher userRoleMatcher, boolean everyoneIsAllowedToOperateIfNoAuthIsDefined) {
-        return (!hasAuthorizationDefined() && everyoneIsAllowedToOperateIfNoAuthIsDefined) || authorization.hasOperatePermission(username, userRoleMatcher);
+    public boolean hasOperatePermission(final CaseInsensitiveString username, UserRoleMatcher userRoleMatcher) {
+        return authorization.hasOperatePermission(username, userRoleMatcher);
     }
 
     @Override
@@ -269,14 +246,8 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
 
         BasicPipelineConfigs pipelines = (BasicPipelineConfigs) o;
 
-        if (authorization != null ? !authorization.equals(pipelines.authorization) : pipelines.authorization != null) {
-            return false;
-        }
-        if (group != null ? !group.equals(pipelines.group) : pipelines.group != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(authorization, pipelines.authorization) &&
+            Objects.equals(group, pipelines.group);
     }
 
     @Override
@@ -285,16 +256,6 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
         result = 31 * result + (group != null ? group.hashCode() : 0);
         result = 31 * result + (authorization != null ? authorization.hashCode() : 0);
         return result;
-    }
-
-    @Override
-    public boolean hasTemplate() {
-        for (PipelineConfig pipelineConfig : this) {
-            if (pipelineConfig.hasTemplate()) {
-                return true;
-            }
-        }
-        return false;
     }
 
     @Override
@@ -316,7 +277,7 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
     public void validate(ValidationContext validationContext) {
         this.validateGroupNameAndAddErrorsTo(this.configErrors);
         if (this.configOrigin != null && //when there is no origin specified we should not check it at all
-                !(this.configOrigin.isLocal()) &&
+                !this.configOrigin.isLocal() &&
                 this.hasAuthorizationDefined()) {
             this.configErrors.add(NO_REMOTE_AUTHORIZATION,
                     "Authorization can be defined only in configuration file");
@@ -367,34 +328,6 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
         configErrors.add(fieldName, message);
     }
 
-    @Override
-    public List<AdminUser> getOperateUsers() {
-        return authorization.getOperationConfig().getUsers();
-    }
-
-    @Override
-    public List<AdminRole> getOperateRoles() {
-        return authorization.getOperationConfig().getRoles();
-    }
-
-    @Override
-    public List<String> getOperateRoleNames() {
-        List<String> roles = new ArrayList<>();
-        for (AdminRole role : getOperateRoles()) {
-            roles.add(CaseInsensitiveString.str(role.getName()));
-        }
-        return roles;
-    }
-
-    @Override
-    public List<String> getOperateUserNames() {
-        List<String> users = new ArrayList<>();
-        for (AdminUser user : getOperateUsers()) {
-            users.add(CaseInsensitiveString.str(user.getName()));
-        }
-        return users;
-    }
-
     @SuppressWarnings("unchecked")
     @Override
     public void setConfigAttributes(Object attributes) {
@@ -413,7 +346,6 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
         }
     }
 
-
     @Override
     public void cleanupAllUsagesOfRole(Role roleToDelete) {
         getAuthorization().removeAllUsagesOfRole(roleToDelete);
@@ -423,8 +355,15 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
     }
 
     @Override
-    public int indexOf(PipelineConfig pipelineConfig) {
-        return super.indexOf(pipelineConfig);
+    public boolean tryReplace(BiPredicate<PipelineConfigs, PipelineConfig> matcher, PipelineConfig newItem) {
+        if (!isEmpty()) {
+            int indexOfOldItem = indexOfMatcher(c -> matcher.test(this, c));
+            if (indexOfOldItem != -1) {
+                setIfNotEmpty(indexOfOldItem, newItem);
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
@@ -439,7 +378,7 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
 
     @Override
     public void validateGroupNameAndAddErrorsTo(ConfigErrors errors) {
-        if (StringUtils.isBlank(group) || new NameTypeValidator().isNameInvalid(group)) {
+        if (isBlank(group) || new NameTypeValidator().isNameInvalid(group)) {
             String errorText = NameTypeValidator.errorMessage("group", group);
             errors.add(GROUP, errorText);
         }
@@ -447,8 +386,9 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
 
     @Override
     public PipelineConfigs getLocal() {
-        if (this.isLocal())
+        if (this.isLocal()) {
             return this;
+        }
         return null;
     }
 
@@ -459,10 +399,5 @@ public class BasicPipelineConfigs extends BaseCollection<PipelineConfig> impleme
 
     public void setOrigin(ConfigOrigin origin) {
         this.configOrigin = origin;
-    }
-
-    @Override
-    public boolean hasRemoteParts() {
-        return getOrigin() != null && !getOrigin().isLocal();
     }
 }

@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.service;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.CruiseConfig;
 import com.thoughtworks.go.config.PipelineConfig;
 import com.thoughtworks.go.config.exceptions.EntityType;
@@ -27,28 +26,29 @@ import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.newsecurity.utils.SessionUtils;
 import com.thoughtworks.go.server.service.result.DefaultLocalizedOperationResult;
 import com.thoughtworks.go.server.service.result.LocalizedOperationResult;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.serverhealth.HealthStateScope.forPipeline;
 import static com.thoughtworks.go.serverhealth.HealthStateType.forbiddenForPipeline;
 import static com.thoughtworks.go.serverhealth.HealthStateType.general;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @Service
 public class PipelinePauseService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PipelinePauseService.class);
 
-    private PipelineSqlMapDao pipelineSqlMapDao;
+    private final PipelineSqlMapDao pipelineSqlMapDao;
     private final GoConfigService goConfigService;
     private final SecurityService securityService;
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(PipelinePauseService.class);
-    private List<PipelinePauseChangeListener> listeners = new ArrayList<>();
+    private final List<PipelinePauseChangeListener> listeners = new CopyOnWriteArrayList<>();
 
     @Autowired
     public PipelinePauseService(PipelineSqlMapDao pipelineSqlMapDao, GoConfigService goConfigService, SecurityService securityService) {
@@ -62,11 +62,11 @@ public class PipelinePauseService {
     }
 
     public void pause(String pipelineName, String pauseCause, Username pausedBy, LocalizedOperationResult result) {
-        String pauseByUserName = pausedBy == null ? "" : pausedBy.getUsername().toString();
+        String pauseByUserName = pausedBy.getUsername().toString();
         if (pipelineDoesNotExist(pipelineName, result) || notAuthorized(pipelineName, pauseByUserName, result)) {
             return;
         }
-        if (StringUtils.isBlank(pauseCause)) {
+        if (isBlank(pauseCause)) {
             pauseCause = "";
         }
         if (isPipelinePaused(pipelineName)) {
@@ -135,8 +135,8 @@ public class PipelinePauseService {
 
     private boolean notAuthorized(String pipelineName, String pauseBy, LocalizedOperationResult result) {
         CruiseConfig cruiseConfig = goConfigService.getCurrentConfig();
-        PipelineConfig pipelineConfig = cruiseConfig.pipelineConfigByName(new CaseInsensitiveString(pipelineName));
-        if (securityService.hasOperatePermissionForGroup(new CaseInsensitiveString(pauseBy), cruiseConfig.findGroupOfPipeline(pipelineConfig).getGroup())) {
+        PipelineConfig pipelineConfig = cruiseConfig.pipelineConfigByName(cis(pipelineName));
+        if (securityService.hasOperatePermissionForGroup(cis(pauseBy), cruiseConfig.findGroupByPipeline(pipelineConfig).getGroup())) {
             return false;
         }
         result.forbidden(LocalizedMessage.forbiddenToEditPipeline(pipelineName), forbiddenForPipeline(pipelineName));
@@ -145,7 +145,7 @@ public class PipelinePauseService {
 
     private boolean pipelineDoesNotExist(String pipelineName, LocalizedOperationResult result) {
         CruiseConfig cruiseConfig = goConfigService.getCurrentConfig();
-        if (cruiseConfig.hasPipelineNamed(new CaseInsensitiveString(pipelineName))) {
+        if (cruiseConfig.hasPipelineNamed(cis(pipelineName))) {
             return false;
         }
         result.notFound(EntityType.Pipeline.notFoundMessage(pipelineName), general(forPipeline(pipelineName)));

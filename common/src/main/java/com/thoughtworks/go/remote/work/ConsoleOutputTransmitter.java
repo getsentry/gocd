@@ -18,51 +18,50 @@ package com.thoughtworks.go.remote.work;
 import com.thoughtworks.go.util.SystemEnvironment;
 import com.thoughtworks.go.util.command.TaggedStreamConsumer;
 import org.apache.commons.collections4.queue.CircularFifoQueue;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.text.SimpleDateFormat;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static java.lang.String.format;
 
 public final class ConsoleOutputTransmitter implements TaggedStreamConsumer, Runnable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ConsoleOutputTransmitter.class);
+    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
 
     private final CircularFifoQueue<String> buffer = new CircularFifoQueue<>(10 * 1024); // maximum 10k lines
     private final ConsoleAppender consoleAppender;
-    private final SimpleDateFormat dateFormat = new SimpleDateFormat("HH:mm:ss.SSS");
     private final ScheduledThreadPoolExecutor executor;
 
     public ConsoleOutputTransmitter(ConsoleAppender consoleAppender) {
-        this(consoleAppender, new SystemEnvironment().getConsolePublishInterval(), new ScheduledThreadPoolExecutor(1));
+        this(consoleAppender, new SystemEnvironment().getConsolePublishIntervalSeconds(), TimeUnit.SECONDS, new ScheduledThreadPoolExecutor(1));
     }
 
-    ConsoleOutputTransmitter(ConsoleAppender consoleAppender, Integer consolePublishInterval,
-                                       ScheduledThreadPoolExecutor scheduledThreadPoolExecutor) {
+    ConsoleOutputTransmitter(ConsoleAppender consoleAppender, long consolePublishInterval, TimeUnit consumePublishIntervalUnit, ScheduledThreadPoolExecutor scheduledThreadPoolExecutor) {
         this.consoleAppender = consoleAppender;
         this.executor = scheduledThreadPoolExecutor;
-        executor.scheduleAtFixedRate(this, 0L, consolePublishInterval, TimeUnit.SECONDS);
+        executor.scheduleAtFixedRate(this, 0L, consolePublishInterval, consumePublishIntervalUnit);
     }
 
     @Override
-    public void consumeLine(String line) {
-        taggedConsumeLine(null, line);
+    public void consumeLine(@NotNull String line) {
+        taggedConsumeLine(NOTICE, line);
     }
 
     @Override
-    public void taggedConsumeLine(String tag, String line) {
+    public void taggedConsumeLine(@NotNull String tag, @NotNull String line) {
+        String taggedDate = format("%s|%s", tag, FORMATTER.format(LocalTime.now()));
+        String logLine = format("%s %s", taggedDate, line).replace("\n", "\n" + taggedDate + " ");
         synchronized (buffer) {
-            if (null == tag) tag = "  ";
-            String date = dateFormat.format(new Date());
-            String prepend = format("%s|%s", tag, date);
-            String multilineJoin = "\n" + prepend + " ";
-            buffer.add(format("%s %s", prepend, line).replaceAll("\n", multilineJoin));
+            buffer.add(logLine);
         }
     }
 
@@ -80,31 +79,25 @@ public final class ConsoleOutputTransmitter implements TaggedStreamConsumer, Run
             return;
         }
 
-        List<String> sent = new ArrayList<>();
+        List<String> toFlush;
+        synchronized (buffer) {
+            toFlush = new ArrayList<>(buffer);
+            buffer.clear();
+        }
         try {
-            synchronized (buffer) {
-                while (!buffer.isEmpty()) {
-                    sent.add(buffer.remove());
-                }
-            }
-            StringBuilder result = new StringBuilder();
-            for (Object string : sent) {
-                result.append(string);
-                result.append("\n");
-            }
-            consoleAppender.append(result.toString());
+            consoleAppender.append(toFlush.stream().collect(Collectors.joining("\n", "", "\n")));
         } catch (IOException e) {
             LOGGER.warn("Could not send console output to server", e);
             synchronized (buffer) {
-                sent.addAll(buffer);
+                toFlush.addAll(buffer);
                 buffer.clear();
-                buffer.addAll(sent);
+                buffer.addAll(toFlush);
             }
         }
     }
 
     @Override
-    public void stop() {
+    public void close() {
         flushToServer();
         executor.shutdown();
     }

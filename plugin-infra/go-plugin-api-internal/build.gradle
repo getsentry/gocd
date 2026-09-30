@@ -21,3 +21,10 @@ compileJava {
   // for a while yet, so plugins work on older versions.
   options.release.set(11)
 }
+
+dependencies {
+  testImplementation rootProject.deps.junit5Api
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.assertJ
+}

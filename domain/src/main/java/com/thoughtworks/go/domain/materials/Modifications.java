@@ -25,15 +25,10 @@ import com.thoughtworks.go.domain.materials.dependency.DependencyMaterialRevisio
 import com.thoughtworks.go.domain.materials.packagematerial.PackageMaterialRevision;
 import com.thoughtworks.go.domain.materials.scm.PluggableSCMMaterialRevision;
 import com.thoughtworks.go.domain.materials.svn.SubversionRevision;
-import org.apache.commons.collections4.CollectionUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
 public class Modifications extends BaseCollection<Modification> {
-    private static final Logger LOG = LoggerFactory.getLogger(Modifications.class);
-
     public Modifications() {
     }
 
@@ -46,11 +41,11 @@ public class Modifications extends BaseCollection<Modification> {
     }
 
     public String getUsername() {
-        return isEmpty() ? "Unknown" : first().getUserDisplayName();
+        return isEmpty() ? "Unknown" : getFirst().getUserDisplayName();
     }
 
     public String getRevision() {
-        return isEmpty() ? "Unknown" : first().getRevision();
+        return isEmpty() ? "Unknown" : getFirst().getRevision();
     }
 
     public static List<Modification> filterOutRevision(List<Modification> modifications,
@@ -99,16 +94,16 @@ public class Modifications extends BaseCollection<Modification> {
             return new SubversionRevision(revision);
         }
         if (material instanceof DependencyMaterial) {
-            Modification latestModification = this.get(0);
+            Modification latestModification = this.getFirst();
             String revision = latestModification.getRevision();
             return DependencyMaterialRevision.create(revision, latestModification.getPipelineLabel());
         }
         if (material instanceof PackageMaterial) {
-            Modification latestModification = this.get(0);
+            Modification latestModification = this.getFirst();
             return new PackageMaterialRevision(latestModification.getRevision(), latestModification.getModifiedTime(), latestModification.getAdditionalDataMap());
         }
         if (material instanceof PluggableSCMMaterial) {
-            Modification latestModification = this.get(0);
+            Modification latestModification = this.getFirst();
             return new PluggableSCMMaterialRevision(latestModification.getRevision(), latestModification.getModifiedTime(), latestModification.getAdditionalDataMap());
         }
         return Modification.latestRevision(this);
@@ -123,12 +118,6 @@ public class Modifications extends BaseCollection<Modification> {
 
         for (ModifiedFile file : allFiles) {
             applyIgnoreFilter(materialConfig, file, ignoredFiles);
-        }
-
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("Checking ignore filters for {}", materialConfig);
-            LOG.debug("Ignored files: {}", ignoredFiles);
-            LOG.debug("Changed files: {}", CollectionUtils.subtract(allFiles, ignoredFiles));
         }
 
         if (materialConfig.isInvertFilter()) {

@@ -1,0 +1,275 @@
+/*
+ * Copyright Thoughtworks, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.thoughtworks.go.server.messaging.notifications;
+
+import com.thoughtworks.go.config.Agent;
+import com.thoughtworks.go.config.StageConfig;
+import com.thoughtworks.go.domain.AgentInstance;
+import com.thoughtworks.go.domain.AgentRuntimeStatus;
+import com.thoughtworks.go.domain.Stage;
+import com.thoughtworks.go.domain.buildcause.BuildCause;
+import com.thoughtworks.go.domain.notificationdata.AgentNotificationData;
+import com.thoughtworks.go.domain.notificationdata.StageNotificationData;
+import com.thoughtworks.go.helper.AgentInstanceMother;
+import com.thoughtworks.go.helper.StageMother;
+import com.thoughtworks.go.listener.AgentStatusChangeListener;
+import com.thoughtworks.go.plugin.access.notification.NotificationExtension;
+import com.thoughtworks.go.plugin.access.notification.NotificationPluginRegistry;
+import com.thoughtworks.go.plugin.api.response.Result;
+import com.thoughtworks.go.remote.AgentIdentifier;
+import com.thoughtworks.go.server.dao.PipelineDao;
+import com.thoughtworks.go.server.dao.StageDao;
+import com.thoughtworks.go.server.service.ElasticAgentRuntimeInfo;
+import com.thoughtworks.go.server.service.GoConfigService;
+import com.thoughtworks.go.util.SystemEnvironment;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Optional;
+
+import static com.thoughtworks.go.config.Approval.TYPE_MANUAL;
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static com.thoughtworks.go.util.SystemEnvironment.NOTIFICATION_PLUGIN_MESSAGES_TTL_IN_MILLIS;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+@SuppressWarnings("SameParameterValue")
+@ExtendWith(MockitoExtension.class)
+public class PluginNotificationServiceTest {
+    public static final String PLUGIN_ID_1 = "plugin-id-1";
+    public static final String PLUGIN_ID_2 = "plugin-id-2";
+
+    @Mock
+    private NotificationPluginRegistry notificationPluginRegistry;
+    @Mock
+    private PluginNotificationsQueueHandler pluginNotificationsQueueHandler;
+    @Mock
+    private GoConfigService goConfigService;
+    @Mock
+    private PipelineDao pipelineDao;
+    @Mock
+    private StageDao stageDao;
+    @Mock
+    private SystemEnvironment systemEnvironment;
+    private PluginNotificationService pluginNotificationService;
+
+    @BeforeEach
+    public void setUp() {
+        pluginNotificationService = new PluginNotificationService(notificationPluginRegistry, pluginNotificationsQueueHandler, goConfigService, pipelineDao, stageDao, systemEnvironment);
+    }
+
+    @Test
+    public void shouldConstructDataForAgentNotification() {
+        when(notificationPluginRegistry.getPluginsInterestedIn(NotificationExtension.AGENT_STATUS_CHANGE_NOTIFICATION)).thenReturn(new LinkedHashSet<>(List.of(PLUGIN_ID_1)));
+        when(systemEnvironment.get(NOTIFICATION_PLUGIN_MESSAGES_TTL_IN_MILLIS)).thenReturn(1000L);
+
+        AgentInstance agentInstance = AgentInstanceMother.building();
+        pluginNotificationService.notifyAgentStatus(agentInstance);
+        @SuppressWarnings("unchecked") ArgumentCaptor<PluginNotificationMessage<?>> captor = ArgumentCaptor.forClass(PluginNotificationMessage.class);
+        verify(pluginNotificationsQueueHandler).post(captor.capture(), eq(1000L));
+
+        PluginNotificationMessage<?> message = captor.getValue();
+        assertThat(message.pluginId()).isEqualTo(PLUGIN_ID_1);
+        assertThat(message.requestName()).isEqualTo(NotificationExtension.AGENT_STATUS_CHANGE_NOTIFICATION);
+        assertThat(message.data() instanceof AgentNotificationData).isTrue();
+        AgentNotificationData data = (AgentNotificationData) message.data();
+        assertThat(data.uuid()).isEqualTo(agentInstance.getUuid());
+        assertThat(data.hostName()).isEqualTo(agentInstance.getHostname());
+        assertFalse(data.isElastic());
+        assertThat(data.ipAddress()).isEqualTo(agentInstance.getIpAddress());
+        assertThat(data.freeSpace()).isEqualTo(agentInstance.freeDiskSpace().toString());
+        assertThat(data.agentConfigState()).isEqualTo(agentInstance.getAgentConfigStatus().name());
+        assertThat(data.agentState()).isEqualTo(agentInstance.getRuntimeStatus().agentState().name());
+        assertThat(data.buildState()).isEqualTo(agentInstance.getRuntimeStatus().buildState().name());
+    }
+
+    @Test
+    public void shouldConstructDataForElasticAgentNotification() {
+        when(notificationPluginRegistry.getPluginsInterestedIn(NotificationExtension.AGENT_STATUS_CHANGE_NOTIFICATION)).thenReturn(new LinkedHashSet<>(List.of(PLUGIN_ID_1)));
+        when(systemEnvironment.get(NOTIFICATION_PLUGIN_MESSAGES_TTL_IN_MILLIS)).thenReturn(1000L);
+        ElasticAgentRuntimeInfo agentRuntimeInfo = new ElasticAgentRuntimeInfo(new AgentIdentifier("localhost", "127.0.0.1", "uuid"), AgentRuntimeStatus.Idle, "/foo/one", null, "42", "go.cd.elastic-agent-plugin.docker");
+
+        Agent agent = new Agent("some-uuid");
+        agent.setElasticAgentId("42");
+        agent.setElasticPluginId("go.cd.elastic-agent-plugin.docker");
+        agent.setIpaddress("127.0.0.1");
+
+        AgentInstance agentInstance = AgentInstance.createFromAgent(agent, new SystemEnvironment(), mock(AgentStatusChangeListener.class));
+        agentInstance.update(agentRuntimeInfo);
+
+        pluginNotificationService.notifyAgentStatus(agentInstance);
+        @SuppressWarnings("unchecked") ArgumentCaptor<PluginNotificationMessage<?>> captor = ArgumentCaptor.forClass(PluginNotificationMessage.class);
+        verify(pluginNotificationsQueueHandler).post(captor.capture(), eq(1000L));
+
+        PluginNotificationMessage<?> message = captor.getValue();
+        assertThat(message.pluginId()).isEqualTo(PLUGIN_ID_1);
+        assertThat(message.requestName()).isEqualTo(NotificationExtension.AGENT_STATUS_CHANGE_NOTIFICATION);
+        assertThat(message.data() instanceof AgentNotificationData).isTrue();
+        AgentNotificationData data = (AgentNotificationData) message.data();
+        assertTrue(data.isElastic());
+    }
+
+    @Test
+    public void shouldConstructDataForStageNotification() {
+        Stage stage = StageMother.custom("Stage");
+        when(notificationPluginRegistry.getPluginsInterestedIn(NotificationExtension.STAGE_STATUS_CHANGE_NOTIFICATION)).thenReturn(new LinkedHashSet<>(List.of(PLUGIN_ID_1)));
+        when(goConfigService.isFirstStage(stage.getIdentifier().getPipelineName(), stage.getName())).thenReturn(true);
+        when(goConfigService.findGroupNameByPipelineOptional(cis(stage.getIdentifier().getPipelineName()))).thenReturn(Optional.of("group1"));
+        when(systemEnvironment.get(NOTIFICATION_PLUGIN_MESSAGES_TTL_IN_MILLIS)).thenReturn(1000L);
+        BuildCause buildCause = BuildCause.createManualForced();
+        when(pipelineDao.findBuildCauseOfPipelineByNameAndCounter(stage.getIdentifier().getPipelineName(), stage.getIdentifier().getPipelineCounter())).thenReturn(buildCause);
+        @SuppressWarnings("unchecked") ArgumentCaptor<PluginNotificationMessage<?>> captor = ArgumentCaptor.forClass(PluginNotificationMessage.class);
+
+        pluginNotificationService.notifyStageStatus(stage);
+        verify(pluginNotificationsQueueHandler).post(captor.capture(), eq(1000L));
+
+        PluginNotificationMessage<?> message = captor.getValue();
+        assertThat(message.pluginId()).isEqualTo(PLUGIN_ID_1);
+        assertThat(message.requestName()).isEqualTo(NotificationExtension.STAGE_STATUS_CHANGE_NOTIFICATION);
+        assertThat(message.data() instanceof StageNotificationData).isTrue();
+        StageNotificationData data = (StageNotificationData) message.data();
+        assertThat(data.stage()).isEqualTo(stage);
+        assertThat(data.buildCause()).isEqualTo(buildCause);
+        assertThat(data.pipelineGroup()).isEqualTo("group1");
+    }
+
+    @Test
+    public void populatePreviousStage_ifStageIsTriggeredByChangesAndHasAPreviousStage() {
+        @SuppressWarnings("unchecked") ArgumentCaptor<PluginNotificationMessage<?>> captor = ArgumentCaptor.forClass(PluginNotificationMessage.class);
+        Stage stage = StageMother.custom("Stage");
+        StageConfig previousStage = new StageConfig(cis("previous_stage"), null);
+
+        stage.setApprovedBy(BuildCause.APPROVER_AUTOMATICALLY_TRIGGERED);
+        when(notificationPluginRegistry.getPluginsInterestedIn(NotificationExtension.STAGE_STATUS_CHANGE_NOTIFICATION)).thenReturn(new LinkedHashSet<>(List.of(PLUGIN_ID_1)));
+        when(goConfigService.isFirstStage(stage.getIdentifier().getPipelineName(), stage.getName())).thenReturn(false);
+        when(goConfigService.previousStage(stage.getIdentifier().getPipelineName(), stage.getName())).thenReturn(previousStage);
+        when(stageDao.findLatestStageCounter(stage.getIdentifier().pipelineIdentifier(), previousStage.name().toString())).thenReturn(1);
+        when(systemEnvironment.get(NOTIFICATION_PLUGIN_MESSAGES_TTL_IN_MILLIS)).thenReturn(1000L);
+
+        pluginNotificationService.notifyStageStatus(stage);
+        verify(pluginNotificationsQueueHandler).post(captor.capture(), eq(1000L));
+
+        PluginNotificationMessage<?> message = captor.getValue();
+        StageNotificationData data = (StageNotificationData) message.data();
+
+        assertThat(data.stage().getPreviousStage().getPipelineName()).isEqualTo(stage.getIdentifier().getPipelineName());
+        assertThat(data.stage().getPreviousStage().getPipelineCounter()).isEqualTo(stage.getIdentifier().getPipelineCounter());
+        assertThat(data.stage().getPreviousStage().getStageName()).isEqualTo("previous_stage");
+        assertThat(data.stage().getPreviousStage().getStageCounter()).isEqualTo("1");
+    }
+
+    @Test
+    public void populatePreviousStage_forStageWithManualApprovalTypeAndHasAPreviousStage() {
+        @SuppressWarnings("unchecked") ArgumentCaptor<PluginNotificationMessage<?>> captor = ArgumentCaptor.forClass(PluginNotificationMessage.class);
+        Stage stage = StageMother.custom("Stage");
+        StageConfig previousStage = new StageConfig(cis("previous_stage"), null);
+
+        stage.setApprovedBy("admins");
+        stage.setApprovalType(TYPE_MANUAL);
+        when(notificationPluginRegistry.getPluginsInterestedIn(NotificationExtension.STAGE_STATUS_CHANGE_NOTIFICATION)).thenReturn(new LinkedHashSet<>(List.of(PLUGIN_ID_1)));
+        when(goConfigService.isFirstStage(stage.getIdentifier().getPipelineName(), stage.getName())).thenReturn(false);
+        when(goConfigService.previousStage(stage.getIdentifier().getPipelineName(), stage.getName())).thenReturn(previousStage);
+        when(stageDao.findLatestStageCounter(stage.getIdentifier().pipelineIdentifier(), previousStage.name().toString())).thenReturn(1);
+        when(systemEnvironment.get(NOTIFICATION_PLUGIN_MESSAGES_TTL_IN_MILLIS)).thenReturn(1000L);
+
+        pluginNotificationService.notifyStageStatus(stage);
+        verify(pluginNotificationsQueueHandler).post(captor.capture(), eq(1000L));
+
+        PluginNotificationMessage<?> message = captor.getValue();
+        StageNotificationData data = (StageNotificationData) message.data();
+
+        assertThat(data.stage().getPreviousStage().getPipelineName()).isEqualTo(stage.getIdentifier().getPipelineName());
+        assertThat(data.stage().getPreviousStage().getPipelineCounter()).isEqualTo(stage.getIdentifier().getPipelineCounter());
+        assertThat(data.stage().getPreviousStage().getStageName()).isEqualTo("previous_stage");
+        assertThat(data.stage().getPreviousStage().getStageCounter()).isEqualTo("1");
+    }
+
+    @Test
+    public void shouldNotPopulatePreviousStage_forManualStageReRuns() {
+        @SuppressWarnings("unchecked") ArgumentCaptor<PluginNotificationMessage<?>> captor = ArgumentCaptor.forClass(PluginNotificationMessage.class);
+        Stage stage = StageMother.custom("Stage");
+
+        stage.setApprovedBy("admins");
+        stage.setApprovalType(TYPE_MANUAL);
+        stage.setCounter(2);
+        when(notificationPluginRegistry.getPluginsInterestedIn(NotificationExtension.STAGE_STATUS_CHANGE_NOTIFICATION)).thenReturn(new LinkedHashSet<>(List.of(PLUGIN_ID_1)));
+        when(goConfigService.isFirstStage(stage.getIdentifier().getPipelineName(), stage.getName())).thenReturn(false);
+        when(systemEnvironment.get(NOTIFICATION_PLUGIN_MESSAGES_TTL_IN_MILLIS)).thenReturn(1000L);
+
+        pluginNotificationService.notifyStageStatus(stage);
+        verify(pluginNotificationsQueueHandler).post(captor.capture(), eq(1000L));
+
+        PluginNotificationMessage<?> message = captor.getValue();
+        StageNotificationData data = (StageNotificationData) message.data();
+
+        assertNull(data.stage().getPreviousStage());
+    }
+
+    @Test
+    public void shouldNotPopulatePreviousStage_forStageWithoutAPreviousStage() {
+        @SuppressWarnings("unchecked") ArgumentCaptor<PluginNotificationMessage<?>> captor = ArgumentCaptor.forClass(PluginNotificationMessage.class);
+        Stage stage = StageMother.custom("Stage");
+
+        stage.setApprovedBy("admins");
+        stage.setApprovalType(TYPE_MANUAL);
+
+        when(notificationPluginRegistry.getPluginsInterestedIn(NotificationExtension.STAGE_STATUS_CHANGE_NOTIFICATION)).thenReturn(new LinkedHashSet<>(List.of(PLUGIN_ID_1)));
+        when(goConfigService.isFirstStage(stage.getIdentifier().getPipelineName(), stage.getName())).thenReturn(true);
+        when(systemEnvironment.get(NOTIFICATION_PLUGIN_MESSAGES_TTL_IN_MILLIS)).thenReturn(1000L);
+
+        pluginNotificationService.notifyStageStatus(stage);
+        verify(pluginNotificationsQueueHandler).post(captor.capture(), eq(1000L));
+
+        PluginNotificationMessage<?> message = captor.getValue();
+        StageNotificationData data = (StageNotificationData) message.data();
+
+        assertNull(data.stage().getPreviousStage());
+    }
+
+    @Test
+    public void shouldNotifyInterestedPluginsCorrectly() {
+        Result result = new Result();
+        result.withSuccessMessages("success message");
+        when(notificationPluginRegistry.getPluginsInterestedIn(NotificationExtension.AGENT_STATUS_CHANGE_NOTIFICATION)).thenReturn(new LinkedHashSet<>(List.of(PLUGIN_ID_1, PLUGIN_ID_2)));
+        when(systemEnvironment.get(NOTIFICATION_PLUGIN_MESSAGES_TTL_IN_MILLIS)).thenReturn(1000L);
+
+        AgentInstance agentInstance = AgentInstanceMother.lostContact();
+        pluginNotificationService.notifyAgentStatus(agentInstance);
+
+        @SuppressWarnings("unchecked") ArgumentCaptor<PluginNotificationMessage<?>> captor = ArgumentCaptor.forClass(PluginNotificationMessage.class);
+        verify(pluginNotificationsQueueHandler, times(2)).post(captor.capture(), eq(1000L));
+        List<PluginNotificationMessage<?>> messages = captor.getAllValues();
+        assertThat(messages.size()).isEqualTo(2);
+        assertMessage(messages.getFirst(), PLUGIN_ID_1, NotificationExtension.AGENT_STATUS_CHANGE_NOTIFICATION, agentInstance);
+        assertMessage(messages.getLast(), PLUGIN_ID_2, NotificationExtension.AGENT_STATUS_CHANGE_NOTIFICATION, agentInstance);
+    }
+
+    private void assertMessage(PluginNotificationMessage<?> notificationMessage, String pluginId, String requestName, AgentInstance agentInstance) {
+        assertThat(notificationMessage.pluginId()).isEqualTo(pluginId);
+        assertThat(notificationMessage.requestName()).isEqualTo(requestName);
+        assertThat(notificationMessage.data()).isInstanceOf(AgentNotificationData.class);
+        AgentNotificationData data = (AgentNotificationData) notificationMessage.data();
+        assertThat(data.uuid()).isEqualTo(agentInstance.getUuid());
+        assertThat(data.agentState()).isEqualTo(agentInstance.getStatus().toString());
+    }
+}

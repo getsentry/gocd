@@ -15,37 +15,50 @@
  */
 package com.thoughtworks.go.domain;
 
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.text.StringEscapeUtils;
+import com.thoughtworks.go.util.SupplierUtils;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
+import static com.thoughtworks.go.util.UriEncodingUtil.encodePartParanoid;
+import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.commons.text.StringEscapeUtils.escapeHtml4;
+
 public class DefaultCommentRenderer implements CommentRenderer {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultCommentRenderer.class);
     private final String link;
-    private final String regex;
+    private final @Nullable Supplier<Optional<Pattern>> regexPattern;
 
     public DefaultCommentRenderer(String link, String regex) {
         this.link = link;
-        this.regex = regex;
+        this.regexPattern = regex == null ? null : SupplierUtils.memoize(() -> {
+            try {
+                return Optional.of(Pattern.compile(regex));
+            } catch (PatternSyntaxException e) {
+                LOGGER.warn("Illegal regular expression: {} - {}", regex, e.getMessage());
+                return Optional.empty();
+            }
+        });
     }
 
     @Override
     public String render(String text) {
-        if (StringUtils.isBlank(text)) {
+        if (isBlank(text)) {
             return "";
         }
-        if (regex.isEmpty() || link.isEmpty()) {
+        if (regexPattern == null || link.isEmpty()) {
             Comment comment = new Comment();
             comment.escapeAndAdd(text);
             return comment.render();
         }
-        try {
-            Matcher matcher = Pattern.compile(regex).matcher(text);
+        return regexPattern.get().map(pattern -> {
+            Matcher matcher = pattern.matcher(text);
             int start = 0;
             Comment comment = new Comment();
             while (hasMatch(matcher)) {
@@ -55,10 +68,11 @@ public class DefaultCommentRenderer implements CommentRenderer {
             }
             comment.escapeAndAdd(text.substring(start));
             return comment.render();
-        } catch (PatternSyntaxException e) {
-            LOGGER.warn("Illegal regular expression: {} - {}", regex, e.getMessage());
-        }
-        return text;
+        }).orElseGet(() -> {
+            Comment comment = new Comment();
+            comment.escapeAndAdd(text);
+            return comment.render();
+        });
     }
 
     private boolean hasMatch(Matcher matcher) {
@@ -66,15 +80,11 @@ public class DefaultCommentRenderer implements CommentRenderer {
     }
 
     private String dynamicLink(Matcher matcher) {
-        String linkWithRealId = StringEscapeUtils.escapeHtml4(link.replace("${ID}", id(matcher)));
-        return String.format("<a href=\"%s\" target=\"story_tracker\">%s</a>", linkWithRealId, textOnLink(matcher));
+        String href = link.replace("${ID}", encodePartParanoid(id(matcher)));
+        return "<a href=\"%s\" target=\"story_tracker\">%s</a>".formatted(escapeHtml4(href), escapeHtml4(matcher.group()));
     }
 
-    private String textOnLink(Matcher matcher) {
-        return StringEscapeUtils.escapeHtml4(matcher.group());
-    }
-
-    private String contentsOfFirstGroupThatMatched(Matcher matcher) {
+    private String firstMatchingGroup(Matcher matcher) {
         for (int i = 1; i <= matcher.groupCount(); i++) {
             String groupContent = matcher.group(i);
             if (groupContent != null) {
@@ -85,7 +95,7 @@ public class DefaultCommentRenderer implements CommentRenderer {
     }
 
     private String id(Matcher matcher) {
-        return matcher.groupCount() > 0 ? contentsOfFirstGroupThatMatched(matcher) : matcher.group();
+        return matcher.groupCount() > 0 ? firstMatchingGroup(matcher) : matcher.group();
     }
 
     private static class Comment {
@@ -96,7 +106,7 @@ public class DefaultCommentRenderer implements CommentRenderer {
         }
 
         public void escapeAndAdd(String text) {
-            buffer.append(StringEscapeUtils.escapeHtml4(text));
+            buffer.append(escapeHtml4(text));
         }
 
         public void add(String text) {

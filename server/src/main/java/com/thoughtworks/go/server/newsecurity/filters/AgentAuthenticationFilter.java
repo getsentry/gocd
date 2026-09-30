@@ -15,6 +15,7 @@
  */
 package com.thoughtworks.go.server.newsecurity.filters;
 
+import com.thoughtworks.go.remote.StandardHeaders;
 import com.thoughtworks.go.server.newsecurity.models.AgentToken;
 import com.thoughtworks.go.server.newsecurity.models.AuthenticationToken;
 import com.thoughtworks.go.server.newsecurity.utils.SessionUtils;
@@ -23,23 +24,21 @@ import com.thoughtworks.go.server.security.userdetail.GoUserPrincipal;
 import com.thoughtworks.go.server.service.AgentService;
 import com.thoughtworks.go.server.service.GoConfigService;
 import com.thoughtworks.go.util.Clock;
+import org.apache.commons.codec.digest.HmacAlgorithms;
+import org.apache.commons.codec.digest.HmacUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 
-import static org.apache.commons.codec.binary.Base64.encodeBase64String;
 import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @Component
@@ -49,7 +48,8 @@ public class AgentAuthenticationFilter extends OncePerRequestFilter {
     private final GoConfigService goConfigService;
     private final AgentService agentService;
     private final Clock clock;
-    private Mac mac;
+
+    private HmacUtils hmacUtil;
 
     @Autowired
     public AgentAuthenticationFilter(GoConfigService goConfigService, Clock clock, AgentService agentService) {
@@ -66,8 +66,8 @@ public class AgentAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private void tokenBasedFilter(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws IOException, ServletException {
-        String uuid = request.getHeader("X-Agent-GUID");
-        String token = request.getHeader("Authorization");
+        String uuid = request.getHeader(StandardHeaders.REQUEST_UUID);
+        String token = request.getHeader(StandardHeaders.REQUEST_AUTH);
 
         if (isBlank(uuid) || isBlank(token)) {
             LOGGER.debug("Denying access, either the UUID or token is not provided.");
@@ -105,8 +105,11 @@ public class AgentAuthenticationFilter extends OncePerRequestFilter {
 
     /*Fixes:#8427 HMAC generation is not thread safe, if multiple agents try to authenticate at the same time the hmac
     generated using the Agent UUID would not match the actual token.*/
-    synchronized String hmacOf(String string) {
-        return encodeBase64String(hmac().doFinal(string.getBytes()));
+    synchronized String hmacOf(String uuid) {
+        if (hmacUtil == null) {
+            hmacUtil = new HmacUtils(HmacAlgorithms.HMAC_SHA_256, goConfigService.serverConfig().getTokenGenerationKey().getBytes());
+        }
+        return Base64.getEncoder().encodeToString(hmacUtil.hmac(uuid.getBytes()));
     }
 
     private boolean isAuthenticated(AgentToken agentToken, AuthenticationToken<?> authenticationToken) {
@@ -114,18 +117,4 @@ public class AgentAuthenticationFilter extends OncePerRequestFilter {
                 && authenticationToken.getCredentials() instanceof AgentToken
                 && authenticationToken.getCredentials().equals(agentToken);
     }
-
-    private Mac hmac() {
-        if (mac == null) {
-            try {
-                mac = Mac.getInstance("HmacSHA256");
-                SecretKeySpec secretKey = new SecretKeySpec(goConfigService.serverConfig().getTokenGenerationKey().getBytes(), "HmacSHA256");
-                mac.init(secretKey);
-            } catch (NoSuchAlgorithmException | InvalidKeyException e) {
-                throw new RuntimeException(e);
-            }
-        }
-        return mac;
-    }
-
 }

@@ -15,18 +15,15 @@
  */
 package com.thoughtworks.go.plugin.access.authorization.v2;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
 import com.thoughtworks.go.plugin.domain.authorization.AuthenticationResponse;
-import org.apache.commons.collections4.ListUtils;
+import com.thoughtworks.go.util.json.JsonHelper;
 
 import java.util.Collections;
 import java.util.List;
 
 class AuthenticationResponseDTO {
-    private static final Gson GSON = new GsonBuilder().excludeFieldsWithoutExposeAnnotation().create();
 
     @Expose
     @SerializedName("user")
@@ -49,10 +46,10 @@ class AuthenticationResponseDTO {
     }
 
     public static AuthenticationResponseDTO fromJSON(String json) {
-        return GSON.fromJson(json, AuthenticationResponseDTO.class);
+        return JsonHelper.fromJsonExposeOnly(json, AuthenticationResponseDTO.class);
     }
 
     public AuthenticationResponse toDomainModel() {
-        return new AuthenticationResponse(this.user != null ? this.user.toDomainModel() : null, ListUtils.defaultIfNull(this.roles, Collections.emptyList()));
+        return new AuthenticationResponse(this.user != null ? this.user.toDomainModel() : null, this.roles == null ? Collections.emptyList() : this.roles);
     }
 }

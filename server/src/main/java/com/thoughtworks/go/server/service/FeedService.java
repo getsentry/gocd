@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.service;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.exceptions.EntityType;
 import com.thoughtworks.go.config.exceptions.NotAuthorizedException;
 import com.thoughtworks.go.config.exceptions.RecordNotFoundException;
@@ -31,10 +30,13 @@ import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.domain.xml.*;
 import com.thoughtworks.go.server.domain.xml.materials.MaterialXmlRepresenter;
 import org.dom4j.Document;
+import org.jetbrains.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 
 @Service
 public class FeedService {
@@ -68,8 +70,8 @@ public class FeedService {
         return xmlApiService.write(representable, baseUrl);
     }
 
-    public Document stagesXml(Username username, String pipelineName, Integer pipelineCounter, String baseUrl) {
-        if (!goConfigService.hasPipelineNamed(new CaseInsensitiveString(pipelineName))) {
+    public Document stagesXml(Username username, String pipelineName, @Nullable Integer pipelineCounter, String baseUrl) {
+        if (!goConfigService.hasPipelineNamed(cis(pipelineName))) {
             throw new RecordNotFoundException(EntityType.Pipeline, pipelineName);
         }
 
@@ -83,18 +85,18 @@ public class FeedService {
         return xmlApiService.write(representable, baseUrl);
     }
 
-    public Document pipelineXml(Username username, String pipelineName, Integer pipelineCounter, String baseUrl) {
+    public Document pipelineXml(Username username, String pipelineName, int pipelineCounter, String baseUrl) {
         PipelineInstanceModel model = pipelineHistoryService.load(pipelineName, pipelineCounter, username);
         return xmlApiService.write(new PipelineXmlRepresenter(model), baseUrl);
     }
 
-    public Document stageXml(Username username, String pipelineName, Integer pipelineCounter, String stageName, Integer stageCounter, String baseUrl) {
+    public Document stageXml(Username username, String pipelineName, int pipelineCounter, String stageName, int stageCounter, String baseUrl) {
         Stage stage = stageService.findStageWithIdentifier(pipelineName, pipelineCounter, stageName, String.valueOf(stageCounter), username);
         return xmlApiService.write(new StageXmlRepresenter(stage), baseUrl);
     }
 
-    public Document jobXml(Username username, String pipelineName, Integer pipelineCounter, String stageName,
-                           Integer stageCounter, String jobName, String baseUrl) {
+    public Document jobXml(Username username, String pipelineName, int pipelineCounter, String stageName,
+                           int stageCounter, String jobName, String baseUrl) {
         JobInstance jobInstance = jobInstanceService.findJobInstanceWithTransitions(pipelineName, stageName, jobName, pipelineCounter, stageCounter, username);
         return xmlApiService.write(new JobXmlRepresenter(jobInstance), baseUrl);
     }
@@ -104,7 +106,7 @@ public class FeedService {
         return xmlApiService.write(new JobPlanXmlRepresenter(waitingJobPlans), baseUrl);
     }
 
-    public Document materialXml(Username username, String pipelineName, Integer pipelineCounter, String fingerprint, String baseUrl) {
+    public Document materialXml(Username username, String pipelineName, int pipelineCounter, String fingerprint, String baseUrl) {
         PipelineInstanceModel model = pipelineHistoryService.load(pipelineName, pipelineCounter, username);
         MaterialRevision revision = model.getLatestRevisions().findRevisionForPipelineUniqueFingerprint(fingerprint);
         if (revision == null) {

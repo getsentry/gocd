@@ -15,27 +15,18 @@
  */
 package com.thoughtworks.go.config.parser;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
 public class ConfigReferenceElements {
-    private final Map<String, Map<String, Object>> collectionRegistry;
-
-    public ConfigReferenceElements() {
-        collectionRegistry = new HashMap<>();
-    }
+    private final Map<String, Map<String, Object>> collectionRegistry = new HashMap<>();
 
     public void add(String collectionName, String referenceElementId, Object referenceElement) {
-        if (!collectionRegistry.containsKey(collectionName)) {
-            collectionRegistry.put(collectionName, new HashMap<>());
-        }
-        collectionRegistry.get(collectionName).put(referenceElementId, referenceElement);
+        collectionRegistry.computeIfAbsent(collectionName, k -> new HashMap<>()).put(referenceElementId, referenceElement);
     }
 
     public Object get(String collection, String referenceElementId) {
-        if (collectionRegistry.containsKey(collection)) {
-            return collectionRegistry.get(collection).get(referenceElementId);
-        }
-        return null;
+        return collectionRegistry.getOrDefault(collection, Collections.emptyMap()).get(referenceElementId);
     }
 }

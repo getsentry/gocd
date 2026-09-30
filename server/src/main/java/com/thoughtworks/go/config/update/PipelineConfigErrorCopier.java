@@ -23,12 +23,16 @@ import java.util.List;
 
 public class PipelineConfigErrorCopier {
     private static void copy(Validatable from, Validatable to) {
-        if (from == null || to == null) return;
+        if (from == null || to == null) {
+            return;
+        }
         to.errors().addAll(from.errors());
     }
 
     private static void copyCollectionErrors(BaseCollection<?> from, BaseCollection<?> to) {
-        if (from == null || to == null) return;
+        if (from == null || to == null) {
+            return;
+        }
         copy((Validatable) from, (Validatable) to);
         for (int i = 0; i < to.size(); i++) {
             copy((Validatable) from.get(i), (Validatable) to.get(i));
@@ -66,11 +70,11 @@ public class PipelineConfigErrorCopier {
                     copy(fromTask, toTask);
                     copy(fromTask.cancelTask(), toTask.cancelTask());
                     copyCollectionErrors(fromTask.getConditions(), toTask.getConditions());
-                    if (toTask instanceof ExecTask) {
-                        copyCollectionErrors(((ExecTask) fromTask).getArgList(), ((ExecTask) toTask).getArgList());
+                    if (toTask instanceof ExecTask execTask) {
+                        copyCollectionErrors(((ExecTask) fromTask).getArgList(), execTask.getArgList());
                     }
-                    if (toTask instanceof FetchPluggableArtifactTask) {
-                        copyCollectionErrors(((FetchPluggableArtifactTask) fromTask).getConfiguration(), ((FetchPluggableArtifactTask) toTask).getConfiguration());
+                    if (toTask instanceof FetchPluggableArtifactTask fetchPluggableArtifactTask) {
+                        copyCollectionErrors(((FetchPluggableArtifactTask) fromTask).getConfiguration(), fetchPluggableArtifactTask.getConfiguration());
                     }
                 }
                 List<PluggableArtifactConfig> toPluggableArtifactConfigs = toJob.artifactTypeConfigs().getPluggableArtifactConfigs();

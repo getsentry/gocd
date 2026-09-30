@@ -19,7 +19,6 @@ import com.thoughtworks.go.config.materials.Materials;
 import com.thoughtworks.go.config.materials.svn.SvnMaterial;
 import com.thoughtworks.go.domain.MaterialRevision;
 import com.thoughtworks.go.domain.MaterialRevisions;
-import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.domain.materials.Modification;
 import com.thoughtworks.go.domain.materials.TestSubprocessExecutionContext;
 import com.thoughtworks.go.helper.SvnTestRepoWithExternal;
@@ -44,22 +43,25 @@ public class SvnExternalTest {
     }
 
     @Test
-    public void shouldGetAllExternalURLSByPropGetOnMainURL() {
+    public void shouldGetAllExternalUrlsByPropGetOnMainURL() {
         String url = svnRepo.projectRepositoryUrl();
         SvnCommand svn = new SvnCommand(null, url, "user", "pass", false);
-        List<SvnExternal> urls = svn.getAllExternalURLs();
-        assertThat(urls.size()).isEqualTo(1);
+        List<SvnExternal> externals = svn.getAllExternalURLs();
+        assertThat(externals).singleElement().satisfies(ext -> {
+            assertThat(ext.getFolder()).isEqualTo("end2end");
+            assertThat(ext.getURL()).endsWith("/end2end/");
+        });
     }
 
     @Test
     public void shouldGetLatestRevisionFromExpandedSvnExternalRepository() {
         MaterialRevisions materialRevisions = new MaterialRevisions();
-        Material svnExt = svnMaterial(svnRepo.externalRepositoryUrl(), "end2end");
-        List<Modification> modifications = ((SvnMaterial) svnExt).latestModification(svnRepo.workingFolder(), new TestSubprocessExecutionContext());
+        SvnMaterial svnExt = svnMaterial(svnRepo.externalRepositoryUrl(), "end2end");
+        List<Modification> modifications = svnExt.latestModification(svnRepo.workingFolder(), new TestSubprocessExecutionContext());
         materialRevisions.addRevision(svnExt, modifications);
 
         assertThat(materialRevisions.numberOfRevisions()).isEqualTo(1);
-        MaterialRevision materialRevision = materialRevisions.getRevisions().get(0);
+        MaterialRevision materialRevision = materialRevisions.getRevisions().getFirst();
         assertThat(materialRevision.getMaterial()).isEqualTo(svnExt);
         assertThat(materialRevision.getRevision().getRevision()).isEqualTo("4");
     }
@@ -73,7 +75,7 @@ public class SvnExternalTest {
         final MaterialRevisions materialRevisions = materials.latestModification(svnRepo.workingFolder(), new TestSubprocessExecutionContext());
         assertThat(materialRevisions.numberOfRevisions()).isEqualTo(2);
 
-        MaterialRevision main = materialRevisions.getRevisions().get(0);
+        MaterialRevision main = materialRevisions.getRevisions().getFirst();
         assertThat(main.getMaterial()).isEqualTo(svn);
         assertThat(main.getModifications().size()).isEqualTo(1);
         assertThat(main.getRevision().getRevision()).isEqualTo("5");

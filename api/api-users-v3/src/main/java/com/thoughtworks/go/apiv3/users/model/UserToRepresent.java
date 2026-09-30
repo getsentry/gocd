@@ -30,7 +30,6 @@ import com.thoughtworks.go.domain.User;
  * <br/>
  * @since Users API v3
  */
-
 public class UserToRepresent extends User {
     private final boolean isAdmin;
     private final RolesConfig rolesConfig;
@@ -38,7 +37,7 @@ public class UserToRepresent extends User {
     private UserToRepresent(User user, boolean isAdmin, RolesConfig rolesConfig) {
         super(user);
         this.isAdmin = isAdmin;
-        this.rolesConfig = (rolesConfig == null) ? new RolesConfig() : rolesConfig;
+        this.rolesConfig = rolesConfig == null ? new RolesConfig() : rolesConfig;
     }
 
     public static UserToRepresent from(User user, boolean isAdmin, RolesConfig rolesConfig) {

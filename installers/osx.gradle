@@ -14,71 +14,60 @@
  * limitations under the License.
  */
 
-
 import com.thoughtworks.go.build.*
-import org.apache.commons.codec.digest.DigestUtils
 
 private File destFile(String url) {
-  new File(gradle.gradleUserHomeDir, "download-cache/${DigestUtils.md5Hex(url)}/${new File(URI.create(url).toURL().path).name}")
+  new File(gradle.gradleUserHomeDir, "download-cache/${TextUtils.md5Hex(url)}/${new File(URI.create(url).toURL().path).name}")
 }
 
-task downloadMacJreX64Checksum(type: DownloadFile) {
-  src project.packagedJavaVersion.toSha256SumURLFor(OperatingSystem.mac, Architecture.x64)
+tasks.register('downloadMacJreArm64Checksum', DownloadFile) {
+  def goVersions = rootProject.goVersions as GoVersions
+  src goVersions.packagedJavaVersion.toSha256SumURLFor(OperatingSystem.mac, Architecture.aarch64)
   dest destFile(src.toString())
 }
 
-task downloadMacJreX64(type: DownloadFile) {
-  dependsOn downloadMacJreX64Checksum
-  src project.packagedJavaVersion.toDownloadURLFor(OperatingSystem.mac, Architecture.x64)
-  dest destFile(src.toString())
-  checksum = { downloadMacJreX64Checksum.outputs.files.singleFile.getText("utf-8").trim().split(" ").first() }
-}
-
-task downloadMacJreArm64Checksum(type: DownloadFile) {
-  src project.packagedJavaVersion.toSha256SumURLFor(OperatingSystem.mac, Architecture.aarch64)
-  dest destFile(src.toString())
-}
-
-task downloadMacJreArm64(type: DownloadFile) {
+tasks.register('downloadMacJreArm64', DownloadFile) {
   dependsOn downloadMacJreArm64Checksum
-  src project.packagedJavaVersion.toDownloadURLFor(OperatingSystem.mac, Architecture.aarch64)
+  def goVersions = rootProject.goVersions as GoVersions
+  src goVersions.packagedJavaVersion.toDownloadURLFor(OperatingSystem.mac, Architecture.aarch64)
   dest destFile(src.toString())
   checksum = { downloadMacJreArm64Checksum.outputs.files.singleFile.getText("utf-8").trim().split(" ").first() }
 }
 
 def configureMacZip(Zip zipTask, InstallerType installerType, Zip genericZipTask, Architecture arch) {
-  DownloadFile downloadTask = arch == Architecture.aarch64 ? downloadMacJreArm64 : downloadMacJreX64
+  DownloadFile downloadTask = downloadMacJreArm64
 
   zipTask.with {
     group = project.name
     description = "Build the ${installerType.baseName} osx (zip) installer"
 
-    dependsOn downloadTask
-    dependsOn genericZipTask
+    dependsOn downloadTask, genericZipTask
+
     destinationDirectory = project.base.distsDirectory.dir("osx")
     archiveBaseName = installerType.baseName
     archiveClassifier = arch == Architecture.aarch64 ? 'osx-aarch64' : 'osx'
 
+    def goVersions = rootProject.goVersions as GoVersions
     def genericZipTree = zipTree(genericZipTask.archiveFile)
 
     // dont include the wrapper.conf, and tanuki wrappers for OSes other than osx
     from(genericZipTree) {
-      exclude "${installerType.baseName}-${project.goVersion}/wrapper-config/wrapper.conf"
-      exclude "${installerType.baseName}-${project.goVersion}/wrapper/wrapper-*"
-      exclude "${installerType.baseName}-${project.goVersion}/wrapper/libwrapper-*"
-      exclude "${installerType.baseName}-${project.goVersion}/bin/*.bat"
+      exclude "${installerType.baseName}-${goVersions.goVersion}/wrapper-config/wrapper.conf"
+      exclude "${installerType.baseName}-${goVersions.goVersion}/wrapper/wrapper-*"
+      exclude "${installerType.baseName}-${goVersions.goVersion}/wrapper/libwrapper-*"
+      exclude "${installerType.baseName}-${goVersions.goVersion}/bin/*.bat"
     }
 
     def wrapperArch = arch == Architecture.aarch64 ? 'arm-64' : 'universal-64'
 
     from(genericZipTree) {
-      include "${installerType.baseName}-${project.goVersion}/wrapper/wrapper-macosx-${wrapperArch}"
-      include "${installerType.baseName}-${project.goVersion}/wrapper/libwrapper-macosx-${wrapperArch}*"
+      include "${installerType.baseName}-${goVersions.goVersion}/wrapper/wrapper-macosx-${wrapperArch}"
+      include "${installerType.baseName}-${goVersions.goVersion}/wrapper/libwrapper-macosx-${wrapperArch}*"
     }
 
     // include the wrapper.conf, but replace the java command
     from(genericZipTree) {
-      include "${installerType.baseName}-${project.goVersion}/wrapper-config/wrapper.conf"
+      include "${installerType.baseName}-${goVersions.goVersion}/wrapper-config/wrapper.conf"
       filter { String eachLine ->
         if (eachLine == 'wrapper.java.command=java') {
           eachLine = 'wrapper.java.command=jre/Contents/Home/bin/java'
@@ -94,32 +83,29 @@ def configureMacZip(Zip zipTask, InstallerType installerType, Zip genericZipTask
         segments.set(1, "jre")
         fcd.relativePath = new RelativePath(!fcd.isDirectory(), (segments as String[]))
       }
-      into("${installerType.baseName}-${project.goVersion}")
+      includeEmptyDirs = false
+      into("${installerType.baseName}-${goVersions.goVersion}")
     }
   }
 
-  zipTask.finalizedBy(project.tasks.create("${zipTask.name}Metadata", InstallerMetadataTask.class) {
-    architecture = arch
-    adoptiumVersion = project.packagedJavaVersion
-    packageTask = zipTask
-    type = installerType
-  })
+  zipTask.finalizedBy "${zipTask.name}Metadata"
 }
 
-task agentMacX64Zip(type: Zip) { Zip thisTask ->
-  configureMacZip(thisTask, InstallerType.agent, agentGenericZip, Architecture.x64)
+tasks.register('agentMacArm64Zip', Zip) { Zip thisTask ->
+  configureMacZip(thisTask, InstallerTypeAgent.instance, agentGenericZip, Architecture.aarch64)
 }
 
-task serverMacX64Zip(type: Zip) { Zip thisTask ->
-  configureMacZip(thisTask, InstallerType.server, serverGenericZip, Architecture.x64)
+tasks.register('serverMacArm64Zip', Zip) { Zip thisTask ->
+  configureMacZip(thisTask, InstallerTypeServer.instance, serverGenericZip, Architecture.aarch64)
 }
 
-task agentMacArm64Zip(type: Zip) { Zip thisTask ->
-  configureMacZip(thisTask, InstallerType.agent, agentGenericZip, Architecture.aarch64)
+['agent', 'server'].each { installerType ->
+  def packageTaskName = "${installerType}MacArm64Zip"
+  tasks.register("${packageTaskName}Metadata", InstallerMetadataTask) {
+    architecture = Architecture.aarch64
+    packageTask = project.tasks.named(packageTaskName)
+    type = installerType == "agent" ? InstallerTypeAgent.instance : InstallerTypeServer.instance
+  }
 }
 
-task serverMacArm64Zip(type: Zip) { Zip thisTask ->
-  configureMacZip(thisTask, InstallerType.server, serverGenericZip, Architecture.aarch64)
-}
-
-assemble.dependsOn(":installers:agentMacX64Zip", ":installers:serverMacX64Zip", ":installers:agentMacArm64Zip", ":installers:serverMacArm64Zip")
+assemble.dependsOn(":installers:agentMacArm64Zip", ":installers:serverMacArm64Zip")

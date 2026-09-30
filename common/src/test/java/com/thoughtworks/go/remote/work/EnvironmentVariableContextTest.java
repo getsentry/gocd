@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.remote.work;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.SecretParam;
 import com.thoughtworks.go.config.exceptions.UnresolvedSecretParamException;
 import com.thoughtworks.go.config.materials.dependency.DependencyMaterial;
@@ -28,7 +27,6 @@ import com.thoughtworks.go.helper.MaterialsMother;
 import com.thoughtworks.go.helper.ModificationsMother;
 import com.thoughtworks.go.util.TempDirUtils;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
-import org.apache.commons.lang3.StringUtils;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -46,6 +44,8 @@ import java.nio.file.Path;
 import java.util.Date;
 import java.util.stream.Stream;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static org.apache.commons.lang3.StringUtils.isEmpty;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
@@ -89,7 +89,7 @@ public class EnvironmentVariableContextTest {
     @Test
     void shouldPopulateEnvironmentForMaterialUsingMaterialName() throws IOException {
         SvnMaterial svn = MaterialsMother.svnMaterial();
-        svn.setName(new CaseInsensitiveString("svn"));
+        svn.setName(cis("svn"));
         svn.setFolder("svn-dir");
         MaterialRevision revision = new MaterialRevision(svn, ModificationsMother.oneModifiedFile("revision1"));
         MaterialRevisions materialRevisions = new MaterialRevisions(revision);
@@ -159,7 +159,7 @@ public class EnvironmentVariableContextTest {
         context.setProperty("GO_SERVER_URL", "{{SECRET:[secret_config_id][test]}}", false);
 
         assertThat(context.getSecureEnvironmentVariables()).hasSize(1);
-        assertThat(context.getSecureEnvironmentVariables().get(0).isSecure()).isTrue();
+        assertThat(context.getSecureEnvironmentVariables().getFirst().isSecure()).isTrue();
     }
 
     @Nested
@@ -256,12 +256,13 @@ public class EnvironmentVariableContextTest {
         }
     }
 
-    private MaterialRevision materialRevision(String materialName, String pipelineName, Integer pipelineCounter,
+    @SuppressWarnings("SameParameterValue")
+    private MaterialRevision materialRevision(String materialName, String pipelineName, int pipelineCounter,
                                               String pipelineLabel,
                                               String stageName, int stageCounter) {
-        DependencyMaterial material = new DependencyMaterial(new CaseInsensitiveString(pipelineName), new CaseInsensitiveString(stageName));
-        if (!StringUtils.isEmpty(materialName)) {
-            material.setName(new CaseInsensitiveString(materialName));
+        DependencyMaterial material = new DependencyMaterial(cis(pipelineName), cis(stageName));
+        if (!isEmpty(materialName)) {
+            material.setName(cis(materialName));
         }
 
         DependencyMaterialRevision revision = DependencyMaterialRevision.create(pipelineName, pipelineCounter,

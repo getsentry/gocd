@@ -15,10 +15,12 @@
  */
 package com.thoughtworks.go.util.command;
 
+import org.jetbrains.annotations.NotNull;
+
 public class LabeledOutputStreamConsumer implements ConsoleOutputStreamConsumer {
-    private String tag;
-    private String errorTag;
-    private ConsoleOutputStreamConsumer consumer;
+    private final String tag;
+    private final String errorTag;
+    private final ConsoleOutputStreamConsumer consumer;
 
     public LabeledOutputStreamConsumer(String tag, String errorTag, ConsoleOutputStreamConsumer consumer) {
         this.tag = tag;
@@ -27,22 +29,22 @@ public class LabeledOutputStreamConsumer implements ConsoleOutputStreamConsumer 
     }
 
     @Override
-    public void stdOutput(String line) {
+    public void stdOutput(@NotNull String line) {
         consumer.taggedStdOutput(tag, line);
     }
 
     @Override
-    public void errOutput(String line) {
+    public void errOutput(@NotNull String line) {
         consumer.taggedErrOutput(errorTag, line);
     }
 
     @Override
-    public void taggedStdOutput(String tag, String line) {
+    public void taggedStdOutput(@NotNull String tag, @NotNull String line) {
         consumer.taggedStdOutput(tag, line);
     }
 
     @Override
-    public void taggedErrOutput(String tag, String line) {
+    public void taggedErrOutput(@NotNull String tag, @NotNull String line) {
         consumer.taggedErrOutput(tag, line);
     }
 }

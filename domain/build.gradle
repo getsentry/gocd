@@ -17,29 +17,58 @@
 description = 'GoCD Domain Module'
 
 dependencies {
-  implementation project(path: ':base', configuration: 'runtimeElements')
-  implementation project(path: ':util', configuration: 'runtimeElements')
-  api project(path: ':db', configuration: 'runtimeElements')
-  implementation project(path: ':config:config-api', configuration: 'runtimeElements')
-  implementation project(path: ':commandline', configuration: 'runtimeElements')
-  implementation project(path: ':plugin-infra:plugin-metadata-store', configuration: 'runtimeElements')
-  implementation(project.deps.apacheAnt)  {
-    transitive = false
+  api project(':db')
+
+  implementation project(':base')
+  api project(':util')
+  api project(':config:config-api')
+  implementation project(':commandline')
+  implementation project(':plugin-infra:plugin-metadata-store')
+  implementation(rootProject.deps.apacheAnt)  {
+    exclude(module: 'ant-launcher')
   }
-  implementation project.deps.jakartaAnnotation
-  implementation project.deps.commonsCodec
-  implementation project.deps.commonsCollections4
-  implementation project.deps.commonsText
-  implementation project.deps.cloning
-  implementation project.deps.jodaTime
-  implementation project.deps.springTx
-  api project.deps.semanticVersion
-  compileOnly project.deps.jetBrainsAnnotations
-  testImplementation project(path: ':config:config-api', configuration: 'testOutput')
-  testImplementation project(path: ':test:test-utils', configuration: 'runtimeElements')
-  testImplementation project.deps.junit5Api
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
-  testImplementation project.deps.jsonUnit
-  testImplementation project.deps.awaitility
+  implementation rootProject.deps.jakartaAnnotation
+  implementation rootProject.deps.gson
+  implementation rootProject.deps.commonsCodec
+  implementation rootProject.deps.commonsIO
+  implementation rootProject.deps.commonsText
+  implementation rootProject.deps.commonsLang3
+  implementation rootProject.deps.cloning
+  implementation rootProject.deps.springContext
+  implementation rootProject.deps.springTx
+  implementation(rootProject.deps.apacheHttpComponents) {
+    exclude(module: 'commons-codec')
+  }
+  if (rootProject.deps.springTx || rootProject.deps.apacheHttpComponents) {
+    runtimeOnly rootProject.deps.slf4jJcl // Allow commons-logging replacement
+  }
+  implementation rootProject.deps.semanticVersion
+  compileOnly rootProject.deps.jetBrainsAnnotations
+
+  testImplementation(testFixtures(project(":config:config-api")))
+  testImplementation rootProject.deps.junit5Api
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.jsonUnit
+  testImplementation rootProject.deps.mockitoCore
+  testImplementation rootProject.deps.mockitoJunit5
+  testImplementation rootProject.deps.systemStubs
+
+  testFixturesApi project(":config:config-api")
+  testFixturesApi project(':base')
+  testFixturesApi project(':domain')
+  testFixturesApi(testFixtures(project(':test:test-utils')))
+  testFixturesApi rootProject.deps.junit5Api
+  testFixturesImplementation rootProject.deps.mockitoCore
+  testFixturesImplementation(testFixtures(project(":config:config-api")))
+  testFixturesImplementation project(':commandline')
+  testFixturesImplementation rootProject.deps.assertJ
+  testFixturesImplementation rootProject.deps.awaitility
+  testFixturesImplementation rootProject.deps.commonsIO
+  testFixturesImplementation rootProject.deps.commonsLang3
+  testFixturesImplementation rootProject.deps.springTx
+}
+
+license {
+  exclude '**/test-results/*.xml' // Affects testing if these have headers
 }

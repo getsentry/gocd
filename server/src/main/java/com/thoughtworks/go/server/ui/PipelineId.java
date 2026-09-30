@@ -15,6 +15,8 @@
  */
 package com.thoughtworks.go.server.ui;
 
+import java.util.Objects;
+
 /**
  * Understands identifying a pipeline uniquely in both config and db
  */
@@ -46,14 +48,8 @@ public class PipelineId {
 
         PipelineId that = (PipelineId) o;
 
-        if (pipelineId != null ? !pipelineId.equals(that.pipelineId) : that.pipelineId != null) {
-            return false;
-        }
-        if (pipelineName != null ? !pipelineName.equals(that.pipelineName) : that.pipelineName != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(pipelineId, that.pipelineId) &&
+            Objects.equals(pipelineName, that.pipelineName);
     }
 
     @Override
@@ -63,10 +59,11 @@ public class PipelineId {
         return result;
     }
 
-    @Override public String toString() {
+    @Override
+    public String toString() {
         return "PipelineId{" +
-                "pipelineName='" + pipelineName + '\'' +
-                ", pipelineId=" + pipelineId +
-                '}';
+            "pipelineName='" + pipelineName + '\'' +
+            ", pipelineId=" + pipelineId +
+            '}';
     }
 }

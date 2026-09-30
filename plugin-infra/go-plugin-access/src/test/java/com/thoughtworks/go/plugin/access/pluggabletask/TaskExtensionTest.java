@@ -89,7 +89,7 @@ public class TaskExtensionTest {
 
         PluginSettingsConfiguration response = extension.getPluginSettingsConfiguration(pluginId);
 
-        assertRequest(requestArgumentCaptor.getValue(), PLUGGABLE_TASK_EXTENSION, "1.0", PluginSettingsConstants.REQUEST_PLUGIN_SETTINGS_CONFIGURATION, null);
+        assertRequest(requestArgumentCaptor.getValue(), PluginSettingsConstants.REQUEST_PLUGIN_SETTINGS_CONFIGURATION, null);
         verify(pluginSettingsJSONMessageHandler).responseMessageForPluginSettingsConfiguration(responseBody);
         assertSame(response, deserializedResponse);
     }
@@ -108,7 +108,7 @@ public class TaskExtensionTest {
 
         String response = extension.getPluginSettingsView(pluginId);
 
-        assertRequest(requestArgumentCaptor.getValue(), PLUGGABLE_TASK_EXTENSION, "1.0", PluginSettingsConstants.REQUEST_PLUGIN_SETTINGS_VIEW, null);
+        assertRequest(requestArgumentCaptor.getValue(), PluginSettingsConstants.REQUEST_PLUGIN_SETTINGS_VIEW, null);
         verify(pluginSettingsJSONMessageHandler).responseMessageForPluginSettingsView(responseBody);
         assertSame(deserializedResponse, response);
     }
@@ -130,7 +130,7 @@ public class TaskExtensionTest {
 
         ValidationResult response = extension.validatePluginSettings(pluginId, pluginSettingsConfiguration);
 
-        assertRequest(requestArgumentCaptor.getValue(), PLUGGABLE_TASK_EXTENSION, "1.0", PluginSettingsConstants.REQUEST_VALIDATE_PLUGIN_SETTINGS, requestBody);
+        assertRequest(requestArgumentCaptor.getValue(), PluginSettingsConstants.REQUEST_VALIDATE_PLUGIN_SETTINGS, requestBody);
         verify(pluginSettingsJSONMessageHandler).responseMessageForPluginSettingsValidation(responseBody);
         assertSame(response, deserializedResponse);
     }
@@ -138,11 +138,11 @@ public class TaskExtensionTest {
     @Test
     public void shouldExecuteTheTask() {
         @SuppressWarnings("unchecked") ActionWithReturn<Task, ExecutionResult> actionWithReturn = mock(ActionWithReturn.class);
-        when(actionWithReturn.execute(any(JsonBasedPluggableTask.class), nullable(GoPluginDescriptor.class))).thenReturn(ExecutionResult.success("yay"));
+        when(actionWithReturn.execute(any(), nullable(GoPluginDescriptor.class))).thenReturn(ExecutionResult.success("yay"));
 
         ExecutionResult executionResult = extension.execute(pluginId, actionWithReturn);
 
-        verify(actionWithReturn).execute(any(JsonBasedPluggableTask.class), nullable(GoPluginDescriptor.class));
+        verify(actionWithReturn).execute(any(), nullable(GoPluginDescriptor.class));
         assertThat(executionResult.getMessagesForDisplay()).isEqualTo("yay");
         assertTrue(executionResult.isSuccessful());
     }
@@ -155,7 +155,7 @@ public class TaskExtensionTest {
 
         extension.doOnTask(pluginId, action);
 
-        verify(action).execute(any(JsonBasedPluggableTask.class), eq(descriptor));
+        verify(action).execute(any(), eq(descriptor));
     }
 
     @Test
@@ -167,19 +167,19 @@ public class TaskExtensionTest {
         when(response.responseCode()).thenReturn(DefaultGoApiResponse.SUCCESS_RESPONSE_CODE);
         when(pluginManager.isPluginOfType(PLUGGABLE_TASK_EXTENSION, pluginId)).thenReturn(true);
         when(response.responseBody()).thenReturn("{\"errors\":{\"key\":\"error\"}}");
-        when(pluginManager.submitTo(eq(pluginId), eq(PLUGGABLE_TASK_EXTENSION), any(GoPluginApiRequest.class))).thenReturn(response);
+        when(pluginManager.submitTo(eq(pluginId), eq(PLUGGABLE_TASK_EXTENSION), any())).thenReturn(response);
 
         ValidationResult validationResult = jsonBasedTaskExtension.validate(pluginId, taskConfig);
 
-        verify(pluginManager).submitTo(eq(pluginId), eq(PLUGGABLE_TASK_EXTENSION), any(GoPluginApiRequest.class));
+        verify(pluginManager).submitTo(eq(pluginId), eq(PLUGGABLE_TASK_EXTENSION), any());
         assertFalse(validationResult.isSuccessful());
-        assertEquals(validationResult.getErrors().get(0).getKey(), "key");
-        assertEquals(validationResult.getErrors().get(0).getMessage(), "error");
+        assertEquals("key", validationResult.getErrors().getFirst().getKey());
+        assertEquals("error", validationResult.getErrors().getFirst().getMessage());
     }
 
-    private void assertRequest(GoPluginApiRequest goPluginApiRequest, String extensionName, String version, String requestName, String requestBody) {
-        assertThat(goPluginApiRequest.extension()).isEqualTo(extensionName);
-        assertThat(goPluginApiRequest.extensionVersion()).isEqualTo(version);
+    private void assertRequest(GoPluginApiRequest goPluginApiRequest, String requestName, String requestBody) {
+        assertThat(goPluginApiRequest.extension()).isEqualTo(com.thoughtworks.go.plugin.domain.common.PluginConstants.PLUGGABLE_TASK_EXTENSION);
+        assertThat(goPluginApiRequest.extensionVersion()).isEqualTo("1.0");
         assertThat(goPluginApiRequest.requestName()).isEqualTo(requestName);
         assertThat(goPluginApiRequest.requestBody()).isEqualTo(requestBody);
     }

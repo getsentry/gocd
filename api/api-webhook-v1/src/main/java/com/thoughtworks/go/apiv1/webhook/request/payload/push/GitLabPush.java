@@ -17,14 +17,14 @@
 package com.thoughtworks.go.apiv1.webhook.request.payload.push;
 
 import com.thoughtworks.go.apiv1.webhook.request.json.GitLabProject;
+import org.apache.commons.lang3.Strings;
 
+import java.util.Collections;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static java.lang.String.format;
-import static java.util.Collections.unmodifiableSet;
-import static org.apache.commons.collections4.SetUtils.emptySet;
-import static org.apache.commons.collections4.SetUtils.union;
-import static org.apache.commons.lang3.StringUtils.removeStart;
 
 @SuppressWarnings({"unused", "RedundantSuppression"})
 public class GitLabPush implements PushPayload {
@@ -34,7 +34,7 @@ public class GitLabPush implements PushPayload {
 
     @Override
     public Set<String> branches() {
-        return ref.startsWith("refs/heads/") ? Set.of(removeStart(ref, "refs/heads/")) : emptySet();
+        return ref.startsWith("refs/heads/") ? Set.of(Strings.CS.removeStart(ref, "refs/heads/")) : Collections.emptySet();
     }
 
     @Override
@@ -49,14 +49,14 @@ public class GitLabPush implements PushPayload {
 
     @Override
     public Set<String> repoUrls() {
-        return unmodifiableSet(union(
-                possibleUrls(hostname(), fullName()),
-                Set.of(
-                        format("gitlab@%s:%s", hostname(), fullName()),
-                        format("gitlab@%s:%s/", hostname(), fullName()),
-                        format("gitlab@%s:%s.git", hostname(), fullName()),
-                        format("gitlab@%s:%s.git/", hostname(), fullName())
-                )
-        ));
+        return Stream.concat(
+            possibleUrls(hostname(), fullName()).stream(),
+            Set.of(
+                format("gitlab@%s:%s", hostname(), fullName()),
+                format("gitlab@%s:%s/", hostname(), fullName()),
+                format("gitlab@%s:%s.git", hostname(), fullName()),
+                format("gitlab@%s:%s.git/", hostname(), fullName())
+            ).stream()
+        ).collect(Collectors.toUnmodifiableSet());
     }
 }

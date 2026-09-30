@@ -15,9 +15,12 @@
  */
 package com.thoughtworks.go.util.command;
 
-import java.io.Serializable;
+import org.jetbrains.annotations.NotNull;
 
-public abstract class CommandArgument implements Serializable {
+import java.io.Serializable;
+import java.util.Objects;
+
+public abstract class CommandArgument implements Serializable, SecretRedactor {
     public abstract String originalArgument();
 
     public abstract String forDisplay();
@@ -37,22 +40,27 @@ public abstract class CommandArgument implements Serializable {
 
     @Override
     public boolean equals(Object that) {
-        if (that == null) return false;
-        if (this == that) return true;
-        if (that.getClass() != this.getClass()) return false;
+        if (that == null) {
+            return false;
+        }
+        if (this == that) {
+            return true;
+        }
+        if (that.getClass() != this.getClass()) {
+            return false;
+        }
         return equal((CommandArgument) that);
     }
 
     protected boolean equal(CommandArgument that) {
-        String originalArgument = this.originalArgument();
-        String othersOriginalArgument = that.originalArgument();
-        return originalArgument != null ? originalArgument.equals(othersOriginalArgument) : othersOriginalArgument == null;
+        return Objects.equals(this.originalArgument(), that.originalArgument());
     }
 
-    public String replaceSecretInfo(String line) {
-        if (originalArgument().length() > 0) {
-            line = line.replace(originalArgument(), forDisplay());
+    @Override
+    public @NotNull Redactable redactFrom(@NotNull Redactable toRedact) {
+        if (!originalArgument().isEmpty()) {
+            return toRedact.next(toRedact.value().replace(originalArgument(), forDisplay()));
         }
-        return line;
+        return toRedact;
     }
 }

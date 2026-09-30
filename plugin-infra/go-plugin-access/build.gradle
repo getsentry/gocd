@@ -14,37 +14,46 @@
  * limitations under the License.
  */
 
-plugins {
-  id 'groovy'
-}
-
 description = 'APIs to allow GoCD to communicate with GoCD Plugins'
 
+java {
+  // For use of server-only plugins
+  registerFeature('serverOnly') {
+    usingSourceSet(sourceSets.create('serverOnly'))
+  }
+}
+CapabilitySupport.extendMain(project, 'serverOnly')
+
 dependencies {
-  api project(path: ':plugin-infra:go-plugin-activator', configuration: 'runtimeElements')
-  api project(path: ':plugin-infra:go-plugin-api', configuration: 'runtimeElements')
-  api project(path: ':plugin-infra:go-plugin-config-repo', configuration: 'runtimeElements')
-  api project(path: ':plugin-infra:go-plugin-domain', configuration: 'runtimeElements')
-  api project(path: ':plugin-infra:go-plugin-infra', configuration: 'runtimeElements')
-  api project(path: ':plugin-infra:plugin-metadata-store', configuration: 'runtimeElements')
-  implementation project(path: ':domain', configuration: 'runtimeElements')
-  implementation project(path: ':base', configuration: 'runtimeElements')
-  implementation project(path: ':config:config-api', configuration: 'runtimeElements')
-  implementation project.deps.jolt
-  implementation project.deps.joltJsonUtils
-  api project.deps.commonsCollections4
-  implementation project.deps.commonsCodec
-  implementation project.deps.gson
-  implementation project.deps.springContext
-  compileOnly project.deps.jetBrainsAnnotations
+  api project(':plugin-infra:go-plugin-api')
+  api project(':plugin-infra:go-plugin-api-internal')
+  serverOnlyApi project(':plugin-infra:go-plugin-config-repo')
+  api project(':plugin-infra:go-plugin-domain')
+  api project(':plugin-infra:go-plugin-infra')
+  api project(':plugin-infra:plugin-metadata-store')
+
+  implementation project(':domain')
+  implementation project(':base')
+  implementation project(':config:config-api')
+
+  serverOnlyImplementation rootProject.deps.jolt
+  serverOnlyImplementation rootProject.deps.joltJsonUtils
+
+  implementation rootProject.deps.commonsCollections4
+  implementation rootProject.deps.commonsCodec
+  implementation rootProject.deps.commonsLang3
+  implementation rootProject.deps.gson
+  implementation rootProject.deps.springContext
+  compileOnly rootProject.deps.jetBrainsAnnotations
 
   testImplementation localGroovy()
-  testImplementation project(path: ':test:test-utils', configuration: 'runtimeElements')
-  testImplementation project(path: ':domain', configuration: 'testOutput')
-  testImplementation project.deps.junit5Api
-  testImplementation project.deps.mockitoCore
-  testImplementation project.deps.mockitoJunit5
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
-  testImplementation project.deps.assertJ
+  testImplementation(testFixtures(project(":domain")))
+  testImplementation(testFixtures(project(":config:config-api")))
+  testImplementation rootProject.deps.junit5Api
+  testImplementation rootProject.deps.mockitoCore
+  testImplementation rootProject.deps.mockitoJunit5
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.assertJ
+  testImplementation rootProject.deps.jsonUnit
 }

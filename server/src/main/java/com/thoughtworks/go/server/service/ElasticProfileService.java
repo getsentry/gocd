@@ -35,7 +35,7 @@ import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.exceptions.RulesViolationException;
 import com.thoughtworks.go.server.service.plugins.validators.elastic.ElasticAgentProfileConfigurationValidator;
 import com.thoughtworks.go.server.service.result.LocalizedOperationResult;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.jetbrains.annotations.TestOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -104,7 +104,7 @@ public class ElasticProfileService {
                 final JobConfigs jobs = stage.getJobs();
 
                 for (JobConfig job : jobs) {
-                    if (StringUtils.equals(profileId, job.getElasticProfileId())) {
+                    if (Strings.CS.equals(profileId, job.getElasticProfileId())) {
 
                         String templateName = null;
                         if (pipelineConfig.getTemplateName() != null) {
@@ -166,7 +166,7 @@ public class ElasticProfileService {
 
     private String getPluginIdForElasticAgentProfile(ElasticProfile elasticProfile) {
         ClusterProfile clusterProfile = this.goConfigService.getElasticConfig().getClusterProfiles().find(elasticProfile.getClusterProfileId());
-        return (clusterProfile != null) ? clusterProfile.getPluginId() : null;
+        return clusterProfile != null ? clusterProfile.getPluginId() : null;
     }
 
     private String getTagName(Class<?> clazz) {
@@ -184,8 +184,8 @@ public class ElasticProfileService {
                 LOGGER.error(e.getMessage(), e);
                 return;
             }
-            if (e instanceof GoConfigInvalidException) {
-                result.unprocessableEntity(entityConfigValidationFailed(getTagName(elasticProfile.getClass()), elasticProfile.getId(), ((GoConfigInvalidException) e).getAllErrorMessages()));
+            if (e instanceof GoConfigInvalidException goConfigInvalidException) {
+                result.unprocessableEntity(entityConfigValidationFailed(getTagName(elasticProfile.getClass()), elasticProfile.getId(), goConfigInvalidException.getAllErrorMessages()));
             } else if (e instanceof RulesViolationException || e instanceof SecretResolutionFailureException) {
                 result.unprocessableEntity(entityConfigValidationFailed(elasticProfile.getClass().getAnnotation(ConfigTag.class).value(), elasticProfile.getId(), e.getMessage()));
             } else {

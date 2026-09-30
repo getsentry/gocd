@@ -33,6 +33,7 @@ import com.thoughtworks.go.util.XsdValidationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -61,10 +62,10 @@ public class SCMConfigXmlWriterTest extends AbstractConfigXmlWriterTest {
 
         SCMs scms = goConfigHolder.config.getSCMs();
         assertThat(scms).isEqualTo(cruiseConfig.getSCMs());
-        assertThat(scms.get(0).getConfiguration().first().getConfigurationValue().getValue()).isEqualTo("http://go");
-        assertThat(scms.get(0).getConfiguration().first().getEncryptedConfigurationValue()).isNull();
-        assertThat(scms.get(0).getConfiguration().last().getEncryptedValue()).isEqualTo(new GoCipher().encrypt("secure"));
-        assertThat(scms.get(0).getConfiguration().last().getConfigurationValue()).isNull();
+        assertThat(scms.getFirst().getConfiguration().getFirst().getConfigurationValue().getValue()).isEqualTo("http://go");
+        assertThat(scms.getFirst().getConfiguration().getFirst().getEncryptedConfigurationValue()).isNull();
+        assertThat(scms.getFirst().getConfiguration().getLast().getEncryptedValue()).isEqualTo(new GoCipher().encrypt("secure"));
+        assertThat(scms.getFirst().getConfiguration().getLast().getConfigurationValue()).isNull();
     }
 
     @Test
@@ -83,7 +84,7 @@ public class SCMConfigXmlWriterTest extends AbstractConfigXmlWriterTest {
 
         SCMs scms = goConfigHolder.config.getSCMs();
         assertThat(scms.size()).isEqualTo(cruiseConfig.getSCMs().size());
-        assertThat(scms.get(0).getId()).isNotNull();
+        assertThat(scms.getFirst().getId()).isNotNull();
     }
 
     @Test
@@ -175,8 +176,8 @@ public class SCMConfigXmlWriterTest extends AbstractConfigXmlWriterTest {
         xmlWriter.write(cruiseConfig, output, false);
 
         GoConfigHolder goConfigHolder = xmlLoader.loadConfigHolder(output.toString());
-        PipelineConfig pipelineConfig = goConfigHolder.config.pipelineConfigByName(new CaseInsensitiveString("test"));
-        MaterialConfig materialConfig = pipelineConfig.materialConfigs().get(0);
+        PipelineConfig pipelineConfig = goConfigHolder.config.pipelineConfigByName(cis("test"));
+        MaterialConfig materialConfig = pipelineConfig.materialConfigs().getFirst();
         assertThat(materialConfig instanceof PluggableSCMMaterialConfig).isTrue();
         assertThat(((PluggableSCMMaterialConfig) materialConfig).getScmId()).isEqualTo(scmId);
         assertThat(((PluggableSCMMaterialConfig) materialConfig).getSCMConfig()).isEqualTo(scm);
@@ -209,8 +210,8 @@ public class SCMConfigXmlWriterTest extends AbstractConfigXmlWriterTest {
         xmlWriter.write(cruiseConfig, output, false);
 
         GoConfigHolder goConfigHolder = xmlLoader.loadConfigHolder(output.toString());
-        PipelineConfig pipelineConfig = goConfigHolder.config.pipelineConfigByName(new CaseInsensitiveString("test"));
-        MaterialConfig materialConfig = pipelineConfig.materialConfigs().get(0);
+        PipelineConfig pipelineConfig = goConfigHolder.config.pipelineConfigByName(cis("test"));
+        MaterialConfig materialConfig = pipelineConfig.materialConfigs().getFirst();
         assertThat(materialConfig instanceof PluggableSCMMaterialConfig).isTrue();
         assertThat(((PluggableSCMMaterialConfig) materialConfig).getScmId()).isEqualTo(scmId);
         assertThat(((PluggableSCMMaterialConfig) materialConfig).getSCMConfig()).isEqualTo(scm);

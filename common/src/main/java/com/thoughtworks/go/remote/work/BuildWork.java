@@ -27,7 +27,6 @@ import com.thoughtworks.go.server.service.AgentBuildingInfo;
 import com.thoughtworks.go.server.service.AgentRuntimeInfo;
 import com.thoughtworks.go.util.ProcessManager;
 import com.thoughtworks.go.util.SystemEnvironment;
-import com.thoughtworks.go.util.TimeProvider;
 import com.thoughtworks.go.util.command.*;
 import com.thoughtworks.go.work.DefaultGoPublisher;
 import com.thoughtworks.go.work.GoPublisher;
@@ -38,17 +37,17 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.text.SimpleDateFormat;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
 import static com.thoughtworks.go.util.ExceptionUtils.messageOf;
-import static java.lang.String.format;
 
 public class BuildWork implements Work {
     private static final Logger LOGGER = LoggerFactory.getLogger(BuildWork.class);
+    private static final JobIdentifier INVALID_IDENTIFIER = new JobIdentifier("Unknown", 0, "Unknown", "Unknown", "Unknown", "Unknown", -1L);
+    private static final DateTimeFormatter CONSOLE_LOG_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z", Locale.ENGLISH);
 
     private final BuildAssignment assignment;
 
@@ -57,7 +56,6 @@ public class BuildWork implements Work {
     private final String consoleLogCharset;
 
     private transient DefaultGoPublisher goPublisher;
-    private transient TimeProvider timeProvider;
     private transient File workingDirectory;
     private transient MaterialRevisions materialRevisions;
     private transient Builders builders;
@@ -71,13 +69,12 @@ public class BuildWork implements Work {
     private void initialize(AgentWorkContext agentWorkContext) {
         JobIdentifier jobIdentifier = assignment.getJobIdentifier();
 
-        this.timeProvider = new TimeProvider();
-        agentWorkContext.getAgentRuntimeInfo().busy(new AgentBuildingInfo(jobIdentifier.buildLocatorForDisplay(), jobIdentifier.buildLocator()));
+        agentWorkContext.agentRuntimeInfo().busy(new AgentBuildingInfo(jobIdentifier.buildLocatorForDisplay(), jobIdentifier.buildLocator()));
         this.workingDirectory = assignment.getWorkingDirectory();
         this.materialRevisions = assignment.materialRevisions();
-        this.goPublisher = new DefaultGoPublisher(agentWorkContext.getArtifactsManipulator(), jobIdentifier, agentWorkContext.getRepositoryRemote(), agentWorkContext.getAgentRuntimeInfo(), consoleLogCharset());
-        this.artifactsPublisher = new ArtifactsPublisher(goPublisher, agentWorkContext.getArtifactExtension(), assignment.getArtifactStores(), agentWorkContext.getPluginRequestProcessorRegistry(), workingDirectory);
-        this.builders = new Builders(assignment.getBuilders(), goPublisher, agentWorkContext.getTaskExtension(), agentWorkContext.getArtifactExtension(), agentWorkContext.getPluginRequestProcessorRegistry());
+        this.goPublisher = new DefaultGoPublisher(agentWorkContext.artifactManipulator(), jobIdentifier, agentWorkContext.repositoryRemote(), agentWorkContext.agentRuntimeInfo(), consoleLogCharset());
+        this.artifactsPublisher = new ArtifactsPublisher(goPublisher, agentWorkContext.artifactExtension(), assignment.getArtifactStores(), agentWorkContext.pluginRequestProcessorRegistry(), workingDirectory);
+        this.builders = new Builders(assignment.getBuilders(), goPublisher, agentWorkContext.taskExtension(), agentWorkContext.artifactExtension(), agentWorkContext.pluginRequestProcessorRegistry());
     }
 
     private Charset consoleLogCharset() {
@@ -86,18 +83,19 @@ public class BuildWork implements Work {
 
     @Override
     public void doWork(EnvironmentVariableContext environmentVariableContext, AgentWorkContext agentWorkContext) {
-        LOGGER.info("Executing received BuildWork job...");
+        LOGGER.info("Executing received job BuildWork...");
         initialize(agentWorkContext);
         try {
-            JobResult result = build(environmentVariableContext, agentWorkContext.getAgentIdentifier(), agentWorkContext.getScmExtension());
+            JobResult result = build(environmentVariableContext, agentWorkContext.agentIdentifier(), agentWorkContext.scmExtension());
             reportCompletion(result);
         } catch (InvalidAgentException e) {
             LOGGER.error("Agent UUID changed in the middle of the build.", e);
         } catch (Exception e) {
             reportFailure(e);
         } finally {
-            goPublisher.stop();
+            goPublisher.close();
         }
+        LOGGER.info("Job BuildWork completed.");
     }
 
     private void reportFailure(Exception e) {
@@ -126,7 +124,7 @@ public class BuildWork implements Work {
             return null;
         }
 
-        goPublisher.consumeLineWithPrefix(format("Job Started: %s\n", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss z").format(timeProvider.currentTime())));
+        goPublisher.consumeLineWithPrefix("Job Started: " + CONSOLE_LOG_FORMAT.format(ZonedDateTime.now()));
 
         prepareJob(agentIdentifier, scmExtension);
 
@@ -148,7 +146,7 @@ public class BuildWork implements Work {
         ConsoleOutputStreamConsumer safeOutput = new LabeledOutputStreamConsumer(DefaultGoPublisher.PREP, DefaultGoPublisher.PREP_ERR, safeOutputStreamConsumer(environmentVariableContext));
         for (int i = 0; i < report.size(); i++) {
             String line = report.get(i);
-            safeOutput.stdOutput((i == report.size() - 1) ? line + "\n" : line);
+            safeOutput.stdOutput(i == report.size() - 1 ? line + "\n" : line);
         }
     }
 
@@ -184,7 +182,7 @@ public class BuildWork implements Work {
     }
 
     private void setupEnvironmentContext(EnvironmentVariableContext context) {
-        context.setProperty("GO_SERVER_URL", new SystemEnvironment().getServiceUrl(), false);
+        context.setProperty("GO_SERVER_URL", SystemEnvironment.getNormalizedServiceUrl(), false);
         context.addAll(assignment.initialEnvironmentVariableContext());
         materialRevisions.populateAgentSideEnvironmentVariables(context, workingDirectory);
     }
@@ -238,10 +236,7 @@ public class BuildWork implements Work {
     }
 
     public JobIdentifier identifierForLogging() {
-        if (assignment == null || assignment.getJobIdentifier() == null) {
-            return JobIdentifier.invalidIdentifier("Unknown", "Unknown", "Unknown", "Unknown", "Unknown");
-        }
-        return assignment.getJobIdentifier();
+        return Optional.ofNullable(assignment).map(BuildAssignment::getJobIdentifier).orElse(INVALID_IDENTIFIER);
     }
 
     @Override
@@ -268,9 +263,8 @@ public class BuildWork implements Work {
     @Override
     public int hashCode() {
         int result;
-        result = (assignment != null ? assignment.hashCode() : 0);
+        result = assignment != null ? assignment.hashCode() : 0;
         result = 31 * result + (goPublisher != null ? goPublisher.hashCode() : 0);
-        result = 31 * result + (timeProvider != null ? timeProvider.hashCode() : 0);
         return result;
     }
 

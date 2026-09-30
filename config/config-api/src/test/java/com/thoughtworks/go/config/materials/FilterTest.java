@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class FilterTest {
     @Test
     public void shouldReturnEmptyTextToDisplayWhenFilterIsEmpty() {
-        assertThat(new Filter().getStringForDisplay()).isEqualTo("");
+        assertThat(new Filter().getStringForDisplay()).isEmpty();
     }
 
     @Test
@@ -42,6 +42,6 @@ public class FilterTest {
         IgnoredFiles ignore = new IgnoredFiles("helper/*.*");
         Filter filter = new Filter(ignore);
         filter.addError("key", "some error");
-        assertThat(filter.errors().on("key")).isEqualTo("some error");
+        assertThat(filter.errors().firstErrorOn("key")).isEqualTo("some error");
     }
 }

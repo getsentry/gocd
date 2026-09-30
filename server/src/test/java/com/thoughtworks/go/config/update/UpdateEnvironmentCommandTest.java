@@ -1,0 +1,120 @@
+/*
+ * Copyright Thoughtworks, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.thoughtworks.go.config.update;
+
+import com.thoughtworks.go.config.BasicCruiseConfig;
+import com.thoughtworks.go.config.BasicEnvironmentConfig;
+import com.thoughtworks.go.config.CaseInsensitiveString;
+import com.thoughtworks.go.config.exceptions.EntityType;
+import com.thoughtworks.go.domain.AllConfigErrors;
+import com.thoughtworks.go.helper.GoConfigMother;
+import com.thoughtworks.go.server.domain.Username;
+import com.thoughtworks.go.server.service.EntityHashingService;
+import com.thoughtworks.go.server.service.GoConfigService;
+import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+public class UpdateEnvironmentCommandTest {
+    private Username currentUser;
+    private BasicCruiseConfig cruiseConfig;
+    private BasicEnvironmentConfig oldEnvironmentConfig;
+    private BasicEnvironmentConfig newEnvironmentConfig;
+    private CaseInsensitiveString oldEnvironmentName;
+    private CaseInsensitiveString newEnvironmentName;
+    private HttpLocalizedOperationResult result;
+    private String actionFailed;
+    private String digest;
+
+    @Mock
+    private GoConfigService goConfigService;
+
+    @Mock
+    private EntityHashingService entityHashingService;
+
+    @BeforeEach
+    public void setup() {
+        currentUser = new Username(cis("user"));
+        cruiseConfig = GoConfigMother.defaultCruiseConfig();
+        oldEnvironmentName = cis("Dev");
+        newEnvironmentName = cis("Test");
+        oldEnvironmentConfig = new BasicEnvironmentConfig(oldEnvironmentName);
+        newEnvironmentConfig = new BasicEnvironmentConfig(newEnvironmentName);
+        result = new HttpLocalizedOperationResult();
+        digest = "digest";
+        cruiseConfig.addEnvironment(oldEnvironmentConfig);
+        actionFailed = "Could not update environment '" + oldEnvironmentConfig.name() + "'.";
+    }
+
+    @Test
+    public void shouldUpdateTheSpecifiedEnvironment() {
+        UpdateEnvironmentCommand command = new UpdateEnvironmentCommand(goConfigService, oldEnvironmentConfig.name().toString(), newEnvironmentConfig, currentUser, actionFailed, digest, entityHashingService, result);
+
+        assertFalse(cruiseConfig.getEnvironments().hasEnvironmentNamed(newEnvironmentName));
+        command.update(cruiseConfig);
+        assertTrue(cruiseConfig.getEnvironments().hasEnvironmentNamed(newEnvironmentName));
+    }
+
+    @Test
+    public void shouldValidateInvalidPipelines() {
+        newEnvironmentConfig.addPipeline(cis("Invalid-pipeline-name"));
+        UpdateEnvironmentCommand command = new UpdateEnvironmentCommand(goConfigService, oldEnvironmentConfig.name().toString(), newEnvironmentConfig, currentUser, actionFailed, digest, entityHashingService, result);
+        command.update(cruiseConfig);
+        HttpLocalizedOperationResult expectResult = new HttpLocalizedOperationResult();
+        expectResult.unprocessableEntity(actionFailed + " Environment 'Test' refers to an unknown pipeline 'Invalid-pipeline-name'.");
+
+        assertThat(command.isValid(cruiseConfig)).isFalse();
+        assertThat(result).isEqualTo(expectResult);
+    }
+
+    @Test
+    public void shouldValidateDuplicateEnvironmentVariables() {
+        newEnvironmentConfig.addEnvironmentVariable("foo", "bar");
+        newEnvironmentConfig.addEnvironmentVariable("foo", "baz");
+        UpdateEnvironmentCommand command = new UpdateEnvironmentCommand(goConfigService, oldEnvironmentConfig.name().toString(), newEnvironmentConfig, currentUser, actionFailed, digest, entityHashingService, result);
+        command.update(cruiseConfig);
+
+        assertThat(command.isValid(cruiseConfig)).isFalse();
+
+        HttpLocalizedOperationResult expectResult = new HttpLocalizedOperationResult();
+        String allErrors = new AllConfigErrors(cruiseConfig.getAllErrors()).asString();
+        expectResult.unprocessableEntity(actionFailed + " " + allErrors);
+
+        assertThat(result).isEqualTo(expectResult);
+
+    }
+
+    @Test
+    public void shouldNotContinueIfTheUserSubmittedStaleEtag() {
+        UpdateEnvironmentCommand command = new UpdateEnvironmentCommand(goConfigService, oldEnvironmentConfig.name().toString(), newEnvironmentConfig, currentUser, actionFailed, digest, entityHashingService, result);
+        when(entityHashingService.hashForEntity(oldEnvironmentConfig)).thenReturn("foo");
+        assertThat(command.canContinue(cruiseConfig)).isFalse();
+        HttpLocalizedOperationResult expectResult = new HttpLocalizedOperationResult();
+        expectResult.stale(EntityType.Environment.staleConfig(oldEnvironmentName));
+
+        assertThat(result).isEqualTo(expectResult);
+    }
+}

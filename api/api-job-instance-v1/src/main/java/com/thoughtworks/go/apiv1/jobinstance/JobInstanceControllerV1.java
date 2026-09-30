@@ -17,7 +17,7 @@ package com.thoughtworks.go.apiv1.jobinstance;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv1.jobinstance.representers.JobInstanceRepresenter;
 import com.thoughtworks.go.apiv1.jobinstance.representers.JobInstancesRepresenter;
 import com.thoughtworks.go.config.exceptions.BadRequestException;
@@ -26,6 +26,7 @@ import com.thoughtworks.go.domain.JobInstance;
 import com.thoughtworks.go.domain.JobInstances;
 import com.thoughtworks.go.domain.PipelineRunIdInfo;
 import com.thoughtworks.go.server.service.JobInstanceService;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,13 +41,13 @@ import static spark.Spark.*;
 
 @Component
 public class JobInstanceControllerV1 extends ApiController implements SparkSpringController {
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final JobInstanceService jobInstanceService;
 
     @Autowired
-    public JobInstanceControllerV1(ApiAuthenticationHelper apiAuthenticationHelper, JobInstanceService jobInstanceService) {
+    public JobInstanceControllerV1(ApiAuthorizationHelper apiAuthorizationHelper, JobInstanceService jobInstanceService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.jobInstanceService = jobInstanceService;
     }
 
@@ -56,13 +57,13 @@ public class JobInstanceControllerV1 extends ApiController implements SparkSprin
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("/*", mimeType, this::setContentType);
             before("/*", mimeType, this::verifyContentType);
 
-            before(Routes.Job.JOB_HISTORY, mimeType, this.apiAuthenticationHelper::checkPipelineViewPermissionsAnd403);
-            before(Routes.Job.JOB_INSTANCE, mimeType, this.apiAuthenticationHelper::checkPipelineViewPermissionsAnd403);
+            before(Routes.Job.JOB_HISTORY, mimeType, this.apiAuthorizationHelper::checkPipelineViewPermissionsAnd403);
+            before(Routes.Job.JOB_INSTANCE, mimeType, this.apiAuthorizationHelper::checkPipelineViewPermissionsAnd403);
 
             get(Routes.Job.JOB_HISTORY, mimeType, this::getHistoryInfo);
             get(Routes.Job.JOB_INSTANCE, mimeType, this::getInstanceInfo);
@@ -73,9 +74,9 @@ public class JobInstanceControllerV1 extends ApiController implements SparkSprin
         String pipelineName = request.params("pipeline_name");
         String stageName = request.params("stage_name");
         String jobName = request.params("job_name");
-        Long after = getCursor(request, "after");
-        Long before = getCursor(request, "before");
-        Integer pageSize = getPageSize(request);
+        long after = getCursor(request, "after");
+        long before = getCursor(request, "before");
+        int pageSize = getPageSize(request);
 
         JobInstances jobInstances = jobInstanceService.getJobHistoryViaCursor(currentUsername(), pipelineName, stageName, jobName, after, before, pageSize);
         PipelineRunIdInfo runIdInfo = jobInstanceService.getOldestAndLatestJobInstanceId(currentUsername(), pipelineName, stageName, jobName);
@@ -87,8 +88,8 @@ public class JobInstanceControllerV1 extends ApiController implements SparkSprin
         String pipelineName = request.params("pipeline_name");
         String stageName = request.params("stage_name");
         String jobName = request.params("job_name");
-        Integer pipelineCounter = getValue(request, "pipeline_counter");
-        Integer stageCounter = getValue(request, "stage_counter");
+        int pipelineCounter = getValue(request, "pipeline_counter");
+        int stageCounter = getValue(request, "stage_counter");
         JobInstance jobInstance = jobInstanceService.findJobInstanceWithTransitions(pipelineName, stageName, jobName, pipelineCounter, stageCounter, currentUsername());
         if (jobInstance.isNull()) {
             throw new RecordNotFoundException(format("No job instance was found for '%s/%s/%s/%s/%s'.", pipelineName, pipelineCounter, stageName, stageCounter, jobName));
@@ -96,17 +97,15 @@ public class JobInstanceControllerV1 extends ApiController implements SparkSprin
         return writerForTopLevelObject(request, response, writer -> JobInstanceRepresenter.toJSON(writer, jobInstance));
     }
 
-    private Integer getValue(Request request, String paramKey) {
-        Integer value;
-        String errorMsg = format("The params '%s' must be a number greater than 0.", paramKey);
+    private int getValue(Request request, String paramKey) {
         try {
-            value = Integer.valueOf(request.params(paramKey));
+            int value = Integer.parseInt(request.params(paramKey));
             if (value < 0) {
-                throw new BadRequestException(errorMsg);
+                throw new BadRequestException(format("The params '%s' must be a number greater than 0.", paramKey));
             }
+            return value;
         } catch (NumberFormatException e) {
-            throw new BadRequestException(errorMsg);
+            throw new BadRequestException(format("The params '%s' must be a number greater than 0.", paramKey));
         }
-        return value;
     }
 }

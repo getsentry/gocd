@@ -21,11 +21,12 @@ import com.thoughtworks.go.domain.ConfigErrors;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
-import com.thoughtworks.go.util.*;
+import com.thoughtworks.go.util.GoConfigFileHelper;
+import com.thoughtworks.go.util.NamedProcessTag;
+import com.thoughtworks.go.util.PerfTimer;
+import com.thoughtworks.go.util.SystemEnvironment;
 import com.thoughtworks.go.util.command.CommandLine;
 import com.thoughtworks.go.util.command.InMemoryStreamConsumer;
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -38,17 +39,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
-import java.io.File;
 import java.lang.management.ManagementFactory;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.git;
 import static com.thoughtworks.go.util.command.ProcessOutputStreamConsumer.inMemoryConsumer;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.commons.lang3.StringUtils.join;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Disabled("For adhoc running only")
@@ -60,10 +63,10 @@ import static org.assertj.core.api.Assertions.assertThat;
         "classpath:/spring-all-servlet.xml",
 })
 public class PipelineConfigServicePerformanceTest {
-    private static final Logger LOGGER = LoggerFactory.getLogger(PipelineConfigServicePerformanceTest.class);
+    private static final Logger LOG = LoggerFactory.getLogger(PipelineConfigServicePerformanceTest.class);
 
     static {
-        new SystemEnvironment().setProperty(GoConstants.USE_COMPRESSED_JAVASCRIPT, "false");
+        new SystemEnvironment().setProperty(SystemEnvironment.USE_COMPRESSED_JAVASCRIPT, "false");
     }
 
     @TempDir
@@ -95,7 +98,7 @@ public class PipelineConfigServicePerformanceTest {
         configHelper.onSetUp();
         goConfigService.forceNotifyListeners();
         result = new HttpLocalizedOperationResult();
-        user = new Username(new CaseInsensitiveString("admin"));
+        user = new Username(cis("admin"));
     }
 
     @Test
@@ -103,15 +106,15 @@ public class PipelineConfigServicePerformanceTest {
         setupPipelines(numberOfRequests);
         final ConcurrentHashMap<String, Boolean> results = new ConcurrentHashMap<>();
         run(() -> {
-            PipelineConfig pipelineConfig = goConfigService.getConfigForEditing().pipelineConfigByName(new CaseInsensitiveString(Thread.currentThread().getName()));
-            pipelineConfig.add(new StageConfig(new CaseInsensitiveString("additional_stage"), new JobConfigs(new JobConfig(new CaseInsensitiveString("addtn_job")))));
-            PerfTimer updateTimer = PerfTimer.start("Saving pipelineConfig : " + pipelineConfig.name());
+            PipelineConfig pipelineConfig = goConfigService.getConfigForEditing().pipelineConfigByName(cis(Thread.currentThread().getName()));
+            pipelineConfig.add(new StageConfig(cis("additional_stage"), new JobConfigs(new JobConfig(cis("addtn_job")))));
+            PerfTimer updateTimer = PerfTimer.start(LOG, "Saving pipelineConfig : " + pipelineConfig.name());
             pipelineConfigService.updatePipelineConfig(user, pipelineConfig, "group", entityHashingService.hashForEntity(pipelineConfig, "group"), result);
             updateTimer.stop();
             results.put(Thread.currentThread().getName(), result.isSuccessful());
             if (!result.isSuccessful()) {
-                LOGGER.error(result.toString());
-                LOGGER.error("Errors on pipeline" + Thread.currentThread().getName() + " are : " + StringUtils.join(getAllErrors(pipelineConfig), ", "));
+                LOG.error(result.toString());
+                LOG.error("Errors on pipeline" + Thread.currentThread().getName() + " are : " + join(", ", getAllErrors(pipelineConfig)));
             }
         }, numberOfRequests, results);
     }
@@ -121,15 +124,15 @@ public class PipelineConfigServicePerformanceTest {
         setupPipelines(numberOfRequests);
         final ConcurrentHashMap<String, Boolean> results = new ConcurrentHashMap<>();
         run(() -> {
-            PipelineConfig pipelineConfig = goConfigService.getConfigForEditing().pipelineConfigByName(new CaseInsensitiveString(Thread.currentThread().getName()));
-            pipelineConfig.add(new StageConfig(new CaseInsensitiveString("additional_stage"), new JobConfigs(new JobConfig(new CaseInsensitiveString("addtn_job")))));
-            PerfTimer updateTimer = PerfTimer.start("Saving pipelineConfig : " + pipelineConfig.name());
+            PipelineConfig pipelineConfig = goConfigService.getConfigForEditing().pipelineConfigByName(cis(Thread.currentThread().getName()));
+            pipelineConfig.add(new StageConfig(cis("additional_stage"), new JobConfigs(new JobConfig(cis("addtn_job")))));
+            PerfTimer updateTimer = PerfTimer.start(LOG, "Saving pipelineConfig : " + pipelineConfig.name());
             pipelineConfigService.deletePipelineConfig(user, pipelineConfig, result);
             updateTimer.stop();
             results.put(Thread.currentThread().getName(), result.isSuccessful());
             if (!result.isSuccessful()) {
-                LOGGER.error(result.toString());
-                LOGGER.error("Errors on pipeline" + Thread.currentThread().getName() + " are : " + StringUtils.join(getAllErrors(pipelineConfig), ", "));
+                LOG.error(result.toString());
+                LOG.error("Errors on pipeline" + Thread.currentThread().getName() + " are : " + join(", ", getAllErrors(pipelineConfig)));
             }
         }, numberOfRequests, results);
     }
@@ -139,16 +142,16 @@ public class PipelineConfigServicePerformanceTest {
         setupPipelines(0);
         final ConcurrentHashMap<String, Boolean> results = new ConcurrentHashMap<>();
         run(() -> {
-            JobConfig jobConfig = new JobConfig(new CaseInsensitiveString("job"));
-            StageConfig stageConfig = new StageConfig(new CaseInsensitiveString("stage"), new JobConfigs(jobConfig));
-            PipelineConfig pipelineConfig = new PipelineConfig(new CaseInsensitiveString(Thread.currentThread().getName()), new MaterialConfigs(git("FOO")), stageConfig);
-            PerfTimer updateTimer = PerfTimer.start("Saving pipelineConfig : " + pipelineConfig.name());
+            JobConfig jobConfig = new JobConfig(cis("job"));
+            StageConfig stageConfig = new StageConfig(cis("stage"), new JobConfigs(jobConfig));
+            PipelineConfig pipelineConfig = new PipelineConfig(cis(Thread.currentThread().getName()), new MaterialConfigs(git("FOO")), stageConfig);
+            PerfTimer updateTimer = PerfTimer.start(LOG, "Saving pipelineConfig : " + pipelineConfig.name());
             pipelineConfigService.createPipelineConfig(user, pipelineConfig, result, "jumbo");
             updateTimer.stop();
             results.put(Thread.currentThread().getName(), result.isSuccessful());
             if (!result.isSuccessful()) {
-                LOGGER.error(result.toString());
-                LOGGER.error("Errors on pipeline" + Thread.currentThread().getName() + " are : " + StringUtils.join(getAllErrors(pipelineConfig), ", "));
+                LOG.error(result.toString());
+                LOG.error("Errors on pipeline" + Thread.currentThread().getName() + " are : " + join(", ", getAllErrors(pipelineConfig)));
             }
         }, numberOfRequests, results);
     }
@@ -161,7 +164,7 @@ public class PipelineConfigServicePerformanceTest {
 
     private void run(Runnable runnable, @SuppressWarnings("SameParameterValue") int numberOfRequests, final ConcurrentHashMap<String, Boolean> results) throws InterruptedException {
         Boolean finalResult = true;
-        LOGGER.info("Tests start now!");
+        LOG.info("Tests start now!");
         final List<Thread> threads = new ArrayList<>();
         for (int i = 0; i < numberOfRequests; i++) {
             Thread t = new Thread(runnable, "pipeline" + i);
@@ -170,7 +173,7 @@ public class PipelineConfigServicePerformanceTest {
         for (Thread t : threads) {
             Thread.sleep(1000 * (new Random().nextInt(3) + 1));
             t.setUncaughtExceptionHandler((t1, e) -> {
-                LOGGER.error("Exception " + e + " from thread " + t1);
+                LOG.error("Exception " + e + " from thread " + t1);
                 results.put(t1.getName(), false);
             });
             t.start();
@@ -178,7 +181,7 @@ public class PipelineConfigServicePerformanceTest {
         for (Thread t : threads) {
             int i = threads.indexOf(t);
             // noinspection PointlessBooleanExpression
-            if (false && i == (numberOfRequests - 1)) {
+            if (false && i == numberOfRequests - 1) {
                 takeHeapDump(i);
             }
             t.join();
@@ -192,14 +195,14 @@ public class PipelineConfigServicePerformanceTest {
     private void takeHeapDump(int i) {
         InMemoryStreamConsumer outputStreamConsumer = inMemoryConsumer();
         CommandLine commandLine = CommandLine.createCommandLine("jmap").withArgs("-J-d64", String.format("-dump:format=b,file=%s/%s.hprof", tempDir.toFile().getAbsoluteFile(), i), ManagementFactory.getRuntimeMXBean().getName().split("@")[0]);
-        LOGGER.info(commandLine.describe());
+        LOG.info(commandLine.describe());
         int exitCode = commandLine.run(outputStreamConsumer, new NamedProcessTag("thread" + i));
-        LOGGER.info(outputStreamConsumer.getAllOutput());
+        LOG.info(outputStreamConsumer.getAllOutput());
         assertThat(exitCode).isEqualTo(0);
-        LOGGER.info("Heap dump available at " + tempDir.toFile().getAbsolutePath());
+        LOG.info("Heap dump available at {}", tempDir.toFile().getAbsolutePath());
     }
 
-    private static abstract class ErrorCollectingHandler implements GoConfigGraphWalker.Handler {
+    private static abstract class ErrorCollectingHandler implements Validatable.Handler {
         private final List<ConfigErrors> allErrors;
 
         public ErrorCollectingHandler(List<ConfigErrors> allErrors) {
@@ -225,7 +228,7 @@ public class PipelineConfigServicePerformanceTest {
         new GoConfigGraphWalker(v).walk(new ErrorCollectingHandler(allErrors) {
             @Override
             public void handleValidation(Validatable validatable, ValidationContext context) {
-                // do nothing here
+
             }
         });
         return allErrors;
@@ -234,18 +237,18 @@ public class PipelineConfigServicePerformanceTest {
     private void setupPipelines(Integer numberOfPipelinesToBeCreated) throws Exception {
         String groupName = "jumbo";
         String configFile = "<FULL PATH TO YOUR CONFIG FILE>";
-        String xml = FileUtils.readFileToString(new File(configFile), UTF_8);
+        String xml = Files.readString(Path.of(configFile), UTF_8);
         xml = goConfigMigration.upgradeIfNecessary(xml);
         goConfigService.fileSaver(false).saveConfig(xml, goConfigService.getConfigForEditing().getMd5());
-        LOGGER.info("Total number of pipelines in this config: " + goConfigService.getConfigForEditing().allPipelines().size());
+        LOG.info("Total number of pipelines in this config: " + goConfigService.getConfigForEditing().allPipelines().size());
         if (goConfigService.getConfigForEditing().hasPipelineGroup(groupName)) {
             ((BasicPipelineConfigs) goConfigService.getConfigForEditing().findGroup(groupName)).clear();
         }
         final CruiseConfig configForEditing = goConfigService.getConfigForEditing();
         for (int i = 0; i < numberOfPipelinesToBeCreated; i++) {
-            JobConfig jobConfig = new JobConfig(new CaseInsensitiveString("job"));
-            StageConfig stageConfig = new StageConfig(new CaseInsensitiveString("stage"), new JobConfigs(jobConfig));
-            PipelineConfig pipelineConfig = new PipelineConfig(new CaseInsensitiveString("pipeline" + i), new MaterialConfigs(git("FOO")), stageConfig);
+            JobConfig jobConfig = new JobConfig(cis("job"));
+            StageConfig stageConfig = new StageConfig(cis("stage"), new JobConfigs(jobConfig));
+            PipelineConfig pipelineConfig = new PipelineConfig(cis("pipeline" + i), new MaterialConfigs(git("FOO")), stageConfig);
             configForEditing.addPipeline(groupName, pipelineConfig);
         }
 

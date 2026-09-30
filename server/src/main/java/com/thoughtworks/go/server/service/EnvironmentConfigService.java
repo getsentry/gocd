@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.service;
 
-import com.google.common.collect.Sets;
 import com.rits.cloning.Cloner;
 import com.thoughtworks.go.config.*;
 import com.thoughtworks.go.config.commands.EntityConfigUpdateCommand;
@@ -39,11 +38,15 @@ import com.thoughtworks.go.presentation.environment.EnvironmentPipelineModel;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
 import com.thoughtworks.go.util.ClonerFactory;
+import org.apache.commons.collections4.SetUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.config.CaseInsensitiveString.str;
 import static com.thoughtworks.go.i18n.LocalizedMessage.entityConfigValidationFailed;
 import static java.util.Collections.sort;
@@ -87,7 +90,7 @@ public class EnvironmentConfigService implements ConfigChangedListener, AgentCha
         goConfigService.register(new EntityConfigChangedListener<ConfigRepoConfig>() {
             @Override
             public void onEntityConfigChange(ConfigRepoConfig entity) {
-                if(!goConfigService.getCurrentConfig().getConfigRepos().hasConfigRepo(entity.getId())) {
+                if (!goConfigService.getCurrentConfig().getConfigRepos().hasConfigRepo(entity.getId())) {
                     syncEnvironments(goConfigService.getEnvironments());
                 }
             }
@@ -102,14 +105,14 @@ public class EnvironmentConfigService implements ConfigChangedListener, AgentCha
 
     String envForPipeline(String pipelineName) {
         return matchers.stream()
-                .filter(matcher -> matcher.hasPipeline(pipelineName))
-                .map(matcher -> str(matcher.name()))
-                .findFirst()
-                .orElse(null);
+            .filter(matcher -> matcher.hasPipeline(pipelineName))
+            .map(matcher -> str(matcher.name()))
+            .findFirst()
+            .orElse(null);
     }
 
     public EnvironmentConfig environmentForPipeline(String pipelineName) {
-        return environments.findEnvironmentForPipeline(new CaseInsensitiveString(pipelineName));
+        return environments.findEnvironmentForPipeline(cis(pipelineName));
     }
 
     public Agents agentsForPipeline(final CaseInsensitiveString pipelineName) {
@@ -153,34 +156,34 @@ public class EnvironmentConfigService implements ConfigChangedListener, AgentCha
     }
 
     public EnvironmentConfig getEnvironmentConfig(String envName) {
-        return environments.named(new CaseInsensitiveString(envName));
+        return environments.named(cis(envName));
     }
 
     public EnvironmentConfig find(String envName) {
-        return environments.find(new CaseInsensitiveString((envName)));
+        return environments.find(cis(envName));
     }
 
     public EnvironmentConfig getEnvironmentForEdit(String envName) {
-        return cloner.deepClone(goConfigService.getConfigForEditing().getEnvironments().find(new CaseInsensitiveString(envName)));
+        return cloner.deepClone(goConfigService.getConfigForEditing().getEnvironments().find(cis(envName)));
     }
 
     List<EnvironmentConfig> getAllLocalEnvironments() {
         return getEnvironmentNames().stream()
-                .map(this::getEnvironmentForEdit)
-                .collect(toList());
+            .map(this::getEnvironmentForEdit)
+            .collect(toList());
     }
 
     public List<EnvironmentConfig> getAllMergedEnvironments() {
         return getEnvironmentNames().stream()
-                .map(env -> getMergedEnvironmentforDisplay(env, new HttpLocalizedOperationResult()).getConfigElement())
-                .collect(toList());
+            .map(env -> getMergedEnvironmentforDisplay(env, new HttpLocalizedOperationResult()).getConfigElement())
+            .collect(toList());
     }
 
     public ConfigElementForEdit<EnvironmentConfig> getMergedEnvironmentforDisplay(String envName, HttpLocalizedOperationResult result) {
         ConfigElementForEdit<EnvironmentConfig> configElmForEdit = null;
         try {
             CruiseConfig cruiseConfig = goConfigService.getMergedConfigForEditing();
-            EnvironmentConfig envConfig = environments.named(new CaseInsensitiveString(envName));
+            EnvironmentConfig envConfig = environments.named(cis(envName));
             configElmForEdit = new ConfigElementForEdit<>(cloner.deepClone(envConfig), cruiseConfig.getMd5());
         } catch (RecordNotFoundException e) {
             result.badRequest(EntityType.Environment.notFoundMessage(envName));
@@ -250,22 +253,22 @@ public class EnvironmentConfigService implements ConfigChangedListener, AgentCha
     public void agentChanged(Agent agent) {
         String uuid = agent.getUuid();
 
+
         Set<String> originalEnvNames = getAgentEnvironmentNames(uuid);
-        HashSet<String> newEnvNames = new HashSet<>(agent.getEnvironmentsAsList());
+        Set<String> newEnvNames = agent.getEnvironmentsAsStream().collect(Collectors.toSet());
 
-        Set<String> envsToRemove = Sets.difference(originalEnvNames, newEnvNames);
-        Set<String> envToAdd = Sets.difference(newEnvNames, originalEnvNames);
+        Set<String> envsToRemove = SetUtils.difference(originalEnvNames, newEnvNames);
+        Set<String> envsToAdd = SetUtils.difference(newEnvNames, originalEnvNames);
 
-        removeAgentFromCurrentlyAssociatedEnvironments(uuid, new ArrayList<>(envsToRemove));
-        addAgentToNewlyAssociatedEnvironments(uuid, new ArrayList<>(envToAdd));
+        removeAgentFromCurrentlyAssociatedEnvironments(uuid, envsToRemove.stream());
+        addAgentToNewlyAssociatedEnvironments(uuid, envsToAdd.stream());
 
         matchers = environments.matchers();
     }
 
     @Override
     public void agentDeleted(Agent agent) {
-        List<String> envNames = agent.getEnvironmentsAsList();
-        removeAgentFromCurrentlyAssociatedEnvironments(agent.getUuid(), envNames);
+        removeAgentFromCurrentlyAssociatedEnvironments(agent.getUuid(), agent.getEnvironmentsAsStream());
         matchers = environments.matchers();
     }
 
@@ -277,28 +280,28 @@ public class EnvironmentConfigService implements ConfigChangedListener, AgentCha
         }
     }
 
+    @Override
     public void onConfigChange(CruiseConfig newCruiseConfig) {
         syncEnvironments(newCruiseConfig.getEnvironments());
     }
 
-    private void removeAgentFromCurrentlyAssociatedEnvironments(String uuid, List<String> envNames) {
-        envNames.stream().map(this::find)
-                .filter(envConfig -> isEnvironmentAssociatedWithAgentLocally(envConfig, uuid))
-                .forEach(envConfig -> envConfig.removeAgent(uuid));
+    private void removeAgentFromCurrentlyAssociatedEnvironments(String uuid, Stream<String> envNames) {
+        envNames.map(this::find)
+            .filter(envConfig -> isEnvironmentAssociatedWithAgentLocally(envConfig, uuid))
+            .forEach(envConfig -> envConfig.removeAgent(uuid));
     }
 
-    private void addAgentToNewlyAssociatedEnvironments(String uuid, List<String> envNames) {
-        envNames.stream().map(this::find)
-                .filter(envConfig -> isEnvironmentNotAssociatedWithAgent(envConfig, uuid))
-                .forEach(envConfig -> envConfig.addAgentIfNew(uuid));
+    private void addAgentToNewlyAssociatedEnvironments(String uuid, Stream<String> envNames) {
+        envNames.map(this::find)
+            .filter(envConfig -> isEnvironmentNotAssociatedWithAgent(envConfig, uuid))
+            .forEach(envConfig -> envConfig.addAgentIfNew(uuid));
     }
 
     private void syncAssociatedAgentFromDB(AgentInstance agentInstance) {
         Agent agent = agentInstance.getAgent();
         String uuid = agent.getUuid();
-        List<String> envNames = agent.getEnvironmentsAsList();
 
-        addAgentToNewlyAssociatedEnvironments(uuid, envNames);
+        addAgentToNewlyAssociatedEnvironments(uuid, agent.getEnvironmentsAsStream());
     }
 
     private boolean isEnvironmentAssociatedWithAgentLocally(EnvironmentConfig envConfig, String uuid) {
@@ -315,7 +318,7 @@ public class EnvironmentConfigService implements ConfigChangedListener, AgentCha
         for (PipelineConfig pipelineConfig : pipelineConfigs) {
             String pipelineName = str(pipelineConfig.name());
             if (securityService.hasViewPermissionForPipeline(user, pipelineName)) {
-                EnvironmentConfig environment = environments.findEnvironmentForPipeline(new CaseInsensitiveString(pipelineName));
+                EnvironmentConfig environment = environments.findEnvironmentForPipeline(cis(pipelineName));
                 if (environment != null) {
                     pipelines.add(new EnvironmentPipelineModel(pipelineName, str(environment.name())));
                 } else {
@@ -333,7 +336,7 @@ public class EnvironmentConfigService implements ConfigChangedListener, AgentCha
         try {
             goConfigService.updateConfig(updateEnvCmd, currentUser);
         } catch (Exception e) {
-            if ((e instanceof GoConfigInvalidException) && !result.hasMessage()) {
+            if (e instanceof GoConfigInvalidException && !result.hasMessage()) {
                 result.unprocessableEntity(entityConfigValidationFailed(config.getClass().getAnnotation(ConfigTag.class).value(), config.name(), e.getMessage()));
             } else if (!result.hasMessage()) {
                 result.badRequest(LocalizedMessage.composite(actionFailed, e.getMessage()));

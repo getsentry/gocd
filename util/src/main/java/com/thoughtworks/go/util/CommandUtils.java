@@ -15,28 +15,16 @@
  */
 package com.thoughtworks.go.util;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.UnixLineEndingInputStream;
-import org.apache.commons.lang3.StringUtils;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.StringWriter;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
 
 public class CommandUtils {
-
-    private static final Pattern QUOTED_STRING = Pattern.compile("^(['\"]).+(\\1)$");
-    private static final Pattern UNESCAPED_SPACE_OR_QUOTES = Pattern.compile("(?<!\\\\)(?:\\\\{2})*[ '\"]");
-    private static final Pattern DOUBLE_QUOTE = Pattern.compile("(\")");
-
     public static String exec(String... commands) {
         return exec(null, commands);
     }
@@ -51,7 +39,7 @@ public class CommandUtils {
     }
 
     private static String captureOutput(Process process) throws IOException, InterruptedException {
-        StringWriter result = new StringWriter();
+        PrintStream result = new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8);
         result.append("output:\n");
         dump(result, process.getInputStream());
         result.append("error:\n");
@@ -60,9 +48,9 @@ public class CommandUtils {
         return result.toString();
     }
 
-    private static void dump(StringWriter result, InputStream inputStream) throws IOException {
+    private static void dump(PrintStream result, InputStream inputStream) throws IOException {
         try (UnixLineEndingInputStream unixLineEndingInputStream = new UnixLineEndingInputStream(inputStream, true)) {
-            IOUtils.copy(unixLineEndingInputStream, result, StandardCharsets.UTF_8);
+            unixLineEndingInputStream.transferTo(result);
         }
     }
 
@@ -77,20 +65,38 @@ public class CommandUtils {
      * @return the quoted String, if not already quoted
      */
     public static String quoteArgument(String argument) {
-        if (QUOTED_STRING.matcher(argument).matches() || !UNESCAPED_SPACE_OR_QUOTES.matcher(argument).find()) {
-            // assume the argument is well-formed if it's already quoted or if there are no unescaped spaces or quotes
-            return argument;
-        }
+        // assume the argument is well-formed if it's already quoted or if there are no unescaped spaces or quotes
+        return needsQuoting(argument) ? '"' + argument.replace("\"", "\\\"") + '"' : argument;
+    }
 
-        return String.format("\"%s\"", DOUBLE_QUOTE.matcher(argument).replaceAll(Matcher.quoteReplacement("\\") + "$1"));
+    private static boolean needsQuoting(String argument) {
+        return !isWrapped(argument) && hasUnescapedSpecial(argument);
+    }
+
+    private static boolean isWrapped(final String s) {
+        return s.length() > 2 && (
+            (s.charAt(0) == '\'' && s.charAt(s.length() - 1) == '\'') ||
+                (s.charAt(0) == '"' && s.charAt(s.length() - 1) == '"')
+        );
+    }
+
+    private static boolean hasUnescapedSpecial(String s) {
+        boolean escaped = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (escaped) {
+                escaped = false; // this char is escaped, skip it
+            } else if (c == '\\') {
+                escaped = true;  // next char is escaped
+            } else if (c == ' ' || c == '\'' || c == '"') {
+                return true; // found an unescaped special char
+            }
+        }
+        return false;
     }
 
     public static String shellJoin(String... args) {
-        List<String> strings = new ArrayList<>();
-        for (String arg : args) {
-            strings.add(quoteArgument(arg));
-        }
-        return StringUtils.join(strings, " ");
+        return Arrays.stream(args).map(CommandUtils::quoteArgument).collect(Collectors.joining(" "));
     }
 
 }

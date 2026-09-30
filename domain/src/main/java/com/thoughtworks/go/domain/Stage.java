@@ -15,21 +15,22 @@
  */
 package com.thoughtworks.go.domain;
 
-import com.rits.cloning.Cloner;
 import com.thoughtworks.go.config.StageConfig;
 import com.thoughtworks.go.util.Clock;
 import com.thoughtworks.go.util.ClonerFactory;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
-import org.joda.time.DateTimeUtils;
-import org.joda.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.util.Date;
+import java.util.Objects;
 
 public class Stage extends PersistentObject {
     private static final Logger LOG = LoggerFactory.getLogger(Stage.class);
+    private static final StageResult DEFAULT_RESULT = StageResult.Unknown;
 
     private Long pipelineId;
     private String name;
@@ -51,8 +52,6 @@ public class Stage extends PersistentObject {
     private Integer rerunOfCounter;
     private boolean artifactsDeleted;
 
-    private static final StageResult DEFAULT_RESULT = StageResult.Unknown;
-    private static final Cloner CLONER = ClonerFactory.instance();
     private String configVersion = null;
     private StageIdentifier previousStage;
 
@@ -71,7 +70,7 @@ public class Stage extends PersistentObject {
         this.approvalType = approvalType;
         this.fetchMaterials = fetchMaterials;
         this.cleanWorkingDir = cleanWorkingDir;
-        this.createdTime = new Timestamp(clock.currentTimeMillis());
+        this.createdTime = clock.currentSqlTimestamp();
     }
 
     public Stage(String name, JobInstances jobInstances, String approvedBy, String cancelledBy, String approvalType, boolean fetchMaterials, boolean cleanWorkingDir, String configVersion, final Clock clock) {
@@ -192,7 +191,7 @@ public class Stage extends PersistentObject {
         }
     }
 
-    public Timestamp getLastTransitionedTime() {
+    public @Nullable Timestamp getLastTransitionedTime() {
         return lastTransitionedTime;
     }
 
@@ -318,15 +317,11 @@ public class Stage extends PersistentObject {
         }
         Date start = new Date(createdTime.getTime());
         Date end = new Date(lastTransitionedTime.getTime());
-        return new RunDuration.ActualDuration(new Duration(end.getTime() - start.getTime()));
+        return new RunDuration.ActualDuration(Duration.ofMillis(end.getTime() - start.getTime()));
     }
 
     public String stageLocator() {
         return identifier.stageLocator();
-    }
-
-    public String stageLocatorForDisplay() {
-        return identifier.stageLocatorForDisplay();
     }
 
     @Override
@@ -340,43 +335,18 @@ public class Stage extends PersistentObject {
 
         Stage stage = (Stage) o;
 
-        if (counter != stage.counter) {
-            return false;
-        }
-        if (orderId != stage.orderId) {
-            return false;
-        }
-        if (fetchMaterials != stage.fetchMaterials) {
-            return false;
-        }
+        return counter == stage.counter &&
+            orderId == stage.orderId &&
+            fetchMaterials == stage.fetchMaterials &&
+            cleanWorkingDir == stage.cleanWorkingDir &&
+            Objects.equals(pipelineId, stage.pipelineId) &&
+            Objects.equals(approvalType, stage.approvalType) &&
+            Objects.equals(approvedBy, stage.approvedBy) &&
+            Objects.equals(cancelledBy, stage.cancelledBy) &&
+            Objects.equals(createdTime, stage.createdTime) &&
+            Objects.equals(name, stage.name) &&
+            result == stage.result;
 
-        if (cleanWorkingDir != stage.cleanWorkingDir) {
-            return false;
-        }
-        if (pipelineId != null ? !pipelineId.equals(stage.pipelineId) : stage.pipelineId != null) {
-            return false;
-        }
-        if (approvalType != null ? !approvalType.equals(stage.approvalType) : stage.approvalType != null) {
-            return false;
-        }
-        if (approvedBy != null ? !approvedBy.equals(stage.approvedBy) : stage.approvedBy != null) {
-            return false;
-        }
-        if (cancelledBy != null ? !cancelledBy.equals(stage.cancelledBy) : stage.cancelledBy != null) {
-            return false;
-        }
-        if (createdTime != null ? !createdTime.equals(stage.createdTime) : stage.createdTime != null) {
-            return false;
-        }
-
-        if (name != null ? !name.equals(stage.name) : stage.name != null) {
-            return false;
-        }
-        if (result != stage.result) {
-            return false;
-        }
-
-        return true;
     }
 
     @Override
@@ -398,7 +368,7 @@ public class Stage extends PersistentObject {
     }
 
     public JobInstance getFirstJob() {
-        return jobInstances.first();
+        return jobInstances.getFirst();
     }
 
     public JobInstances jobsWithResult(JobResult... results) {
@@ -437,11 +407,11 @@ public class Stage extends PersistentObject {
         return cleanWorkingDir;
     }
 
-    public Stage createClone() {
-        return CLONER.deepClone(this);
+    public Stage deepClone() {
+        return ClonerFactory.instance().deepClone(this);
     }
 
-    public void prepareForRerunOf(SchedulingContext context, String latestConfigVersion) {
+    public void prepareForRerunOf(SchedulingContext context, String latestConfigVersion, Clock clock) {
         setId(-1);
         if (rerunOfCounter == null) {
             setRerunOfCounter(counter);
@@ -450,7 +420,7 @@ public class Stage extends PersistentObject {
         setApprovedBy(context.getApprovedBy());
         setLatestRun(true);
         resetResult();
-        setCreatedTime(new Timestamp(DateTimeUtils.currentTimeMillis()));
+        setCreatedTime(clock.currentSqlTimestamp());
         jobInstances.resetJobsIds();
     }
 

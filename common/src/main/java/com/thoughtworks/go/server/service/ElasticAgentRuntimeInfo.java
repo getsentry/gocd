@@ -21,6 +21,7 @@ import com.thoughtworks.go.domain.AgentRuntimeStatus;
 import com.thoughtworks.go.remote.AgentIdentifier;
 
 import java.io.Serializable;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 public class ElasticAgentRuntimeInfo extends AgentRuntimeInfo implements Serializable {
@@ -87,23 +88,23 @@ public class ElasticAgentRuntimeInfo extends AgentRuntimeInfo implements Seriali
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        if (!super.equals(o)) return false;
-
-        ElasticAgentRuntimeInfo that = (ElasticAgentRuntimeInfo) o;
-
-        if (elasticAgentId != null ? !elasticAgentId.equals(that.elasticAgentId) : that.elasticAgentId != null)
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
             return false;
-        return elasticPluginId != null ? elasticPluginId.equals(that.elasticPluginId) : that.elasticPluginId == null;
+        }
+        if (!super.equals(o)) {
+            return false;
+        }
+        ElasticAgentRuntimeInfo that = (ElasticAgentRuntimeInfo) o;
+        return Objects.equals(elasticAgentId, that.elasticAgentId) &&
+            Objects.equals(elasticPluginId, that.elasticPluginId);
     }
 
     @Override
     public int hashCode() {
-        int result = super.hashCode();
-        result = 31 * result + (elasticAgentId != null ? elasticAgentId.hashCode() : 0);
-        result = 31 * result + (elasticPluginId != null ? elasticPluginId.hashCode() : 0);
-        return result;
+        return Objects.hash(super.hashCode(), elasticAgentId, elasticPluginId);
     }
 
     public static AgentRuntimeInfo fromServer(AgentRuntimeInfo agentRuntimeInfo, String elasticAgentId, String elasticPluginId) {

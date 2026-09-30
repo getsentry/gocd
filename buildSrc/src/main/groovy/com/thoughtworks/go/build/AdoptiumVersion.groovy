@@ -16,8 +16,11 @@
 
 package com.thoughtworks.go.build
 
+import groovy.transform.Immutable
+
 import java.nio.charset.StandardCharsets
 
+@Immutable
 class AdoptiumVersion implements Serializable {
   int feature // e.g 17
   Integer interim // e.g null, or 0
@@ -44,19 +47,15 @@ class AdoptiumVersion implements Serializable {
   // Examples
   // 17_35 (first release)
   // 17.0.4_8 (normal release)
-  // 17.0.4.1_1 (rare emergency patch release
+  // 17.0.4.1_1 (rare emergency patch release)
   def fileSafeDisplayVersion() {
     canonicalDisplayVersion().replace('+', '_')
-  }
-
-  def featureSuffix() {
-    update == null ? '' : 'U'
   }
 
   def toDownloadURLFor(OperatingSystem os, Architecture arch) {
     "https://github.com/adoptium/temurin${feature}-binaries/releases/download/" +
       "jdk-${urlSafeDisplayVersion()}/" +
-      "OpenJDK${feature}${featureSuffix()}-jre_${arch.canonicalName}_${os.adoptiumAlias}_hotspot_${fileSafeDisplayVersion()}.${os.extension}"
+      "OpenJDK${feature}U-jre_${arch.canonicalName}_${os.adoptiumAlias}_hotspot_${fileSafeDisplayVersion()}.${os.extension}"
   }
 
   @SuppressWarnings('unused') // Used in Gradle build scripts
@@ -82,7 +81,7 @@ class AdoptiumVersion implements Serializable {
       ],
       "moduleLicenses": [
         [
-          "moduleLicense": "GPLv2 with the Classpath Exception",
+          "moduleLicense": "GPL-2.0-only WITH Classpath-exception-2.0",
           "moduleLicenseUrl": "https://openjdk.org/legal/gplv2+ce.html"
         ]
       ]

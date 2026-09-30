@@ -21,14 +21,14 @@ import com.thoughtworks.go.api.representers.ErrorGetter;
 import com.thoughtworks.go.api.representers.JsonReader;
 import com.thoughtworks.go.config.SecretConfig;
 import com.thoughtworks.go.spark.Routes;
-import org.apache.commons.collections4.CollectionUtils;
 
 import java.util.Map;
 
 public class SecretConfigRepresenter {
     public static void toJSON(OutputWriter jsonWriter, SecretConfig secretConfig) {
-        if (secretConfig == null)
+        if (secretConfig == null) {
             return;
+        }
         jsonWriter.addLinks(linksWriter -> linksWriter
                 .addLink("self", Routes.SecretConfigsAPI.id(secretConfig.getId()))
                 .addAbsoluteLink("doc", Routes.SecretConfigsAPI.DOC)
@@ -44,7 +44,7 @@ public class SecretConfigRepresenter {
 
         jsonWriter.addChildList("properties", listWriter -> ConfigurationPropertyRepresenter.toJSON(listWriter, secretConfig.getConfiguration()));
 
-        if (!CollectionUtils.isEmpty(secretConfig.getRules())) {
+        if (secretConfig.getRules() != null && !secretConfig.getRules().isEmpty()) {
             jsonWriter.addChildList("rules", rulesWriter -> RulesRepresenter.toJSON(rulesWriter, secretConfig.getRules()));
         }
     }

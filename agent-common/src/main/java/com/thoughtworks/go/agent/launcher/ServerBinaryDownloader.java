@@ -17,11 +17,11 @@ package com.thoughtworks.go.agent.launcher;
 
 import com.thoughtworks.go.agent.ServerUrlGenerator;
 import com.thoughtworks.go.agent.common.AgentBootstrapperArgs;
-import com.thoughtworks.go.agent.common.ssl.GoAgentServerHttpClientBuilder;
+import com.thoughtworks.go.agent.common.GoAgentServerHttpClientBuilder;
 import com.thoughtworks.go.agent.common.util.Downloader;
 import com.thoughtworks.go.agent.common.util.HeaderUtil;
 import com.thoughtworks.go.util.PerfTimer;
-import com.thoughtworks.go.util.SslVerificationMode;
+import com.thoughtworks.go.util.SystemUtil;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.config.RequestConfig;
@@ -38,17 +38,18 @@ import java.net.HttpURLConnection;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import static com.thoughtworks.go.util.SystemEnvironment.AGENT_EXTRA_PROPERTIES_HEADER;
+import static com.thoughtworks.go.remote.StandardHeaders.RESPONSE_AGENT_EXTRA_PROPERTIES;
+import static com.thoughtworks.go.remote.StandardHeaders.RESPONSE_CONTENT_MD5;
 
 public class ServerBinaryDownloader implements Downloader {
-
     private static final Logger LOG = LoggerFactory.getLogger(ServerBinaryDownloader.class);
-    private static final String DEFAULT_FAILED_DOWNLOAD_SLEEP_MS = "60000";
     private static final int HTTP_TIMEOUT_IN_MILLISECONDS = 5000;
-    private static final String MD5_HEADER = "Content-MD5";
-    private final ServerUrlGenerator urlGenerator;
+    private static final int DEFAULT_FAILED_DOWNLOAD_WAIT_IN_MILLISECONDS = 10000;
 
+    private final int failedDownloadSleepMillis = SystemUtil.getIntProperty("sleep.for.download", DEFAULT_FAILED_DOWNLOAD_WAIT_IN_MILLISECONDS);
+    private final ServerUrlGenerator urlGenerator;
     private final GoAgentServerHttpClientBuilder httpClientBuilder;
+
     private String md5;
     private Map<String, String> extraProperties;
 
@@ -60,7 +61,7 @@ public class ServerBinaryDownloader implements Downloader {
     public ServerBinaryDownloader(ServerUrlGenerator urlGenerator, AgentBootstrapperArgs bootstrapperArgs) {
         this(new GoAgentServerHttpClientBuilder(
                 bootstrapperArgs.getRootCertFile(),
-                SslVerificationMode.valueOf(bootstrapperArgs.getSslVerificationMode().name()),
+                bootstrapperArgs.getSslVerificationMode().name(),
                 bootstrapperArgs.getSslCertificateFile(),
                 bootstrapperArgs.getSslPrivateKeyFile(),
                 bootstrapperArgs.getSslPrivateKeyPassphraseFile()
@@ -78,21 +79,22 @@ public class ServerBinaryDownloader implements Downloader {
     public boolean downloadIfNecessary(final DownloadableFile downloadableFile) {
         boolean updated = false;
         boolean downloaded = false;
-        while (!updated) try {
-            fetchUpdateCheckHeaders(downloadableFile);
-            if (downloadableFile.doesNotExist() || !downloadableFile.isChecksumEquals(getMd5())) {
-                PerfTimer timer = PerfTimer.start("Downloading new " + downloadableFile + " with md5 signature: " + md5);
-                downloaded = download(downloadableFile);
-                timer.stop();
-            }
-            updated = true;
-        } catch (Exception e) {
+        while (!updated) {
             try {
-                int period = Integer.parseInt(System.getProperty("sleep.for.download", DEFAULT_FAILED_DOWNLOAD_SLEEP_MS));
-                LOG.error("Couldn't update {}. Sleeping for {}s. Error: ", downloadableFile, TimeUnit.SECONDS.convert(period, TimeUnit.MILLISECONDS), e);
-                Thread.sleep(period);
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
+                fetchUpdateCheckHeaders(downloadableFile);
+                if (downloadableFile.doesNotExist() || !downloadableFile.isChecksumEquals(getMd5())) {
+                    PerfTimer timer = PerfTimer.start(LOG, "Downloading new " + downloadableFile.getLocalFile() + " with md5 signature: " + md5);
+                    downloaded = download(downloadableFile);
+                    timer.stop();
+                }
+                updated = true;
+            } catch (Exception e) {
+                try {
+                    LOG.error("Couldn't update {}. Sleeping for {} s. Error: ", downloadableFile, TimeUnit.SECONDS.convert(failedDownloadSleepMillis, TimeUnit.MILLISECONDS), e);
+                    Thread.sleep(failedDownloadSleepMillis);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
             }
         }
         return downloaded;
@@ -108,8 +110,8 @@ public class ServerBinaryDownloader implements Downloader {
             CloseableHttpResponse response = httpClient.execute(request)
         ) {
             handleInvalidResponse(response, url);
-            this.md5 = response.getFirstHeader(MD5_HEADER).getValue();
-            this.extraProperties = HeaderUtil.parseExtraProperties(response.getFirstHeader(AGENT_EXTRA_PROPERTIES_HEADER));
+            this.md5 = response.getFirstHeader(RESPONSE_CONTENT_MD5).getValue();
+            this.extraProperties = HeaderUtil.parseExtraProperties(response.getFirstHeader(RESPONSE_AGENT_EXTRA_PROPERTIES));
         }
     }
 
@@ -148,9 +150,9 @@ public class ServerBinaryDownloader implements Downloader {
                 out.println("2. This agent might be incompatible with your GoCD Server. Please fix the version mismatch between GoCD Server and GoCD Agent.");
 
                 throw new ClientProtocolException(sw.toString());
-            } else if (response.getFirstHeader(MD5_HEADER) == null) {
+            } else if (response.getFirstHeader(RESPONSE_CONTENT_MD5) == null) {
                 out.print("Missing required headers '");
-                out.print(MD5_HEADER);
+                out.print(RESPONSE_CONTENT_MD5);
                 out.println("' in response.");
                 throw new ClientProtocolException(sw.toString());
             }

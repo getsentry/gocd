@@ -23,8 +23,7 @@ import com.thoughtworks.go.domain.config.ConfigurationProperty;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
-import static org.apache.commons.lang3.StringUtils.isBlank;
+import java.util.Optional;
 
 public class ConfigurationPropertyRepresenter {
     public static void toJSON(OutputListWriter propertiesWriter, List<ConfigurationProperty> configurationProperties) {
@@ -38,10 +37,10 @@ public class ConfigurationPropertyRepresenter {
 
     public static void toJSON(OutputWriter writer, ConfigurationProperty configurationProperty) {
         writer.add("key", configurationProperty.getKey().getName());
-        if (!configurationProperty.isSecure() && !isBlank(configurationProperty.getConfigValue())) {
-            writer.add("value", configurationProperty.getConfigurationValue().getValue());
+        if (!configurationProperty.isSecure() && configurationProperty.getConfigValue() != null && !configurationProperty.getConfigValue().isBlank()) {
+            writer.add("value", configurationProperty.getConfigValue());
         }
-        if (configurationProperty.isSecure() && !isBlank(configurationProperty.getEncryptedValue())) {
+        if (configurationProperty.isSecure() && configurationProperty.getEncryptedValue() != null && !configurationProperty.getEncryptedValue().isBlank()) {
             writer.add("encrypted_value", configurationProperty.getEncryptedValue());
         }
         if (configurationProperty.hasErrors()) {
@@ -108,12 +107,12 @@ public class ConfigurationPropertyRepresenter {
             final String key = jsonReader.getString("key");
             final String value = jsonReader.optString("value").orElse(null);
             final String encryptedValue = jsonReader.optString("encrypted_value").orElse(null);
-            final Boolean isSecure = jsonReader.optBoolean("secure").orElse(null);
+            final Optional<Boolean> isSecure = jsonReader.optBoolean("secure");
 
             final ConfigurationProperty property = new ConfigurationProperty().deserialize(key, value, encryptedValue);
 
-            if (isBlank(encryptedValue) && null != isSecure) {
-                property.handleSecureValueConfiguration(isSecure); // handle encryptions
+            if (isSecure.isPresent() && (encryptedValue == null || encryptedValue.isBlank())) {
+                property.handleSecureValueConfiguration(isSecure.get()); // handle encryptions
             }
 
             return property;

@@ -29,19 +29,17 @@ import com.thoughtworks.go.domain.feed.FeedEntries;
 import com.thoughtworks.go.domain.feed.stage.StageFeedEntry;
 import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.domain.materials.Modification;
-import com.thoughtworks.go.dto.DurationBean;
 import com.thoughtworks.go.fixture.PipelineWithMultipleStages;
 import com.thoughtworks.go.helper.*;
 import com.thoughtworks.go.presentation.pipelinehistory.StageHistoryEntry;
 import com.thoughtworks.go.presentation.pipelinehistory.StageHistoryPage;
 import com.thoughtworks.go.presentation.pipelinehistory.StageInstanceModels;
 import com.thoughtworks.go.remote.AgentIdentifier;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.dao.JobInstanceDao;
 import com.thoughtworks.go.server.dao.PipelineSqlMapDao;
 import com.thoughtworks.go.server.dao.StageDao;
-import com.thoughtworks.go.server.domain.StageIdentity;
 import com.thoughtworks.go.server.domain.StageStatusListener;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.materials.DependencyMaterialUpdateNotifier;
@@ -53,11 +51,10 @@ import com.thoughtworks.go.server.transaction.TransactionSynchronizationManager;
 import com.thoughtworks.go.server.transaction.TransactionTemplate;
 import com.thoughtworks.go.server.ui.StageSummaryModels;
 import com.thoughtworks.go.server.util.Pagination;
+import com.thoughtworks.go.util.Dates;
 import com.thoughtworks.go.util.GoConfigFileHelper;
-import com.thoughtworks.go.util.GoConstants;
 import com.thoughtworks.go.util.ReflectionUtil;
 import com.thoughtworks.go.util.TimeProvider;
-import org.joda.time.DateTime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -70,11 +67,14 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallbackWithoutResult;
 
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.domain.JobResult.Passed;
 import static com.thoughtworks.go.helper.BuildPlanMother.withBuildPlans;
 import static com.thoughtworks.go.helper.JobInstanceMother.building;
@@ -124,8 +124,8 @@ public class StageServiceIntegrationTest {
     private Pipeline savedPipeline;
     private PipelineConfig pipelineConfig;
     private Stage stage;
-    private GoConfigFileHelper configFileHelper = new GoConfigFileHelper();
-    private PipelineWithMultipleStages fixture;
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
+    private PipelineWithMultipleStages pipelineFixture;
     private String md5 = "md5-test";
     private JobState receivedState;
     private JobResult receivedResult;
@@ -137,12 +137,12 @@ public class StageServiceIntegrationTest {
         pipelineConfig = PipelineMother.withSingleStageWithMaterials(PIPELINE_NAME, STAGE_NAME, withBuildPlans("unit", "dev", "blah"));
         pipelineConfig.getFirstStageConfig().setFetchMaterials(false);
         pipelineConfig.getFirstStageConfig().setCleanWorkingDir(true);
-        configFileHelper.usingCruiseConfigDao(goConfigDao);
-        configFileHelper.onSetUp();
-        configFileHelper.addPipeline(PIPELINE_NAME, STAGE_NAME);
-        savedPipeline = scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), GoConstants.DEFAULT_APPROVED_BY);
-        stage = savedPipeline.getStages().first();
-        job = stage.getJobInstances().first();
+        configHelper.usingCruiseConfigDao(goConfigDao);
+        configHelper.onSetUp();
+        configHelper.addPipeline(PIPELINE_NAME, STAGE_NAME);
+        savedPipeline = scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), BuildCause.APPROVER_AUTOMATICALLY_TRIGGERED);
+        stage = savedPipeline.getStages().getFirst();
+        job = stage.getJobInstances().getFirst();
         job.setAgentUuid(UUID);
         jobInstanceDao.updateAssignedInfo(job);
         AgentIdentifier agentIdentifier = new AgentIdentifier("localhost", "127.0.0.1", UUID);
@@ -155,11 +155,11 @@ public class StageServiceIntegrationTest {
 
     @AfterEach
     public void teardown() throws Exception {
-        if (fixture != null) {
-            fixture.onTearDown();
+        if (pipelineFixture != null) {
+            pipelineFixture.onTearDown();
         }
         dbHelper.onTearDown();
-        configFileHelper.onTearDown();
+        configHelper.onTearDown();
         notifier.enableUpdates();
     }
 
@@ -190,45 +190,45 @@ public class StageServiceIntegrationTest {
 
     @Test
     public void shouldReturnFalseWhenAllStagesAreCompletedInAGivenPipeline(@TempDir Path tempDir) throws Exception {
-        fixture = new PipelineWithMultipleStages(4, materialRepository, transactionTemplate, tempDir);
-        fixture.usingConfigHelper(configFileHelper).usingDbHelper(dbHelper).onSetUp();
-        Pipeline pipeline = fixture.createdPipelineWithAllStagesPassed();
+        pipelineFixture = new PipelineWithMultipleStages(4, materialRepository, transactionTemplate, tempDir);
+        pipelineFixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
+        Pipeline pipeline = pipelineFixture.createdPipelineWithAllStagesPassed();
         assertThat(stageService.isAnyStageActiveForPipeline(pipeline.getIdentifier())).isFalse();
     }
 
     @Test
     public void shouldReturnTrueIfAnyStageIsBuildingInAGivenPipeline(@TempDir Path tempDir) throws Exception {
-        fixture = new PipelineWithMultipleStages(4, materialRepository, transactionTemplate, tempDir);
-        fixture.usingConfigHelper(configFileHelper).usingDbHelper(dbHelper).onSetUp();
+        pipelineFixture = new PipelineWithMultipleStages(4, materialRepository, transactionTemplate, tempDir);
+        pipelineFixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
 
-        Pipeline pipeline = fixture.createPipelineWithFirstStageAssigned();
+        Pipeline pipeline = pipelineFixture.createPipelineWithFirstStageAssigned();
         assertThat(stageService.isAnyStageActiveForPipeline(pipeline.getIdentifier())).isTrue();
     }
 
     @Test
     public void testShouldReturnTrueIfAStageOfAPipelineHasBeenScheduled(@TempDir Path tempDir) throws Exception {
-        fixture = new PipelineWithMultipleStages(3, materialRepository, transactionTemplate, tempDir);
-        fixture.usingConfigHelper(configFileHelper).usingDbHelper(dbHelper).onSetUp();
-        Pipeline pipeline = fixture.createPipelineWithFirstStageScheduled();
+        pipelineFixture = new PipelineWithMultipleStages(3, materialRepository, transactionTemplate, tempDir);
+        pipelineFixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
+        Pipeline pipeline = pipelineFixture.createPipelineWithFirstStageScheduled();
         assertThat(stageService.isAnyStageActiveForPipeline(pipeline.getIdentifier())).isTrue();
     }
 
     @Test
     public void shouldReturnStageWithSpecificCounter() {
-        Stage firstStage = savedPipeline.getStages().first();
-        Stage newInstance = instanceFactory.createStageInstance(pipelineConfig.first(), new DefaultSchedulingContext(
+        Stage firstStage = savedPipeline.getStages().getFirst();
+        Stage newInstance = instanceFactory.createStageInstance(pipelineConfig.getFirst(), new DefaultSchedulingContext(
             "anonymous"), md5, new TimeProvider());
         Stage newSavedStage = stageService.save(savedPipeline, newInstance);
 
         Stage latestStage = stageService.findStageWithIdentifier(
-            new StageIdentifier(CaseInsensitiveString.str(pipelineConfig.name()), null, savedPipeline.getLabel(), firstStage.getName(), String.valueOf(newSavedStage.getCounter())));
+            new StageIdentifier(CaseInsensitiveString.str(pipelineConfig.name()), savedPipeline.getCounter(), savedPipeline.getLabel(), firstStage.getName(), String.valueOf(newSavedStage.getCounter())));
         assertThat(latestStage).isEqualTo(newSavedStage);
 
     }
 
     @Test
     public void shouldReturnStageWithSpecificCounter_findStageWithIdentifier() {
-        Stage newInstance = instanceFactory.createStageInstance(pipelineConfig.first(), new DefaultSchedulingContext("anonymous"), md5, new TimeProvider());
+        Stage newInstance = instanceFactory.createStageInstance(pipelineConfig.getFirst(), new DefaultSchedulingContext("anonymous"), md5, new TimeProvider());
         Stage newSavedStage = stageService.save(savedPipeline, newInstance);
 
         StageIdentifier identifier = newSavedStage.getIdentifier();
@@ -239,24 +239,24 @@ public class StageServiceIntegrationTest {
 
     @Test
     public void shouldReturnTrueIfStageIsActive() {
-        savedPipeline.getStages().first();
-        Stage newInstance = instanceFactory.createStageInstance(pipelineConfig.first(), new DefaultSchedulingContext("anonymous"), md5, new TimeProvider());
+        savedPipeline.getStages().getFirst();
+        Stage newInstance = instanceFactory.createStageInstance(pipelineConfig.getFirst(), new DefaultSchedulingContext("anonymous"), md5, new TimeProvider());
         stageService.save(savedPipeline, newInstance);
 
-        boolean stageActive = stageService.isStageActive(CaseInsensitiveString.str(pipelineConfig.name()), CaseInsensitiveString.str(pipelineConfig.first().name()));
+        boolean stageActive = stageService.isStageActive(CaseInsensitiveString.str(pipelineConfig.name()), CaseInsensitiveString.str(pipelineConfig.getFirst().name()));
         assertThat(stageActive).isTrue();
     }
 
     @Test
     public void shouldSaveStageWithFetchMaterialsFlag() {
-        Stage firstStage = savedPipeline.getStages().first();
+        Stage firstStage = savedPipeline.getStages().getFirst();
         Stage savedStage = stageService.stageById(firstStage.getId());
         assertThat(savedStage.shouldFetchMaterials()).isFalse();
     }
 
     @Test
     public void shouldSaveStageWithCleanWorkingDirFlag() {
-        Stage firstStage = savedPipeline.getStages().first();
+        Stage firstStage = savedPipeline.getStages().getFirst();
         Stage savedStage = stageService.stageById(firstStage.getId());
         assertThat(savedStage.shouldCleanWorkingDir()).isTrue();
     }
@@ -267,7 +267,7 @@ public class StageServiceIntegrationTest {
         StageHistoryEntry[] stages = createFiveStages();
 
         StageHistoryPage history = stageService.findStageHistoryPage(stageService.stageById(stages[2].getId()), 3);
-        assertThat(history.getPagination()).isEqualTo(Pagination.pageStartingAt(0, 5, 3));
+        assertThat(history.getPagination()).isEqualTo(Pagination.pageByOffset(0, 5, 3));
         assertThat(history.getStages().size()).isEqualTo(3);
         assertThat(history.getStages().get(0)).isEqualTo(stages[4]);
         assertThat(history.getStages().get(1)).isEqualTo(stages[3]);
@@ -283,7 +283,7 @@ public class StageServiceIntegrationTest {
         StageHistoryPage history = stageService.findStageHistoryPage(stageService.stageById(stages[0].getId()), 3);
         assertThat(history.getStages().get(0)).isEqualTo(stages[1]);
         assertThat(history.getStages().get(1)).isEqualTo(stages[0]);
-        assertThat(history.getPagination()).isEqualTo(Pagination.pageStartingAt(3, 5, 3));
+        assertThat(history.getPagination()).isEqualTo(Pagination.pageByOffset(3, 5, 3));
         assertThat(history.getPagination().getCurrentPage()).isEqualTo(2);
     }
 
@@ -292,7 +292,7 @@ public class StageServiceIntegrationTest {
         stages[0] = savedPipeline.getFirstStage();
         for (int i = 1; i < stages.length; i++) {
             DefaultSchedulingContext ctx = new DefaultSchedulingContext("anonumous");
-            StageConfig stageCfg = pipelineConfig.first();
+            StageConfig stageCfg = pipelineConfig.getFirst();
             stages[i] = i % 2 == 0 ? instanceFactory.createStageInstance(stageCfg, ctx, md5, new TimeProvider()) : instanceFactory.createStageForRerunOfJobs(stages[i - 1], List.of("unit", "blah"), ctx,
                 stageCfg, new TimeProvider(), "md5");
             stageService.save(savedPipeline, stages[i]);
@@ -309,17 +309,17 @@ public class StageServiceIntegrationTest {
         StageHistoryEntry[] stages = createFiveStages();
 
         StageHistoryPage history = stageService.findStageHistoryPageByNumber(PIPELINE_NAME, STAGE_NAME, 2, 3);
-        assertThat(history.getPagination()).isEqualTo(Pagination.pageStartingAt(3, 5, 3));
+        assertThat(history.getPagination()).isEqualTo(Pagination.pageByOffset(3, 5, 3));
         assertThat(history.getStages().size()).isEqualTo(2);
-        assertThat(history.getStages().get(0)).isEqualTo(stages[1]);
-        assertThat(history.getStages().get(1)).isEqualTo(stages[0]);
+        assertThat(history.getStages().getFirst()).isEqualTo(stages[1]);
+        assertThat(history.getStages().getLast()).isEqualTo(stages[0]);
     }
 
     @Test
     public void shouldSaveStageWithStateBuilding() {
-        Stage stage = instanceFactory.createStageInstance(pipelineConfig.first(), new DefaultSchedulingContext("anonumous"), md5, new TimeProvider());
+        Stage stage = instanceFactory.createStageInstance(pipelineConfig.getFirst(), new DefaultSchedulingContext("anonumous"), md5, new TimeProvider());
         stageService.save(savedPipeline, stage);
-        Stage latestStage = stageService.findLatestStage(CaseInsensitiveString.str(pipelineConfig.name()), CaseInsensitiveString.str(pipelineConfig.first().name()));
+        Stage latestStage = stageService.findStageWithIdentifier(stage.getIdentifier());
         assertThat(latestStage.getState()).isEqualTo(StageState.Building);
     }
 
@@ -330,14 +330,14 @@ public class StageServiceIntegrationTest {
         try {
             stageService.getStageStatusListeners().clear();
             StageStatusListener failingListener = mock(StageStatusListener.class);
-            doThrow(new RuntimeException("Should not be rethrown by save")).when(failingListener).stageStatusChanged(any(Stage.class));
+            doThrow(new RuntimeException("Should not be rethrown by save")).when(failingListener).stageStatusChanged(any());
             StageStatusListener passingListener = mock(StageStatusListener.class);
             stageService.getStageStatusListeners().add(failingListener);
             stageService.getStageStatusListeners().add(passingListener);
-            Stage newInstance = instanceFactory.createStageInstance(pipelineConfig.first(), new DefaultSchedulingContext("anonumous"), md5, new TimeProvider());
+            Stage newInstance = instanceFactory.createStageInstance(pipelineConfig.getFirst(), new DefaultSchedulingContext("anonumous"), md5, new TimeProvider());
             Stage savedStage = stageService.save(savedPipeline, newInstance);
             assertThat(savedStage.getId()).isGreaterThan(0L);
-            verify(passingListener).stageStatusChanged(any(Stage.class));
+            verify(passingListener).stageStatusChanged(any());
         } finally {
             stageService.getStageStatusListeners().clear();
             stageService.getStageStatusListeners().addAll(original);
@@ -349,7 +349,7 @@ public class StageServiceIntegrationTest {
         StageStatusListener listener = mock(StageStatusListener.class);
         stageService.addStageStatusListener(listener);
 
-        Stage newInstance = instanceFactory.createStageInstance(pipelineConfig.first(),
+        Stage newInstance = instanceFactory.createStageInstance(pipelineConfig.getFirst(),
             new DefaultSchedulingContext("anonymous"), md5, new TimeProvider());
         Stage savedStage = stageService.save(savedPipeline, newInstance);
 
@@ -439,26 +439,25 @@ public class StageServiceIntegrationTest {
     // #2328
     public void shouldGetDurationBasedOnPipelineNameStageNameJobNameAndAgentUUID() {
         String pipelineName = "Cruise";
-        configFileHelper.addPipeline(pipelineName, STAGE_NAME);
-        Stage saveStage = dbHelper.saveTestPipeline(pipelineName, STAGE_NAME).getStages().first();
-        JobInstance job1 = completed("unit", Passed, new Date(), new DateTime().minusMinutes(1).toDate());
+        configHelper.addPipeline(pipelineName, STAGE_NAME);
+        Stage saveStage = dbHelper.saveTestPipeline(pipelineName, STAGE_NAME).getStages().getFirst();
+        JobInstance job1 = completed("unit", Passed, new Date(), Dates.from(ZonedDateTime.now().minusMinutes(1)));
         job1.setAgentUuid(UUID);
 
         jobInstanceDao.save(saveStage.getId(), job1);
 
         String pipeline2Name = "Cruise-1.1";
-        configFileHelper.addPipeline(pipeline2Name, STAGE_NAME);
-        Stage stage11 = dbHelper.saveTestPipeline(pipeline2Name, STAGE_NAME).getStages().first();
+        configHelper.addPipeline(pipeline2Name, STAGE_NAME);
+        Stage stage11 = dbHelper.saveTestPipeline(pipeline2Name, STAGE_NAME).getStages().getFirst();
 
         final JobInstance job2 = building("unit", new Date());
         job2.setAgentUuid(UUID);
         JobInstance buildingJob = jobInstanceDao.save(stage11.getId(), job2);
 
-        final DurationBean duration = stageService.getBuildDuration("Cruise-1.1", STAGE_NAME, buildingJob);
-        assertThat(duration.getDuration())
+        assertThat(stageService.getBuildDuration(buildingJob))
             .describedAs("we should not load duration according to stage name + job name + agent uuid only, "
                 + "we should also use pipeline name as a parameter")
-            .isEqualTo(0L);
+            .isEqualTo(Duration.ZERO);
     }
 
     @Test
@@ -488,7 +487,7 @@ public class StageServiceIntegrationTest {
         StageDao stageDao = mock(StageDao.class);
         Stage stage = StageMother.custom("stage");
         when(stageDao.findStageWithIdentifier(jobId.getStageIdentifier())).thenReturn(stage);
-        StageService service = new StageService(stageDao, jobInstanceService, null, null, null, null, changesetService, goConfigService, transactionTemplate, transactionSynchronizationManager,
+        StageService service = new StageService(stageDao, jobInstanceService, null, null, null, changesetService, goConfigService, transactionTemplate, transactionSynchronizationManager,
             goCache, listener);
         try {
             service.cancelJob(job);
@@ -496,7 +495,7 @@ public class StageServiceIntegrationTest {
         } catch (Exception e) {
             assertThat(e.getMessage()).isEqualTo("test exception");
         }
-        verify(listener, never()).stageStatusChanged(any(Stage.class));
+        verify(listener, never()).stageStatusChanged(any());
     }
 
     @Test
@@ -509,7 +508,7 @@ public class StageServiceIntegrationTest {
         StageDao stageDao = mock(StageDao.class);
         Stage stage = StageMother.custom("stage");
         when(stageDao.findStageWithIdentifier(jobId.getStageIdentifier())).thenReturn(stage);
-        StageService service = new StageService(stageDao, jobInstanceService, null, null, null, null, changesetService, goConfigService, transactionTemplate, transactionSynchronizationManager,
+        StageService service = new StageService(stageDao, jobInstanceService, null, null, null, changesetService, goConfigService, transactionTemplate, transactionSynchronizationManager,
             goCache, listener);
         service.cancelJob(job);
         verify(listener).stageStatusChanged(stage);
@@ -517,17 +516,17 @@ public class StageServiceIntegrationTest {
 
     @Test
     public void shouldLoadStagesHavingArtifactsWhenStageIsNotCleanupProtected() {
-        PipelineConfig pipelineConfig = configFileHelper.addPipeline("pipeline-1", "stage-1", "job-1");
+        PipelineConfig pipelineConfig = configHelper.addPipeline("pipeline-1", "stage-1", "job-1");
 
         Pipeline completed = dbHelper.schedulePipelineWithAllStages(pipelineConfig, ModificationsMother.modifySomeFiles(pipelineConfig));
         dbHelper.pass(completed);
         List<Stage> stages = stageService.oldestStagesWithDeletableArtifacts();
         assertThat(stages.size()).isEqualTo(1);
 
-        CruiseConfig cruiseConfig = configFileHelper.currentConfig();
-        pipelineConfig = cruiseConfig.pipelineConfigByName(new CaseInsensitiveString("pipeline-1"));
-        ReflectionUtil.setField(pipelineConfig.get(0), "artifactCleanupProhibited", true);
-        configFileHelper.writeConfigFile(cruiseConfig);
+        CruiseConfig cruiseConfig = configHelper.currentConfig();
+        pipelineConfig = cruiseConfig.pipelineConfigByName(cis("pipeline-1"));
+        ReflectionUtil.setField(pipelineConfig.getFirst(), "artifactCleanupProhibited", true);
+        configHelper.writeConfigFile(cruiseConfig);
 
         configDbStateRepository.flushConfigState();
 
@@ -537,16 +536,16 @@ public class StageServiceIntegrationTest {
 
     @Test
     public void shouldLoadPageOfOldestStagesHavingArtifacts() {
-        CruiseConfig cruiseConfig = configFileHelper.currentConfig();
-        PipelineConfig mingleConfig = cruiseConfig.pipelineConfigByName(new CaseInsensitiveString(PIPELINE_NAME));
-        ReflectionUtil.setField(mingleConfig.get(0), "artifactCleanupProhibited", true);
-        configFileHelper.writeConfigFile(cruiseConfig);
+        CruiseConfig cruiseConfig = configHelper.currentConfig();
+        PipelineConfig mingleConfig = cruiseConfig.pipelineConfigByName(cis(PIPELINE_NAME));
+        ReflectionUtil.setField(mingleConfig.getFirst(), "artifactCleanupProhibited", true);
+        configHelper.writeConfigFile(cruiseConfig);
 
         configDbStateRepository.flushConfigState();
 
         Pipeline[] pipelines = new Pipeline[101];
         for (int i = 0; i < 101; i++) {
-            PipelineConfig pipelineCfg = configFileHelper.addPipeline("pipeline-" + i, "stage", "job");
+            PipelineConfig pipelineCfg = configHelper.addPipeline("pipeline-" + i, "stage", "job");
             Pipeline pipeline = dbHelper.schedulePipeline(pipelineCfg, new TimeProvider());
             dbHelper.pass(pipeline);
             pipelines[i] = pipeline;
@@ -556,68 +555,68 @@ public class StageServiceIntegrationTest {
         for (int i = 0; i < 100; i++) {
             Stage stage = stages.get(i);
             assertThat(stage.getIdentifier()).isEqualTo(pipelines[i].getFirstStage().getIdentifier());
-            stageService.markArtifactsDeletedFor(stage);
+            stageDao.markArtifactsDeletedFor(stage);
         }
         assertThat(stages.size()).isEqualTo(100);
 
         stages = stageService.oldestStagesWithDeletableArtifacts();
         assertThat(stages.size()).isEqualTo(1);
-        Stage stage = stages.get(0);
+        Stage stage = stages.getFirst();
         assertThat(stage.getIdentifier()).isEqualTo(pipelines[100].getFirstStage().getIdentifier());
-        stageService.markArtifactsDeletedFor(stage);
+        stageDao.markArtifactsDeletedFor(stage);
 
         assertThat(stageService.oldestStagesWithDeletableArtifacts().size()).isEqualTo(0);
     }
 
     @Test
     public void findStageHistoryForChart_shouldFindLatestStageInstancesForChart() {
-        PipelineConfig pipelineConfig = configFileHelper.addPipeline("pipeline-1", "stage-1");
-        configFileHelper.turnOffSecurity();
+        PipelineConfig pipelineConfig = configHelper.addPipeline("pipeline-1", "stage-1");
+        configHelper.turnOffSecurity();
         Pipeline pipeline;
         for (int i = 0; i < 16; i++) {
             pipeline = dbHelper.schedulePipelineWithAllStages(pipelineConfig, ModificationsMother.modifySomeFiles(pipelineConfig));
             dbHelper.pass(pipeline);
         }
-        StageSummaryModels stages = stageService.findStageHistoryForChart(pipelineConfig.name().toString(), pipelineConfig.first().name().toString(), 1, 4);
+        StageSummaryModels stages = stageService.findStageHistoryForChart(pipelineConfig.name().toString(), pipelineConfig.getFirst().name().toString(), 1, 4);
         assertThat(stages.size()).isEqualTo(4);
-        assertThat(stages.get(0).getIdentifier().getPipelineCounter()).isEqualTo(16);
-        stages = stageService.findStageHistoryForChart(pipelineConfig.name().toString(), pipelineConfig.first().name().toString(), 3, 4);
+        assertThat(stages.getFirst().getIdentifier().getPipelineCounter()).isEqualTo(16);
+        stages = stageService.findStageHistoryForChart(pipelineConfig.name().toString(), pipelineConfig.getFirst().name().toString(), 3, 4);
         assertThat(stages.size()).isEqualTo(4);
-        assertThat(stages.get(0).getIdentifier().getPipelineCounter()).isEqualTo(8);
+        assertThat(stages.getFirst().getIdentifier().getPipelineCounter()).isEqualTo(8);
         assertThat(stages.getPagination().getTotalPages()).isEqualTo(4);
     }
 
     @Test
     public void findStageHistoryForChart_shouldNotRetrieveCancelledStagesAndStagesWithRerunJobs() {
-        PipelineConfig pipelineConfig = configFileHelper.addPipeline("pipeline-1", "stage-1");
-        configFileHelper.turnOffSecurity();
+        PipelineConfig pipelineConfig = configHelper.addPipeline("pipeline-1", "stage-1");
+        configHelper.turnOffSecurity();
         Pipeline pipeline = dbHelper.schedulePipelineWithAllStages(pipelineConfig, ModificationsMother.modifySomeFiles(pipelineConfig));
         dbHelper.pass(pipeline);
-        StageSummaryModels stages = stageService.findStageHistoryForChart(pipelineConfig.name().toString(), pipelineConfig.first().name().toString(), 1, 10);
+        StageSummaryModels stages = stageService.findStageHistoryForChart(pipelineConfig.name().toString(), pipelineConfig.getFirst().name().toString(), 1, 10);
         assertThat(stages.size()).isEqualTo(1);
 
-        scheduleService.rerunJobs(pipeline.getFirstStage(), List.of(CaseInsensitiveString.str(pipelineConfig.first().getJobs().first().name())), new HttpOperationResult());
-        stages = stageService.findStageHistoryForChart(pipelineConfig.name().toString(), pipelineConfig.first().name().toString(), 1, 10);
+        scheduleService.rerunJobs(pipeline.getFirstStage(), List.of(CaseInsensitiveString.str(pipelineConfig.getFirst().getJobs().getFirst().name())), new HttpOperationResult());
+        stages = stageService.findStageHistoryForChart(pipelineConfig.name().toString(), pipelineConfig.getFirst().name().toString(), 1, 10);
 
         assertThat(stages.size()).isEqualTo(1); //should not retrieve stages with rerun jobs
 
         pipeline = dbHelper.schedulePipelineWithAllStages(pipelineConfig, ModificationsMother.modifySomeFiles(pipelineConfig));
         dbHelper.cancelStage(pipeline.getFirstStage());
-        stages = stageService.findStageHistoryForChart(pipelineConfig.name().toString(), pipelineConfig.first().name().toString(), 1, 10);
+        stages = stageService.findStageHistoryForChart(pipelineConfig.name().toString(), pipelineConfig.getFirst().name().toString(), 1, 10);
 
         assertThat(stages.size()).isEqualTo(1); //should not retrieve cancelled stages
     }
 
     @Test
     public void shouldSaveTheStageStatusProperlyUponJobCancelAfterInvalidatingTheCache(@TempDir Path tempDir) throws Exception {
-        fixture = (PipelineWithMultipleStages) new PipelineWithMultipleStages(2, materialRepository, transactionTemplate, tempDir).usingTwoJobs();
-        fixture.usingConfigHelper(configFileHelper).usingDbHelper(dbHelper).onSetUp();
+        pipelineFixture = (PipelineWithMultipleStages) new PipelineWithMultipleStages(2, materialRepository, transactionTemplate, tempDir).usingTwoJobs();
+        pipelineFixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
 
-        Pipeline pipeline = fixture.createPipelineWithFirstStageAssigned();
+        Pipeline pipeline = pipelineFixture.createPipelineWithFirstStageAssigned();
         Stage currentStage = pipeline.getFirstStage();
         JobInstances jobs = currentStage.getJobInstances();
 
-        JobInstance firstJob = jobs.first();
+        JobInstance firstJob = jobs.getFirst();
         firstJob.completing(JobResult.Passed);
         firstJob.completed(new Date());
         jobInstanceDao.updateStateAndResult(firstJob);
@@ -625,7 +624,7 @@ public class StageServiceIntegrationTest {
         // prime the cache
         stageService.findStageWithIdentifier(new StageIdentifier(pipeline, currentStage));
 
-        stageService.cancelJob(jobs.last());
+        stageService.cancelJob(jobs.getLast());
 
         Stage savedStage = stageService.stageById(currentStage.getId());
         assertThat(savedStage.getState()).isEqualTo(StageState.Cancelled);
@@ -636,16 +635,16 @@ public class StageServiceIntegrationTest {
     public void shouldNotLoadStageAuthors_fromUpstreamInvisibleToUser() {
         PipelineConfig downstream = setup2DependentInstances();
 
-        configFileHelper.enableSecurity();
-        configFileHelper.addAdmins("super-hero");
+        configHelper.enableSecurity();
+        configHelper.addAdmins("super-hero");
 
-        configFileHelper.addAuthorizedUserForPipelineGroup("loser", "upstream-without-mingle");
-        configFileHelper.addAuthorizedUserForPipelineGroup("loser", "downstream");
-        configFileHelper.addAuthorizedUserForPipelineGroup("boozer", "upstream-with-mingle");
+        configHelper.addAuthorizedUserForPipelineGroup("loser", "upstream-without-mingle");
+        configHelper.addAuthorizedUserForPipelineGroup("loser", "downstream");
+        configHelper.addAuthorizedUserForPipelineGroup("boozer", "upstream-with-mingle");
 
-        FeedEntries feed = stageService.feed(downstream.name().toString(), new Username(new CaseInsensitiveString("loser")));
+        FeedEntries feed = stageService.feed(downstream.name().toString(), new Username(cis("loser")));
 
-        assertAuthorsOnEntry((StageFeedEntry) feed.get(0),
+        assertAuthorsOnEntry((StageFeedEntry) feed.getFirst(),
             List.of(new Author("svn 3 guy", "svn.3@gmail.com"),
                 new Author("p4 2 guy", "p4.2@gmail.com")));
 
@@ -659,7 +658,7 @@ public class StageServiceIntegrationTest {
     public void shouldLoadStageAuthors_forFirstPageOfFeed() {
         PipelineConfig downstream = setup2DependentInstances();
 
-        FeedEntries feed = stageService.feed(downstream.name().toString(), new Username(new CaseInsensitiveString("loser")));
+        FeedEntries feed = stageService.feed(downstream.name().toString(), new Username(cis("loser")));
 
         assertStageEntryAuthor(feed);
     }
@@ -668,27 +667,16 @@ public class StageServiceIntegrationTest {
     public void shouldLoadStageAuthors_forSubsequentPages() {
         PipelineConfig downstream = setup2DependentInstances();
 
-        FeedEntries feed = stageService.feedBefore(Integer.MAX_VALUE, downstream.name().toString(), new Username(new CaseInsensitiveString("loser")));
+        FeedEntries feed = stageService.feedBefore(Integer.MAX_VALUE, downstream.name().toString(), new Username(cis("loser")));
 
         assertStageEntryAuthor(feed);
     }
 
     @Test
-    public void shouldFetchLatestStageInstanceForEachStage() {
-        setup2DependentInstances();
-        List<StageIdentity> latestStageInstances = stageService.findLatestStageInstances();
-        assertThat(latestStageInstances.size()).isEqualTo(4);
-        assertThat(latestStageInstances.contains(new StageIdentity("mingle", "dev", 8L))).isTrue();
-        assertThat(latestStageInstances.contains(new StageIdentity("upstream-without-mingle", "stage", 13L))).isTrue();
-        assertThat(latestStageInstances.contains(new StageIdentity("downstream", "down-stage", 14L))).isTrue();
-        assertThat(latestStageInstances.contains(new StageIdentity("upstream-with-mingle", "stage", 10L))).isTrue();
-    }
-
-    @Test
     public void testShouldReturnTrueIfAStageIsActive_CaseInsensitive(@TempDir Path tempDir) throws Exception {
-        fixture = new PipelineWithMultipleStages(4, materialRepository, transactionTemplate, tempDir);
-        fixture.usingConfigHelper(configFileHelper).usingDbHelper(dbHelper).onSetUp();
-        Pipeline pipeline = fixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
+        pipelineFixture = new PipelineWithMultipleStages(4, materialRepository, transactionTemplate, tempDir);
+        pipelineFixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
+        Pipeline pipeline = pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
         assertThat(stageService.isStageActive(pipeline.getName().toUpperCase(), "FT")).isTrue();
     }
 
@@ -696,7 +684,7 @@ public class StageServiceIntegrationTest {
     public void shouldReturnTheLatestAndOldestStageInstanceId() {
         StageHistoryEntry[] stages = createFiveStages();
 
-        PipelineRunIdInfo oldestAndLatestPipelineId = stageService.getOldestAndLatestStageInstanceId(new Username(new CaseInsensitiveString("admin1")), savedPipeline.getName(), savedPipeline.getFirstStage().getName());
+        PipelineRunIdInfo oldestAndLatestPipelineId = stageService.getOldestAndLatestStageInstanceId(new Username(cis("admin1")), savedPipeline.getName(), savedPipeline.getFirstStage().getName());
 
         assertThat(oldestAndLatestPipelineId.getLatestRunId()).isEqualTo(stages[4].getId());
         assertThat(oldestAndLatestPipelineId.getOldestRunId()).isEqualTo(stages[0].getId());
@@ -706,7 +694,7 @@ public class StageServiceIntegrationTest {
     public void shouldReturnLatestPipelineHistory() {
         StageHistoryEntry[] stages = createFiveStages();
 
-        StageInstanceModels history = stageService.findStageHistoryViaCursor(new Username(new CaseInsensitiveString("admin1")), savedPipeline.getName(), savedPipeline.getFirstStage().getName(), 0, 0, 10);
+        StageInstanceModels history = stageService.findStageHistoryViaCursor(new Username(cis("admin1")), savedPipeline.getName(), savedPipeline.getFirstStage().getName(), 0, 0, 10);
 
         assertThat(history.size()).isEqualTo(5);
         assertThat(history.get(0).getId()).isEqualTo(stages[4].getId());
@@ -717,7 +705,7 @@ public class StageServiceIntegrationTest {
     public void shouldReturnThePipelineHistoryAfterTheSpecifiedCursor() {
         StageHistoryEntry[] stages = createFiveStages();
 
-        StageInstanceModels history = stageService.findStageHistoryViaCursor(new Username(new CaseInsensitiveString("admin1")), savedPipeline.getName(), savedPipeline.getFirstStage().getName(), stages[2].getId(), 0, 10);
+        StageInstanceModels history = stageService.findStageHistoryViaCursor(new Username(cis("admin1")), savedPipeline.getName(), savedPipeline.getFirstStage().getName(), stages[2].getId(), 0, 10);
 
         assertThat(history.size()).isEqualTo(2);
         assertThat(history.get(0).getId()).isEqualTo(stages[1].getId());
@@ -728,7 +716,7 @@ public class StageServiceIntegrationTest {
     public void shouldReturnThePipelineHistoryBeforeTheSpecifiedCursor() {
         StageHistoryEntry[] stages = createFiveStages();
 
-        StageInstanceModels history = stageService.findStageHistoryViaCursor(new Username(new CaseInsensitiveString("admin1")), savedPipeline.getName(), savedPipeline.getFirstStage().getName(), 0, stages[2].getId(), 10);
+        StageInstanceModels history = stageService.findStageHistoryViaCursor(new Username(cis("admin1")), savedPipeline.getName(), savedPipeline.getFirstStage().getName(), 0, stages[2].getId(), 10);
 
         assertThat(history.size()).isEqualTo(2);
         assertThat(history.get(0).getId()).isEqualTo(stages[4].getId());
@@ -737,7 +725,7 @@ public class StageServiceIntegrationTest {
 
     private void assertStageEntryAuthor(FeedEntries feed) {
 
-        assertAuthorsOnEntry((StageFeedEntry) feed.get(0),
+        assertAuthorsOnEntry((StageFeedEntry) feed.getFirst(),
             List.of(new Author("hg 3 guy", "hg.3@gmail.com"),
                 new Author("git 2&3 guy", "git.2.and.3@gmail.com"),
                 new Author("svn 3 guy", "svn.3@gmail.com"),
@@ -762,30 +750,30 @@ public class StageServiceIntegrationTest {
     }
 
     private PipelineConfig setup2DependentInstances() {
-        Username loser = new Username(new CaseInsensitiveString("loser"));
+        Username loser = new Username(cis("loser"));
         ManualBuild build = new ManualBuild(loser);
         Date checkinTime = new Date();
 
-        GitMaterial git = MaterialsMother.gitMaterial("http://google.com", null, "master");
+        GitMaterial git = MaterialsMother.gitMaterial("https://google.com", null, "master");
         git.setFolder("git");
         HgMaterial hg = MaterialsMother.hgMaterial();
         hg.setFolder("hg");
         PipelineConfig upstreamWithMingle = PipelineConfigMother.createPipelineConfig("upstream-with-mingle", "stage", "build");
         upstreamWithMingle.setMaterialConfigs(new MaterialConfigs(git.config(), hg.config()));
-        configFileHelper.addPipelineToGroup(upstreamWithMingle, "upstream-with-mingle");
+        configHelper.addPipelineToGroup(upstreamWithMingle, "upstream-with-mingle");
 
         P4Material p4 = MaterialsMother.p4Material("loser:007", "loser", "boozer", "through-the-window", true);
         PipelineConfig upstreamWithoutMingle = PipelineConfigMother.createPipelineConfig("upstream-without-mingle", "stage", "build");
         upstreamWithoutMingle.setMaterialConfigs(new MaterialConfigs(p4.config()));
-        configFileHelper.addPipelineToGroup(upstreamWithoutMingle, "upstream-without-mingle");
+        configHelper.addPipelineToGroup(upstreamWithoutMingle, "upstream-without-mingle");
 
-        DependencyMaterial dependencyMaterial = MaterialsMother.dependencyMaterial(upstreamWithMingle.name().toString(), upstreamWithMingle.get(0).name().toString());
+        DependencyMaterial dependencyMaterial = MaterialsMother.dependencyMaterial(upstreamWithMingle.name().toString(), upstreamWithMingle.getFirst().name().toString());
         SvnMaterial svn = MaterialsMother.svnMaterial("http://svn.com");
-        DependencyMaterial dependencyMaterialViaP4 = MaterialsMother.dependencyMaterial(upstreamWithoutMingle.name().toString(), upstreamWithoutMingle.get(0).name().toString());
+        DependencyMaterial dependencyMaterialViaP4 = MaterialsMother.dependencyMaterial(upstreamWithoutMingle.name().toString(), upstreamWithoutMingle.getFirst().name().toString());
         PipelineConfig downstream = PipelineConfigMother.createPipelineConfig("downstream", "down-stage", "job");
         downstream.setMaterialConfigs(new MaterialConfigs(dependencyMaterial.config(), svn.config(), dependencyMaterialViaP4.config()));
 
-        configFileHelper.addPipelineToGroup(downstream, "downstream");
+        configHelper.addPipelineToGroup(downstream, "downstream");
 
         //mingle card nos.
         //svn: 1xx

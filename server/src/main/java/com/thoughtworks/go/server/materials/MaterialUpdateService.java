@@ -44,15 +44,16 @@ import com.thoughtworks.go.serverhealth.ServerHealthService;
 import com.thoughtworks.go.util.MaterialFingerprintTag;
 import com.thoughtworks.go.util.ProcessManager;
 import com.thoughtworks.go.util.SystemEnvironment;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -182,11 +183,11 @@ public class MaterialUpdateService implements GoMessageListener<MaterialUpdateCo
         return !allGitMaterials.isEmpty();
     }
 
-    public boolean updateMaterial(MaterialConfig config) {
+    public boolean updateMaterial(@NotNull MaterialConfig config) {
         return updateMaterial(materialConfigConverter.toMaterial(config));
     }
 
-    public boolean updateMaterial(Material material) {
+    public boolean updateMaterial(@NotNull Material material) {
         Date inProgressSince = inProgress.putIfAbsent(material, new Date());
         if (inProgressSince == null || !material.isAutoUpdate()) {
             LOGGER.debug("[Material Update] Starting update of material {}", material);
@@ -201,12 +202,12 @@ public class MaterialUpdateService implements GoMessageListener<MaterialUpdateCo
             }
         } else {
             LOGGER.warn("[Material Update] Skipping update of material {} which has been in-progress since {}", material, inProgressSince);
-            long idleTime = getProcessManager().getIdleTimeFor(new MaterialFingerprintTag(material.getFingerprint()));
-            if (idleTime > getMaterialUpdateInActiveTimeoutInMillis()) {
+            Duration idleTime = getProcessManager().idleTimeFor(new MaterialFingerprintTag(material.getFingerprint()));
+            if (idleTime.compareTo(materialUpdateInactivityTimeout()) > 0) {
                 HealthStateScope scope = HealthStateScope.forMaterialUpdate(material);
                 serverHealthService.removeByScope(scope);
                 serverHealthService.update(warning("Material update for " + material.getUriForDisplay() + " hung:",
-                        "Material update is currently running but has not shown any activity in the last " + idleTime / 60000 + " minute(s). This may be hung. Details - " + material.getLongDescription(),
+                        "Material update is currently running but has not shown any activity in the last " + idleTime.toMinutes() + " minute(s). This may be hung. Details - " + material.getLongDescription(),
                         general(scope)));
             }
             return false;
@@ -277,8 +278,8 @@ public class MaterialUpdateService implements GoMessageListener<MaterialUpdateCo
         return watchList.hasConfigRepoWithFingerprint(material.getFingerprint());
     }
 
-    private long getMaterialUpdateInActiveTimeoutInMillis() {
-        return TimeUnit.MINUTES.toMillis(systemEnvironment.get(SystemEnvironment.MATERIAL_UPDATE_INACTIVE_TIMEOUT_IN_MINUTES));
+    private Duration materialUpdateInactivityTimeout() {
+        return Duration.ofMinutes(systemEnvironment.get(SystemEnvironment.MATERIAL_UPDATE_INACTIVE_TIMEOUT_IN_MINUTES));
     }
 
     private GoMessageQueue<MaterialUpdateMessage> queueFor(Material material) {
@@ -286,7 +287,7 @@ public class MaterialUpdateService implements GoMessageListener<MaterialUpdateCo
             return configUpdateQueue;
         }
 
-        return (material instanceof DependencyMaterial) ? dependencyMaterialUpdateQueue : updateQueue;
+        return material instanceof DependencyMaterial ? dependencyMaterialUpdateQueue : updateQueue;
     }
 
     ProcessManager getProcessManager() {
@@ -295,8 +296,9 @@ public class MaterialUpdateService implements GoMessageListener<MaterialUpdateCo
 
     public boolean isInProgress(Material material) {
         for (Material m : this.inProgress.keySet()) {
-            if (m.isSameFlyweight(material))
+            if (m.isSameFlyweight(material)) {
                 return true;
+            }
         }
         return false;
     }
@@ -316,9 +318,9 @@ public class MaterialUpdateService implements GoMessageListener<MaterialUpdateCo
 
         @Override
         public boolean test(Material material) {
-            return material instanceof GitMaterial &&
-                    ((GitMaterial) material).getBranch().equals(branchName) &&
-                    possibleUrls.contains(((GitMaterial) material).getUrlArgument().withoutCredentials());
+            return material instanceof GitMaterial gitMaterial &&
+                    gitMaterial.getBranch().equals(branchName) &&
+                    possibleUrls.contains(gitMaterial.getUrlArgument().withoutCredentials());
         }
     }
 
@@ -331,8 +333,8 @@ public class MaterialUpdateService implements GoMessageListener<MaterialUpdateCo
 
         @Override
         public boolean test(Material material) {
-            return material instanceof PluggableSCMMaterial &&
-                    scmNames.contains(((PluggableSCMMaterial) material).getScmConfig().getName());
+            return material instanceof PluggableSCMMaterial pluggableSCMMaterial &&
+                    scmNames.contains(pluggableSCMMaterial.getScmConfig().getName());
         }
     }
 }

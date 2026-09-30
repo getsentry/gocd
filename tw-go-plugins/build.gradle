@@ -1,8 +1,3 @@
-import com.thoughtworks.go.build.DownloadFile
-import com.thoughtworks.go.build.GithubArtifact
-import com.thoughtworks.go.build.VerifyJarTask
-import org.apache.commons.codec.digest.DigestUtils
-
 /*
  * Copyright Thoughtworks, Inc.
  *
@@ -19,6 +14,8 @@ import org.apache.commons.codec.digest.DigestUtils
  * limitations under the License.
  */
 
+import com.thoughtworks.go.build.*
+
 configurations {
   pluginsZipConfig
 }
@@ -27,59 +24,58 @@ def dependencies = [
   new GithubArtifact(
     user: 'gocd',
     repo: 'gocd-ldap-authentication-plugin',
-    tagName: 'v2.3.0-386',
-    asset: 'gocd-ldap-authentication-plugin-2.3.0-386.jar',
-    checksum: 'c24ba5e9943d8aacb70f8dc4b0f91a7e387cb92799cfbc980b0fd85b7dd055f3'
+    tagName: 'v4.0.0-535',
+    asset: 'gocd-ldap-authentication-plugin-4.0.0-535.jar',
+    checksum: 'ea25ae53d1d769fe1e36fd353ea3be0b9a9e9765d9ee0db1b0097249ae5f2af2'
   ),
   new GithubArtifact(
     user: 'gocd',
     repo: 'gocd-filebased-authentication-plugin',
-    tagName: 'v2.2.0-300',
-    asset: 'gocd-filebased-authentication-plugin-2.2.0-300.jar',
-    checksum: '87432d1d830e333e9cf950d802501bce76e6af182ad567b38b5d6a6233c9ebc9'
+    tagName: 'v3.0.0-418',
+    asset: 'gocd-filebased-authentication-plugin-3.0.0-418.jar',
+    checksum: 'a404b8940615829f68f9e339f07b0422b655409dc16d9d119e93f6847d77449c'
   ),
   new GithubArtifact(
     user: 'tomzo',
     repo: 'gocd-yaml-config-plugin',
-    tagName: 'v1.0.0-423',
-    asset: 'yaml-config-plugin-1.0.0-423.jar',
-    checksum: '8501cd8de9b9b21f673e65f1658552a11073a602a6c4a99ca7575b6f4854da88'
+    tagName: 'v2.0.0-541',
+    asset: 'yaml-config-plugin-2.0.0-541.jar',
+    checksum: '73921fd31494a17e54164816109e51ba85dfdc24055351e503c5c6684f4708af'
   ),
   new GithubArtifact(
     user: 'tomzo',
     repo: 'gocd-json-config-plugin',
-    tagName: 'v1.0.0-273',
-    asset: 'json-config-plugin-1.0.0-273.jar',
-    checksum: '4e90500660813d1f570e6d3ba6646a1c279ad72bcf86236cf744846ff5bc0418'
+    tagName: 'v2.0.0-387',
+    asset: 'json-config-plugin-2.0.0-387.jar',
+    checksum: '7e8b9e6317859b84c033df30e53b58e0443d85de24cfba6b26a6a30c55f806c7'
   ),
   new GithubArtifact(
     user: 'gocd',
     repo: 'gocd-file-based-secrets-plugin',
-    tagName: 'v1.2.0-310',
-    asset: 'gocd-file-based-secrets-plugin-1.2.0-310.jar',
-    checksum: '1455ac9874f44daf14c6fc4d9e3cf517de3e23cff6f5437fb224cabccc919ba8'
+    tagName: 'v2.0.0-437',
+    asset: 'gocd-file-based-secrets-plugin-2.0.0-437.jar',
+    checksum: 'be67fc68bab55719a45e71f2878d5d9ec4ccff0173727ff1acc07e116ad5314c'
   )
 ]
 
-task createVersionFile {
-  def file = layout.buildDirectory.file("version.txt").get().asFile
-  inputs.property('version', rootProject.version)
-  inputs.property('gitRevision', rootProject.gitRevision)
+tasks.register('createVersionFile') {
+  def goVersions = rootProject.goVersions as GoVersions
+  inputs.property('goVersions', goVersions)
 
+  def file = layout.buildDirectory.file("version.txt").get().asFile
   outputs.file file
 
   doLast {
     file.getParentFile().mkdirs()
     file.withWriter { out ->
-      out.write("${rootProject.version} (${rootProject.gitRevision})")
+      out.write("${goVersions.fullVersion} (${goVersions.gitRevision})")
     }
   }
 }
 
-task downloadPlugins {
-}
+def downloadPlugins = tasks.register('downloadPlugins')
 
-task pluginsZip(type: Zip) {
+def pluginsZip = tasks.register('pluginsZip', Zip) {
   finalizedBy 'verifyPluginZip'
 
   archiveBaseName = 'plugins'
@@ -89,9 +85,8 @@ task pluginsZip(type: Zip) {
   from(dependencies.collect { dep -> destFile(dep) })
 }
 
-task verifyPluginZip(type: VerifyJarTask) {
+tasks.register('verifyPluginZip', VerifyJarTask) {
   jarTask = pluginsZip
-
   expectedJars = [
     '/': dependencies.collect { dep -> "${dep.repo}.jar".toString() }
   ]
@@ -102,19 +97,24 @@ artifacts {
 }
 
 dependencies.each { dep ->
-  task "download-${dep.repo}"(type: DownloadFile) { downloadTask ->
-    pluginsZip.dependsOn downloadTask
-    downloadPlugins.dependsOn downloadTask
+  def downloadTask = tasks.register("download-${dep.repo}", DownloadFile) { downloadTask ->
     downloadTask.src dep.downloadUrl
     downloadTask.dest destFile(dep)
     downloadTask.checksum = dep.checksum
   }
 
-  pluginsZip.from(destFile(dep))
+  downloadPlugins.configure {
+    dependsOn downloadTask
+  }
+
+  pluginsZip.configure { Zip zipTask ->
+    zipTask.dependsOn downloadTask
+    zipTask.from(destFile(dep))
+  }
 }
 
 private File destFile(GithubArtifact dep) {
-  new File(gradle.gradleUserHomeDir, "download-cache/${DigestUtils.md5Hex(dep.downloadUrl)}/${dep.repo}.jar")
+  new File(gradle.gradleUserHomeDir, "download-cache/${TextUtils.md5Hex(dep.downloadUrl)}/${dep.repo}.jar")
 }
 
-task prepare(dependsOn: pluginsZip)
+tasks.register('prepare') { dependsOn pluginsZip }

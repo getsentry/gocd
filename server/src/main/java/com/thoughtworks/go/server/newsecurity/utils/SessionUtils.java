@@ -21,6 +21,7 @@ import com.thoughtworks.go.server.newsecurity.models.AuthenticationToken;
 import com.thoughtworks.go.server.security.userdetail.GoUserPrincipal;
 import com.thoughtworks.go.util.Clock;
 import com.thoughtworks.go.util.SystemEnvironment;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.web.PortResolver;
@@ -39,9 +40,10 @@ import static com.thoughtworks.go.domain.PersistentObject.NOT_PERSISTED;
 import static com.thoughtworks.go.server.security.GoAuthority.ROLE_ANONYMOUS;
 
 public class SessionUtils {
+    public static final String AUTHENTICATION_TOKEN = "GOCD_SECURITY_AUTHENTICATION_TOKEN";
+    public static final String CURRENT_USER_ID = "GOCD_SECURITY_CURRENT_USER_ID";
+
     private static final Logger LOGGER = LoggerFactory.getLogger(SessionUtils.class);
-    private static final String AUTHENTICATION_TOKEN = "GOCD_SECURITY_AUTHENTICATION_TOKEN";
-    private static final String CURRENT_USER_ID = "GOCD_SECURITY_CURRENT_USER_ID";
     private static final String AUTHENTICATION_ERROR = "GOCD_SECURITY_AUTHENTICATION_ERROR";
     private static final String PLUGIN_AUTH_CONTEXT = "GOCD_PLUGIN_AUTH_CONTEXT";
     private static final String SAVED_REQUEST = "GOCD_SECURITY_SAVED_REQUEST";
@@ -79,7 +81,9 @@ public class SessionUtils {
     }
 
     public static void saveRequest(HttpServletRequest request, SavedRequest savedRequest) {
-        LOGGER.debug("Saving request {}", request.getRequestURI());
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Saving request {}", request.getRequestURI());
+        }
         request.getSession().setAttribute(SAVED_REQUEST, savedRequest);
     }
 
@@ -145,8 +149,8 @@ public class SessionUtils {
         return (Long) request.getSession().getAttribute(CURRENT_USER_ID);
     }
 
-    public static void setUserId(HttpServletRequest request, Long id) {
-        if (id == null || id == NOT_PERSISTED) {
+    public static void setUserId(HttpServletRequest request, long id) {
+        if (id == NOT_PERSISTED) {
             LOGGER.debug("Unsetting current user id from session {}", id);
             request.getSession().removeAttribute(CURRENT_USER_ID);
         } else {
@@ -163,7 +167,9 @@ public class SessionUtils {
         if (user == null) {
             throw new IllegalArgumentException("Use unsetCurrentUser instead");
         }
-        LOGGER.debug("Setting user {} into thread local", user.getUsername());
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Setting user {} into thread local", user.getUsername());
+        }
         USERS.set(user);
     }
 
@@ -174,5 +180,9 @@ public class SessionUtils {
 
     public static Username currentUsername() {
         return getCurrentUser().asUsernameObject();
+    }
+
+    public static @NotNull String sessionIdMonitorFor(HttpServletRequest request) {
+        return request.getSession(false).getId().intern();
     }
 }

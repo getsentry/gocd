@@ -15,18 +15,15 @@
  */
 package com.thoughtworks.go.server.service;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.GoConfigDao;
 import com.thoughtworks.go.domain.CannotScheduleException;
 import com.thoughtworks.go.domain.Pipeline;
 import com.thoughtworks.go.domain.activity.AgentAssignment;
 import com.thoughtworks.go.domain.buildcause.BuildCause;
-import com.thoughtworks.go.domain.materials.svn.Subversion;
-import com.thoughtworks.go.domain.materials.svn.SvnCommand;
 import com.thoughtworks.go.helper.MaterialConfigsMother;
 import com.thoughtworks.go.helper.SvnTestRepo;
 import com.thoughtworks.go.helper.TestRepo;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.materials.DependencyMaterialUpdateNotifier;
@@ -37,10 +34,7 @@ import com.thoughtworks.go.serverhealth.ServerHealthService;
 import com.thoughtworks.go.serverhealth.ServerHealthState;
 import com.thoughtworks.go.util.GoConfigFileHelper;
 import org.apache.commons.io.FileUtils;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +48,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.ModificationsMother.modifySomeFiles;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -86,11 +81,10 @@ public class ScheduleServiceRunOnAllAgentIntegrationTest {
     private GoCache goCache;
     @Autowired
     private DependencyMaterialUpdateNotifier notifier;
-
     @Autowired
     private DatabaseAccessHelper dbHelper;
-    private GoConfigFileHelper CONFIG_HELPER;
-    public Subversion repository;
+
+    private GoConfigFileHelper configHelper;
     public static TestRepo testRepo;
 
     @BeforeAll
@@ -98,20 +92,24 @@ public class ScheduleServiceRunOnAllAgentIntegrationTest {
         testRepo = new SvnTestRepo(tempDir);
     }
 
+    @AfterAll
+    public static void tearDownRepos() {
+        testRepo.tearDown();
+    }
+
     @BeforeEach
     public void setup() throws Exception {
-        CONFIG_HELPER = new GoConfigFileHelper();
+        configHelper = new GoConfigFileHelper();
         dbHelper.onSetUp();
-        CONFIG_HELPER.usingCruiseConfigDao(goConfigDao);
-        CONFIG_HELPER.onSetUp();
+        configHelper.usingCruiseConfigDao(goConfigDao);
+        configHelper.onSetUp();
 
-        repository = new SvnCommand(null, testRepo.projectRepositoryUrl());
         goConfigService.forceNotifyListeners();
         agentAssignment.clear();
         goCache.clear();
 
-        CONFIG_HELPER.addPipeline("blahPipeline", "blahStage", MaterialConfigsMother.hgMaterialConfig(UUID.randomUUID().toString()), "job1", "job2");
-        CONFIG_HELPER.makeJobRunOnAllAgents("blahPipeline", "blahStage", "job2");
+        configHelper.addPipeline("blahPipeline", "blahStage", MaterialConfigsMother.hgMaterialConfig(UUID.randomUUID().toString()), "job1", "job2");
+        configHelper.makeJobRunOnAllAgents("blahPipeline", "blahStage", "job2");
         notifier.disableUpdates();
 
     }
@@ -123,7 +121,7 @@ public class ScheduleServiceRunOnAllAgentIntegrationTest {
         FileUtils.deleteQuietly(goConfigService.artifactsDir());
         pipelineScheduleQueue.clear();
         agentAssignment.clear();
-        CONFIG_HELPER.onTearDown();
+        configHelper.onTearDown();
     }
 
     @Test
@@ -137,18 +135,18 @@ public class ScheduleServiceRunOnAllAgentIntegrationTest {
         }
         List<ServerHealthState> stateList = serverHealthService.logsSortedForScope(HealthStateScope.forStage("blahPipeline", "blahStage"));
         assertThat(stateList.size()).isEqualTo(1);
-        assertThat(stateList.get(0).getMessage()).isEqualTo("Failed to trigger stage [blahStage] pipeline [blahPipeline]");
-        assertThat(stateList.get(0).getDescription()).isEqualTo("Could not find matching agents to run job [job2] of stage [blahStage].");
+        assertThat(stateList.getFirst().getMessage()).isEqualTo("Failed to trigger stage [blahStage] pipeline [blahPipeline]");
+        assertThat(stateList.getFirst().getDescription()).isEqualTo("Could not find matching agents to run job [job2] of stage [blahStage].");
     }
 
     @Test
     public void shouldUpdateServerHealthWhenSchedulePipelineFails() {
-        pipelineScheduleQueue.schedule(new CaseInsensitiveString("blahPipeline"), saveMaterials(modifySomeFiles(goConfigService.pipelineConfigNamed(new CaseInsensitiveString("blahPipeline")))));
+        pipelineScheduleQueue.schedule(cis("blahPipeline"), saveMaterials(modifySomeFiles(goConfigService.pipelineConfigNamed(cis("blahPipeline")))));
         scheduleService.autoSchedulePipelinesFromRequestBuffer();
         List<ServerHealthState> stateList = serverHealthService.logsSortedForScope(HealthStateScope.forStage("blahPipeline", "blahStage"));
         assertThat(stateList.size()).isEqualTo(1);
-        assertThat(stateList.get(0).getMessage()).isEqualTo("Failed to trigger stage [blahStage] pipeline [blahPipeline]");
-        assertThat(stateList.get(0).getDescription()).isEqualTo("Could not find matching agents to run job [job2] of stage [blahStage].");
+        assertThat(stateList.getFirst().getMessage()).isEqualTo("Failed to trigger stage [blahStage] pipeline [blahPipeline]");
+        assertThat(stateList.getFirst().getDescription()).isEqualTo("Could not find matching agents to run job [job2] of stage [blahStage].");
     }
 
     private BuildCause saveMaterials(BuildCause buildCause) {
@@ -159,7 +157,7 @@ public class ScheduleServiceRunOnAllAgentIntegrationTest {
     private Pipeline manualSchedule(String pipelineName) {
         final Map<String, String> revisions = new HashMap<>();
         final Map<String, String> environmentVariables = new HashMap<>();
-        buildCauseProducer.manualProduceBuildCauseAndSave(pipelineName, new Username(new CaseInsensitiveString("some user name")),
+        buildCauseProducer.manualProduceBuildCauseAndSave(pipelineName, new Username(cis("some user name")),
                 new ScheduleOptions(revisions, environmentVariables, new HashMap<>()), new ServerHealthStateOperationResult());
         scheduleService.autoSchedulePipelinesFromRequestBuffer();
         return pipelineService.mostRecentFullPipelineByName(pipelineName);

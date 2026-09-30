@@ -17,6 +17,7 @@ package com.thoughtworks.go.config;
 
 import com.thoughtworks.go.domain.BaseCollection;
 import com.thoughtworks.go.domain.ConfigErrors;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -46,7 +47,7 @@ public class TemplatesConfig extends BaseCollection<PipelineTemplateConfig> impl
     private void validateNameUniqueness() {
         Map<String, PipelineTemplateConfig> templateList = new HashMap<>();
         for (PipelineTemplateConfig pipelineTemplateConfig : this) {
-            pipelineTemplateConfig.validateNameUniquness(templateList);
+            pipelineTemplateConfig.validateNameUniqueness(templateList);
         }
     }
 
@@ -74,49 +75,19 @@ public class TemplatesConfig extends BaseCollection<PipelineTemplateConfig> impl
     }
 
     public void removeTemplateNamed(CaseInsensitiveString name) {
-        PipelineTemplateConfig toBeRemoved = null;
-        for (PipelineTemplateConfig templateConfig : this) {
-            if (templateConfig.matches(name)) {
-                toBeRemoved = templateConfig;
-            }
-        }
-        this.remove(toBeRemoved);
+        removeFirstIf(t -> t.name().equals(name));
     }
 
-    public boolean hasTemplateNamed(CaseInsensitiveString name) {
-        for (PipelineTemplateConfig templateConfig : this) {
-            if (templateConfig.matches(name)) {
-                return true;
-            }
-        }
-        return false;
+    public @Nullable PipelineTemplateConfig templateByName(CaseInsensitiveString name) {
+        return stream().filter(t -> t.name().equals(name)).findFirst().orElse(null);
     }
 
-    public PipelineTemplateConfig templateByName(CaseInsensitiveString foo) {
-        for (PipelineTemplateConfig templateConfig : this) {
-            if (templateConfig.name().equals(foo)) {
-                return templateConfig;
-            }
-        }
-        return null;
-    }
-
-    public boolean canViewAndEditTemplate(CaseInsensitiveString username, List<Role> roles) {
-        for (PipelineTemplateConfig templateConfig : this) {
-            if (canUserEditTemplate(templateConfig, username, roles)) {
-                return true;
-            }
-        }
-        return false;
+    public boolean canUserEditTemplates(CaseInsensitiveString username, List<Role> roles) {
+        return this.stream().anyMatch(templateConfig -> canUserEditTemplate(templateConfig, username, roles));
     }
 
     public boolean canUserViewTemplates(CaseInsensitiveString username, List<Role> roles, boolean isGroupAdministrator) {
-        for (PipelineTemplateConfig templateConfig : this) {
-            if (hasViewAccessToTemplate(templateConfig, username, roles, isGroupAdministrator)) {
-                return true;
-            }
-        }
-        return false;
+        return this.stream().anyMatch(templateConfig -> hasViewAccessToTemplate(templateConfig, username, roles, isGroupAdministrator));
     }
 
     public boolean canUserEditTemplate(PipelineTemplateConfig template, CaseInsensitiveString username, List<Role> roles) {
@@ -124,8 +95,6 @@ public class TemplatesConfig extends BaseCollection<PipelineTemplateConfig> impl
     }
 
     public boolean hasViewAccessToTemplate(PipelineTemplateConfig template, CaseInsensitiveString username, List<Role> roles, boolean isGroupAdministrator) {
-        boolean hasViewAccessToTemplate = template.getAuthorization().isViewUser(username, roles);
-        hasViewAccessToTemplate = hasViewAccessToTemplate || (template.isAllowGroupAdmins() && isGroupAdministrator);
-        return hasViewAccessToTemplate;
+        return template.getAuthorization().isViewUser(username, roles) || (template.isAllowGroupAdmins() && isGroupAdministrator);
     }
 }

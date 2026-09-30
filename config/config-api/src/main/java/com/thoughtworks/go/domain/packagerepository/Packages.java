@@ -21,6 +21,7 @@ import com.thoughtworks.go.config.Validatable;
 import com.thoughtworks.go.config.ValidationContext;
 import com.thoughtworks.go.domain.BaseCollection;
 import com.thoughtworks.go.domain.ConfigErrors;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -41,14 +42,14 @@ public class Packages extends BaseCollection<PackageDefinition> implements Valid
         Collections.addAll(this, packageDefinitions);
     }
 
-    public PackageDefinition find(final String id) {
+    public @Nullable PackageDefinition find(final String id) {
         return stream().filter(packageDefinition -> packageDefinition.getId().equals(id)).findFirst().orElse(null);
     }
 
     @Override
     public void validate(ValidationContext validationContext) {
         Map<String, PackageDefinition> nameMap = new HashMap<>();
-        for(PackageDefinition packageDefinition : this){
+        for (PackageDefinition packageDefinition : this) {
             packageDefinition.validateNameUniqueness(nameMap);
         }
     }

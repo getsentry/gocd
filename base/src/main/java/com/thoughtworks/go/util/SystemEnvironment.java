@@ -15,81 +15,79 @@
  */
 package com.thoughtworks.go.util;
 
-import ch.qos.logback.classic.Level;
-import org.apache.commons.lang3.StringUtils;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 
 import java.io.File;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.nio.charset.Charset;
 import java.nio.file.FileSystems;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicReference;
 
-import static java.lang.Double.parseDouble;
 import static java.util.concurrent.TimeUnit.*;
-import static org.apache.commons.lang3.StringUtils.isBlank;
 
 public class SystemEnvironment implements Serializable, ConfigDirProvider {
 
     public static final String CRUISE_LISTEN_HOST = "cruise.listen.host";
     public static final String CRUISE_SERVER_PORT = "cruise.server.port";
-    static final String AGENT_CONNECTION_TIMEOUT_IN_SECONDS = "agent.connection.timeout";
-    private static final String JETTY_XML = "jetty.xml";
-    public static final String CRUISE_SERVER_WAR_PROPERTY = "cruise.server.war";
 
+    public static final String CRUISE_SERVER_WAR_PROPERTY = "cruise.server.war";
 
     public static final String CRUISE_CONFIG_REPO_DIR = "cruise.config.repo.dir";
     public static final String DB_BASE_DIR = "db/";
     private static final String CONFIG_REPO_DEFAULT_PATH = DB_BASE_DIR + "config.git";
+
+    public static final String WEBAPP_CONTEXT_PATH = "/go";
+
     public static final String ACTIVEMQ_USE_JMX = "activemq.use.jmx";
     public static final String ACTIVEMQ_QUEUE_PREFETCH = "activemq.queue.prefetch";
     private static final String ACTIVEMQ_CONNECTOR_PORT = "activemq.conn.port";
 
     public static final String PARENT_LOADER_PRIORITY = "parent.loader.priority";
-    public static final String AGENT_CONTENT_MD5_HEADER = "Agent-Content-MD5";
 
-    public static final String AGENT_LAUNCHER_CONTENT_MD5_HEADER = "Agent-Launcher-Content-MD5";
-
-    public static final String AGENT_PLUGINS_ZIP_MD5_HEADER = "Agent-Plugins-Content-MD5";
-    public static final String AGENT_TFS_SDK_MD5_HEADER = "TFS-SDK-Content-MD5";
-    public static final String AGENT_EXTRA_PROPERTIES_HEADER = "GoCD-Agent-Extra-Properties";
-
-    public static final String EMPTY_STRING = "";
-    public static final String BLANK_STRING = EMPTY_STRING;
     public static final String ENFORCE_SERVER_IMMUTABILITY = "go.enforce.server.immutability";
 
     public static final String CONFIGURATION_YES = "Y";
-
     public static final String CONFIGURATION_NO = "N";
+
     public static final String RESOLVE_FANIN_REVISIONS = "resolve.fanin.revisions";
 
-    public static final String ENABLE_CONFIG_MERGE_PROPERTY = "enable.config.merge";
-    public static final GoSystemProperty<Boolean> ENABLE_CONFIG_MERGE_FEATURE = new CachedProperty<>(new GoBooleanSystemProperty(ENABLE_CONFIG_MERGE_PROPERTY, Boolean.TRUE));
-
     public static final String CRUISE_PROPERTIES = "/cruise.properties";
-    private Properties properties;
 
+    public static final String USE_COMPRESSED_JAVASCRIPT = "rails.use.compressed.js";
+
+    public static final String AGENT_SIZE_LIMIT = "agent.size.limit";
     public static final String ARTIFACT_FULL_SIZE_LIMIT = "artifact.full.size.limit";
     public static final String DATABASE_FULL_SIZE_LIMIT = "db.full.size.limit";
     public static final String ARTIFACT_WARNING_SIZE_LIMIT = "artifact.warning.size.limit";
     public static final String DATABASE_WARNING_SIZE_LIMIT = "db.warning.size.limit";
-    public static final String AGENT_SIZE_LIMIT = "agent.size.limit";
     private static final String DISK_SPACE_CACHE_REFRESHER_INTERVAL = "disk.space.cache.refresher.interval";
 
 
     public static final String CONFIG_FILE_PROPERTY = "cruise.config.file";
-    public static final String INTERVAL = "cruise.console.publish.interval";
-    public static final String SERVICE_URL = "serviceUrl";
+    public static final String CONSOLE_PUBLISH_INTERVAL_SECONDS = "cruise.console.publish.interval";
+
+
     public static final String AGENT_SSL_VERIFICATION_MODE = "sslVerificationMode";
     public static final String AGENT_ROOT_CERT_FILE = "rootCertFile";
     public static final String AGENT_PRIVATE_KEY = "sslPrivateKeyFile";
     public static final String AGENT_PRIVATE_KEY_PASSPHRASE_FILE = "sslPrivateKeyPassphraseFile";
     public static final String AGENT_SSL_CERTIFICATE = "sslCertificateFile";
+    static final String AGENT_CONNECTION_TIMEOUT_IN_SECONDS = "agent.connection.timeout";
+    public static final String AGENT_JAR_MD5 = "agent.binary.md5";
+    public static final String AGENT_PLUGINS_MD5 = "agent.plugins.md5";
+    public static final String AGENT_BOOTSTRAPPER_VERSION = "agent.bootstrapper.version";
+    public static final String AGENT_TFS_IMPL_MD5 = "agent.tfs.md5";
+    public static final String AGENT_LAUNCHER_JAR_MD5 = "agent.launcher.md5";
 
     public static final String CONFIG_DIR_PROPERTY = "cruise.config.dir";
     public static final String DES_CONFIG_CIPHER = "cipher";
@@ -98,6 +96,8 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
     public static final String TFS_SOCKET_TIMEOUT_PROPERTY = "tfs.socket.block.timeout";
 
     static final String UNRESPONSIVE_JOB_WARNING_THRESHOLD = "cruise.unresponsive.job.warning";
+
+    public static final GoSystemProperty<String> SERVICE_URL = new CachedProperty<>(new GoStringSystemProperty("serviceUrl", "https://localhost:8153" + WEBAPP_CONTEXT_PATH));
 
     public static final int DEFAULT_MAIL_SENDER_TIMEOUT_IN_MILLIS = (int) SECONDS.toMillis(60);
     private static final GoSystemProperty<Integer> MAIL_SENDER_TIMEOUT_IN_MILLIS = new GoIntSystemProperty("cruise.mail.sender.timeout", DEFAULT_MAIL_SENDER_TIMEOUT_IN_MILLIS);
@@ -119,12 +119,10 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
     public static final GoSystemProperty<String> AVAILABLE_FEATURE_TOGGLES_FILE_PATH = new GoStringSystemProperty("available.toggles.path", "/available.toggles");
     public static final GoSystemProperty<String> USER_FEATURE_TOGGLES_FILE_PATH_RELATIVE_TO_CONFIG_DIR = new GoStringSystemProperty("user.toggles.path", "go.feature.toggles");
 
-    public static final GoSystemProperty<String> DEFAULT_PLUGINS_ZIP = new CachedProperty<>(
-            new GoStringSystemProperty("default.plugins.zip.location", "/defaultFiles/plugins.zip"));
+    public static final GoSystemProperty<String> DEFAULT_PLUGINS_ZIP = new CachedProperty<>(new GoStringSystemProperty("default.plugins.zip.location", "/defaultFiles/plugins.zip"));
     public static final GoSystemProperty<String> AGENT_PLUGINS_PATH = new CachedProperty<>(new GoStringSystemProperty("agent.plugins.path", PLUGINS_PATH));
     public static final GoSystemProperty<Long> GO_SERVER_CONNECTION_IDLE_TIMEOUT_IN_MILLIS = new GoLongSystemProperty("idle.timeout", SECONDS.toMillis(30));
     public static final GoSystemProperty<Integer> RESPONSE_BUFFER_SIZE = new GoIntSystemProperty("response.buffer.size", 32 * 1024);
-    public static final GoSystemProperty<Integer> ARTIFACT_COPY_BUFFER_SIZE = new GoIntSystemProperty("artifact.copy.buffer.size", 8 * 1024);
     public static final GoSystemProperty<Integer> API_REQUEST_IDLE_TIMEOUT_IN_SECONDS = new GoIntSystemProperty("api.request.idle.timeout.seconds", (int) MINUTES.toSeconds(5));
     public static final GoSystemProperty<Integer> AGENT_REQUEST_IDLE_TIMEOUT_IN_SECONDS = new GoIntSystemProperty("agent.request.idle.timeout.seconds", 30);
     public static final GoSystemProperty<Integer> GO_SERVER_SESSION_TIMEOUT_IN_SECONDS = new GoIntSystemProperty("go.server.session.timeout.seconds", (int) DAYS.toSeconds(14));
@@ -135,23 +133,15 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
 
     public static final GoSystemProperty<Integer> GO_SERVER_AUTHORIZATION_EXTENSION_CALLS_CACHE_TIMEOUT_IN_SECONDS = new GoIntSystemProperty("go.server.authorization.extension.calls.cache.timeout.in.secs", 60);
 
-    public static final GoSystemProperty<String> JETTY_XML_FILE_NAME = new GoStringSystemProperty("jetty.xml.file.name", JETTY_XML);
+    public static final GoSystemProperty<String> JETTY_XML_FILE_NAME = new GoStringSystemProperty("jetty.xml.file.name", "jetty.xml");
 
-    public static final String JETTY = "com.thoughtworks.go.server.JettyServer";
-    public static final GoSystemProperty<String> APP_SERVER = new CachedProperty<>(new GoStringSystemProperty("app.server", JETTY));
+    public static final GoSystemProperty<String> APP_SERVER = new CachedProperty<>(new GoStringSystemProperty("app.server", "com.thoughtworks.go.server.JettyServer"));
     public static final GoSystemProperty<String> GO_LANDING_PAGE = new GoStringSystemProperty("go.landing.page", "/pipelines");
-
-    public static final GoSystemProperty<Boolean> FETCH_ARTIFACT_AUTO_SUGGEST = new GoBooleanSystemProperty("go.fetch-artifact.auto-suggest", true);
-    public static final GoSystemProperty<Boolean> GO_FETCH_ARTIFACT_TEMPLATE_AUTO_SUGGEST = new GoBooleanSystemProperty("go.fetch-artifact.template.auto-suggest", true);
 
     public static final GoSystemProperty<Boolean> GO_CONFIG_REPO_GC_AGGRESSIVE = new GoBooleanSystemProperty("go.config.repo.gc.aggressive", true);
     public static final GoSystemProperty<Long> GO_CONFIG_REPO_GC_EXPIRE_IN_HOURS = new GoLongSystemProperty("go.config.repo.gc.expire", 24L);
     public static final GoSystemProperty<Long> GO_CONFIG_REPO_GC_LOOSE_OBJECT_WARNING_THRESHOLD = new GoLongSystemProperty("go.config.repo.gc.warning.looseobject.threshold", 10000L);
     public static final GoSystemProperty<Boolean> GO_CONFIG_REPO_PERIODIC_GC = new GoBooleanSystemProperty("go.config.repo.gc.periodic", false);
-
-    public static final GoSystemProperty<String> GO_UPDATE_SERVER_PUBLIC_KEY_FILE_NAME = new GoStringSystemProperty("go.update.server.public.key.file.name", "go_update_server.pub");
-    public static final GoSystemProperty<String> GO_UPDATE_SERVER_URL = new GoStringSystemProperty("go.update.server.url", "https://update.gocd.org/channels/supported/latest.json");
-    public static final GoSystemProperty<Boolean> GO_CHECK_UPDATES = new GoBooleanSystemProperty("go.check.updates", true);
 
     public static final GoSystemProperty<Integer> GO_ELASTIC_PLUGIN_CREATE_AGENT_THREADS = new GoIntSystemProperty("go.elasticplugin.createagent.threads", 5);
     public static final GoSystemProperty<Integer> GO_ELASTIC_PLUGIN_SERVER_PING_THREADS = new GoIntSystemProperty("go.elasticplugin.serverping.threads", 1);
@@ -162,9 +152,7 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
 
     public static final GoSystemProperty<Boolean> GO_SERVER_SHALLOW_CLONE = new GoBooleanSystemProperty("go.server.shallowClone", false);
 
-    public static final GoSystemProperty<Boolean> GO_API_WITH_SAFE_MODE = new GoBooleanSystemProperty("go.api.with.safe.mode", true);
     public static final GoSystemProperty<Integer> MAX_PENDING_AGENTS_ALLOWED = new GoIntSystemProperty("max.pending.agents.allowed", 100);
-    public static final GoSystemProperty<Boolean> CHECK_AND_REMOVE_DUPLICATE_MODIFICATIONS = new GoBooleanSystemProperty("go.modifications.removeDuplicates", true);
     public static final GoSystemProperty<Boolean> GO_DIAGNOSTICS_MODE = new GoBooleanSystemProperty("go.diagnostics.mode", false);
 
     public static final GoSystemProperty<Integer> DEPENDENCY_MATERIAL_UPDATE_LISTENERS = new GoIntSystemProperty("dependency.material.check.threads", 3);
@@ -187,14 +175,13 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
 
     private static final GoSystemProperty<Boolean> ENABLE_ANALYTICS_ONLY_FOR_ADMINS = new GoBooleanSystemProperty("go.enable.analytics.only.for.admins", false);
     public static final GoSystemProperty<Long> NOTIFICATION_PLUGIN_MESSAGES_TTL_IN_MILLIS = new GoLongSystemProperty("plugins.notification.message.ttl.millis", MINUTES.toMillis(2));
-    public static final GoSystemProperty<Boolean> ALLOW_EVERYONE_TO_VIEW_OPERATE_GROUPS_WITH_NO_GROUP_AUTHORIZATION_SETUP = new GoBooleanSystemProperty("allow.everyone.to.view.operate.groups.with.no.authorization.setup", false);
 
     public static final GoSystemProperty<Boolean> ENABLE_HSTS_HEADER = new GoBooleanSystemProperty("gocd.enable.hsts.header", false);
     public static final GoSystemProperty<Long> HSTS_HEADER_MAX_AGE_IN_SECONDS = new GoLongSystemProperty("gocd.hsts.header.max.age", DAYS.toSeconds(365));
     public static final GoSystemProperty<Boolean> HSTS_HEADER_INCLUDE_SUBDOMAINS = new GoBooleanSystemProperty("gocd.hsts.header.include.subdomains", false);
     public static final GoSystemProperty<Boolean> HSTS_HEADER_PRELOAD = new GoBooleanSystemProperty("gocd.hsts.header.preload", false);
     public static final GoSystemProperty<Long> EPHEMERAL_AUTO_REGISTER_KEY_EXPIRY_IN_MILLIS = new GoLongSystemProperty("gocd.ephemeral.auto.register.key.expiry.millis", MINUTES.toMillis(30));
-    public static final GoSystemProperty<Double> MDU_EXPONENTIAL_BACKOFF_MULTIPLIER = new GoDoubleSystemProperty("gocd.mdu.exponential.backoff.multiplier", 1.5);
+    public static final GoSystemProperty<Float> MDU_EXPONENTIAL_BACKOFF_MULTIPLIER = new GoFloatSystemProperty("gocd.mdu.exponential.backoff.multiplier", 1.5f);
 
     public static final GoSystemProperty<Boolean> START_IN_MAINTENANCE_MODE = new GoBooleanSystemProperty("gocd.server.start.in.maintenance.mode", false);
 
@@ -205,13 +192,15 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
         System.getenv("GIT_ALLOW_PROTOCOL") == null ? "http:https:ssh:git:file:rsync" : System.getenv("GIT_ALLOW_PROTOCOL")
     );
 
-    private volatile static Integer agentConnectionTimeout;
+    private volatile static Duration agentConnectionTimeout;
     private volatile static String cruiseConfigDir;
-    private volatile static Long databaseFullSizeLimit;
     private volatile static Charset consoleLogCharset;
-    private volatile static Long artifactFullSizeLimit;
+
+    private volatile static Long databaseFullSizeLimitMegabytes;
+    private volatile static Long artifactFullSizeLimitMegabytes;
     private volatile static Long diskSpaceCacheRefresherInterval;
 
+    private Properties properties;
     private File configDir;
     private volatile Boolean enforceRevisionCompatibilityWithUpstream;
 
@@ -222,23 +211,31 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
         this.properties = properties;
     }
 
-    public <T> T get(GoSystemProperty<T> systemProperty) {
+    public static String getNormalizedServiceUrl() {
+        return UrlUtil.normalizeUrlString(SERVICE_URL.getValue());
+    }
+
+    public <T> @NotNull T get(@NotNull GoSystemProperty<T> systemProperty) {
         return systemProperty.getValue();
     }
 
 
-    public <T> void set(GoSystemProperty<T> systemProperty, T value) {
-        System.setProperty(systemProperty.propertyName, "" + value);
-        if (systemProperty instanceof CachedProperty) {
-            ((CachedProperty<?>) systemProperty).clear();
-        }
+    @TestOnly
+    public <T> void set(GoSystemProperty<T> systemProperty, @NotNull T value) {
+        System.setProperty(systemProperty.propertyName, String.valueOf(value));
+        systemProperty.clearIfNecessary();
     }
 
+    @TestOnly
     public void set(GoSystemProperty<Boolean> systemProperty, boolean value) {
         System.setProperty(systemProperty.propertyName, value ? "Y" : "N");
-        if (systemProperty instanceof CachedProperty) {
-            ((CachedProperty<?>) systemProperty).clear();
-        }
+        systemProperty.clearIfNecessary();
+    }
+
+    @TestOnly
+    public <T> void reset(GoSystemProperty<T> systemProperty) {
+        System.clearProperty(systemProperty.propertyName());
+        systemProperty.clearIfNecessary();
     }
 
     @Override
@@ -261,19 +258,19 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
         return get(MAIL_SENDER_TIMEOUT_IN_MILLIS);
     }
 
-    public long getArtifactRepositoryFullLimit() {
-        return Objects.requireNonNullElseGet(artifactFullSizeLimit,
-            () -> artifactFullSizeLimit = Long.parseLong(trimMegaFromSize(getPropertyImpl(ARTIFACT_FULL_SIZE_LIMIT, "100M"))));
+    public long getArtifactRepositoryFullLimitMegabytes() {
+        return Objects.requireNonNullElseGet(artifactFullSizeLimitMegabytes,
+            () -> artifactFullSizeLimitMegabytes = Long.valueOf(trimMegaFromSize(getPropertyImpl(ARTIFACT_FULL_SIZE_LIMIT, "100M"))));
     }
 
-    public long getDatabaseDiskSpaceFullLimit() {
-        return Objects.requireNonNullElseGet(databaseFullSizeLimit,
-            () -> databaseFullSizeLimit = Long.parseLong(trimMegaFromSize(getPropertyImpl(DATABASE_FULL_SIZE_LIMIT, "100M"))));
+    public long getDatabaseDiskSpaceFullLimitMegabytes() {
+        return Objects.requireNonNullElseGet(databaseFullSizeLimitMegabytes,
+            () -> databaseFullSizeLimitMegabytes = Long.valueOf(trimMegaFromSize(getPropertyImpl(DATABASE_FULL_SIZE_LIMIT, "100M"))));
     }
 
     public long getDiskSpaceCacheRefresherInterval() {
         return Objects.requireNonNullElseGet(diskSpaceCacheRefresherInterval,
-            () -> diskSpaceCacheRefresherInterval = Long.parseLong(getPropertyImpl(DISK_SPACE_CACHE_REFRESHER_INTERVAL, "5000")));
+            () -> diskSpaceCacheRefresherInterval = Long.valueOf(getPropertyImpl(DISK_SPACE_CACHE_REFRESHER_INTERVAL, "5000")));
     }
 
     public boolean consoleOutToStdout() {
@@ -285,20 +282,20 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
         diskSpaceCacheRefresherInterval = interval;
     }
 
-    public long getAgentSizeLimit() {
+    public long getAgentSizeLimitBytes() {
         return Long.parseLong(trimMegaFromSize(getPropertyImpl(AGENT_SIZE_LIMIT, "100M"))) * 1024 * 1024;
     }
 
-    public long getArtifactRepositoryWarningLimit() {
+    public long getArtifactRepositoryWarningLimitMegabytes() {
         return Long.parseLong(trimMegaFromSize(getPropertyImpl(ARTIFACT_WARNING_SIZE_LIMIT, "1024M")));
     }
 
-    public long getDatabaseDiskSpaceWarningLimit() {
+    public long getDatabaseDiskSpaceWarningLimitMegabytes() {
         return Long.parseLong(trimMegaFromSize(getPropertyImpl(DATABASE_WARNING_SIZE_LIMIT, "1024M")));
     }
 
     private String trimMegaFromSize(String sizeInMega) {
-        return StringUtils.removeEndIgnoreCase(sizeInMega, "M");
+        return sizeInMega.replaceFirst("[mM]$", "");
     }
 
     @Override
@@ -313,12 +310,21 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
         return new File(getConfigDir(), get(JETTY_XML_FILE_NAME));
     }
 
-    private String getPropertyImpl(String property, String defaultValue) {
+    public String getPropertyImpl(String property, String defaultValue) {
         return System.getProperty(property, defaultValue);
     }
 
     public String getPropertyImpl(String property) {
         return System.getProperty(property);
+    }
+
+    @SuppressWarnings("SameParameterValue")
+    private <T extends Enum<T>> T safeToEnum(Class<T> enumClass, String value, T defaultValue) {
+        try {
+            return Enum.valueOf(enumClass, value.trim().toUpperCase());
+        } catch (Exception e) {
+            return defaultValue;
+        }
     }
 
     public String getOperatingSystemFamilyJvmName() {
@@ -366,19 +372,19 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
     }
 
     public String getAgentMd5() {
-        return getPropertyImpl(GoConstants.AGENT_JAR_MD5, BLANK_STRING);
+        return getPropertyImpl(AGENT_JAR_MD5, "");
     }
 
     public String getTfsImplMd5() {
-        return getPropertyImpl(GoConstants.TFS_IMPL_MD5, BLANK_STRING);
+        return getPropertyImpl(AGENT_TFS_IMPL_MD5, "");
     }
 
     public String getGivenAgentLauncherMd5() {
-        return getPropertyImpl(GoConstants.GIVEN_AGENT_LAUNCHER_JAR_MD5, BLANK_STRING);
+        return getPropertyImpl(AGENT_LAUNCHER_JAR_MD5, "");
     }
 
     public String getAgentPluginsMd5() {
-        return getPropertyImpl(GoConstants.AGENT_PLUGINS_MD5, BLANK_STRING);
+        return getPropertyImpl(AGENT_PLUGINS_MD5, "");
     }
 
     private Properties properties() {
@@ -399,17 +405,13 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
         return getPropertyImpl(CONFIG_FILE_PROPERTY, getConfigDir() + "/cruise-config.xml");
     }
 
-    public int getAgentConnectionTimeout() {
+    public Duration getAgentConnectionTimeout() {
         return Objects.requireNonNullElseGet(agentConnectionTimeout,
-            () -> agentConnectionTimeout = Integer.parseInt(getPropertyImpl(AGENT_CONNECTION_TIMEOUT_IN_SECONDS, "300")));
+            () -> agentConnectionTimeout = Duration.ofSeconds(Long.parseLong(getPropertyImpl(AGENT_CONNECTION_TIMEOUT_IN_SECONDS, "300"))));
     }
 
-    public Integer getConsolePublishInterval() {
-        return Integer.valueOf(getPropertyImpl(INTERVAL, "10"));
-    }
-
-    public String getServiceUrl() {
-        return getPropertyImpl(SERVICE_URL, defaultRemotingUrl());
+    public Integer getConsolePublishIntervalSeconds() {
+        return Integer.valueOf(getPropertyImpl(CONSOLE_PUBLISH_INTERVAL_SECONDS, "10"));
     }
 
     public File getRootCertFile() {
@@ -441,20 +443,12 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
     }
 
 
-    public SslVerificationMode getAgentSslVerificationMode() {
-        if (getPropertyImpl(AGENT_SSL_VERIFICATION_MODE) == null) {
-            return SslVerificationMode.NONE;
-        }
-        return SslVerificationMode.valueOf(getPropertyImpl(AGENT_SSL_VERIFICATION_MODE));
-    }
-
-
-    private String defaultRemotingUrl() {
-        return "https://localhost:8153" + getWebappContextPath();
+    public @NotNull String getAgentSslVerificationMode() {
+        return getPropertyImpl(AGENT_SSL_VERIFICATION_MODE, "NONE");
     }
 
     public boolean useCompressedJs() {
-        return Boolean.parseBoolean(getPropertyImpl(GoConstants.USE_COMPRESSED_JAVASCRIPT, "true"));
+        return Boolean.parseBoolean(getPropertyImpl(USE_COMPRESSED_JAVASCRIPT, "true"));
     }
 
     public Map<String, String> getGitAllowedProtocols() {
@@ -474,25 +468,17 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
     private void clearCachedSystemEnvironment() {
         agentConnectionTimeout = null;
         cruiseConfigDir = null;
-        databaseFullSizeLimit = null;
-        artifactFullSizeLimit = null;
+        databaseFullSizeLimitMegabytes = null;
+        artifactFullSizeLimitMegabytes = null;
         consoleLogCharset = null;
-    }
-
-    public String getWebappContextPath() {
-        return getPropertyImpl("cruise.server.context", "/go");
-    }
-
-    public String pathFor(String appPath) {
-        return (getWebappContextPath() + "/" + appPath).replaceAll("//", "/");
     }
 
     public String getCruiseWar() {
         return getPropertyImpl(CRUISE_SERVER_WAR_PROPERTY, "cruise.war");
     }
 
-    public long getUnresponsiveJobWarningThreshold() {
-        return Long.parseLong(getPropertyImpl(UNRESPONSIVE_JOB_WARNING_THRESHOLD, "5")) * 60 * 1000; // mins to millis
+    public Duration getUnresponsiveJobWarningThreshold() {
+        return Duration.ofMinutes(Long.parseLong(getPropertyImpl(UNRESPONSIVE_JOB_WARNING_THRESHOLD, "5")));
     }
 
     public boolean getParentLoaderPriority() {
@@ -521,7 +507,7 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
     }
 
     public Level pluginLoggingLevel(String pluginId) {
-        return Level.toLevel(getPropertyImpl("plugin." + pluginId + ".log.level", "INFO"), Level.INFO);
+        return safeToEnum(Level.class, getPropertyImpl("plugin." + pluginId + ".log.level", "INFO"), Level.INFO);
     }
 
     public Charset consoleLogCharset() {
@@ -535,36 +521,12 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
         return GO_SERVER_AUTHORIZATION_EXTENSION_CALLS_CACHE_TIMEOUT_IN_SECONDS.getValue();
     }
 
-    public <T> void reset(GoSystemProperty<T> systemProperty) {
-        System.clearProperty(systemProperty.propertyName());
-        if (systemProperty instanceof CachedProperty) {
-            ((CachedProperty<?>) systemProperty).clear();
-        }
-    }
-
     public long getMaterialUpdateIdleInterval() {
         return MATERIAL_UPDATE_IDLE_INTERVAL_IN_MILLIS.getValue();
     }
 
-    public String landingPage() {
-        return GO_LANDING_PAGE.getValue();
-    }
-
-
-    public String getUpdateServerPublicKeyPath() {
-        return String.format("%s/%s", getConfigDir(), GO_UPDATE_SERVER_PUBLIC_KEY_FILE_NAME.getValue());
-    }
-
-    public boolean isGOUpdateCheckEnabled() {
-        return GO_CHECK_UPDATES.getValue();
-    }
-
-    public boolean isFetchArtifactTemplateAutoSuggestEnabled() {
-        return GO_FETCH_ARTIFACT_TEMPLATE_AUTO_SUGGEST.getValue();
-    }
-
-    public String getUpdateServerUrl() {
-        return GO_UPDATE_SERVER_URL.getValue();
+    public String getLandingPage() {
+        return UrlUtil.joinPathPartsPreEncoded(WEBAPP_CONTEXT_PATH, GO_LANDING_PAGE.getValue());
     }
 
     public boolean isAutoRegisterLocalAgentEnabled() {
@@ -573,10 +535,6 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
 
     public long getConfigGitGcExpireInMillis() {
         return HOURS.toMillis(GO_CONFIG_REPO_GC_EXPIRE_IN_HOURS.getValue());
-    }
-
-    public boolean isApiSafeModeEnabled() {
-        return GO_API_WITH_SAFE_MODE.getValue();
     }
 
     public int sessionTimeoutInSeconds() {
@@ -589,10 +547,6 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
 
     public boolean isSessionCookieSecure() {
         return GO_SERVER_SESSION_COOKIE_SECURE.getValue();
-    }
-
-    public boolean isProductionMode() {
-        return GO_SERVER_MODE.getValue().equalsIgnoreCase("production");
     }
 
     public boolean isReAuthenticationEnabled() {
@@ -628,7 +582,7 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
     }
 
     public Integer getNotificationListenerCountForPlugin(String pluginId) {
-        return Integer.parseInt(getPropertyImpl("plugin." + pluginId + ".notifications.listener.count", "1"));
+        return Integer.valueOf(getPropertyImpl("plugin." + pluginId + ".notifications.listener.count", "1"));
     }
 
     public boolean enableAnalyticsOnlyForAdmins() {
@@ -659,7 +613,7 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
         return EPHEMERAL_AUTO_REGISTER_KEY_EXPIRY_IN_MILLIS.getValue();
     }
 
-    public double getMDUExponentialBackOffMultiplier() {
+    public float getMDUExponentialBackOffMultiplier() {
         return MDU_EXPONENTIAL_BACKOFF_MULTIPLIER.getValue();
     }
 
@@ -676,24 +630,25 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
     }
 
     public static abstract class GoSystemProperty<T> {
-        private final String propertyName;
-        protected T defaultValue;
+        private final @NotNull String propertyName;
+        private final @NotNull T defaultValue;
 
-        protected GoSystemProperty(String propertyName, T defaultValue) {
+        GoSystemProperty(@NotNull String propertyName, @NotNull T defaultValue) {
             this.propertyName = propertyName;
             this.defaultValue = defaultValue;
         }
 
-        T getValue() {
-            String propertyValue = System.getProperty(propertyName);
-            return convertValue(propertyValue, defaultValue);
+        @NotNull T getValue() {
+            return convertValue(System.getProperty(propertyName), defaultValue);
         }
 
-        protected abstract T convertValue(String propertyValueFromSystem, T defaultValue);
+        abstract @NotNull T convertValue(@Nullable String propertyValueFromSystem, @NotNull T defaultValue);
 
-        public String propertyName() {
+        public @NotNull String propertyName() {
             return propertyName;
         }
+
+        void clearIfNecessary() {}
     }
 
     private static class GoIntSystemProperty extends GoSystemProperty<Integer> {
@@ -702,39 +657,39 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
         }
 
         @Override
-        protected Integer convertValue(String propertyValueFromSystem, Integer defaultValue) {
+        protected @NotNull Integer convertValue(@Nullable String propertyValueFromSystem, @NotNull Integer defaultValue) {
             try {
-                return Integer.parseInt(propertyValueFromSystem);
-            } catch (NumberFormatException e) {
+                return propertyValueFromSystem == null ? defaultValue : Integer.valueOf(propertyValueFromSystem);
+            } catch (Exception e) {
                 return defaultValue;
             }
         }
     }
 
     private static class GoLongSystemProperty extends GoSystemProperty<Long> {
-        public GoLongSystemProperty(String propertyName, Long defaultValue) {
+        public GoLongSystemProperty(@NotNull String propertyName, @NotNull Long defaultValue) {
             super(propertyName, defaultValue);
         }
 
         @Override
-        protected Long convertValue(String propertyValueFromSystem, Long defaultValue) {
+        protected @NotNull Long convertValue(@Nullable String propertyValueFromSystem, @NotNull Long defaultValue) {
             try {
-                return Long.parseLong(propertyValueFromSystem);
-            } catch (NumberFormatException e) {
+                return propertyValueFromSystem == null ? defaultValue : Long.valueOf(propertyValueFromSystem);
+            } catch (Exception e) {
                 return defaultValue;
             }
         }
     }
 
-    private static class GoDoubleSystemProperty extends GoSystemProperty<Double> {
-        public GoDoubleSystemProperty(String propertyName, Double defaultValue) {
+    private static class GoFloatSystemProperty extends GoSystemProperty<Float> {
+        public GoFloatSystemProperty(@NotNull String propertyName, @NotNull Float defaultValue) {
             super(propertyName, defaultValue);
         }
 
         @Override
-        protected Double convertValue(String propertyValueFromSystem, Double defaultValue) {
+        protected @NotNull Float convertValue(@Nullable String propertyValueFromSystem, @NotNull Float defaultValue) {
             try {
-                return parseDouble(propertyValueFromSystem);
+                return propertyValueFromSystem == null ? defaultValue : Float.valueOf(propertyValueFromSystem);
             } catch (Exception e) {
                 return defaultValue;
             }
@@ -742,60 +697,50 @@ public class SystemEnvironment implements Serializable, ConfigDirProvider {
     }
 
     private static class GoStringSystemProperty extends GoSystemProperty<String> {
-        public GoStringSystemProperty(String propertyName, String defaultValue) {
+        public GoStringSystemProperty(@NotNull String propertyName, @NotNull String defaultValue) {
             super(propertyName, defaultValue);
         }
 
         @Override
-        protected String convertValue(String propertyValueFromSystem, String defaultValue) {
+        @NotNull String convertValue(@Nullable String propertyValueFromSystem, @NotNull String defaultValue) {
             return propertyValueFromSystem == null ? defaultValue : propertyValueFromSystem;
         }
     }
 
-    protected static class GoStringArraySystemProperty extends GoSystemProperty<String[]> {
-        public GoStringArraySystemProperty(String propertyName, String[] defaultValue) {
-            super(propertyName, defaultValue);
-        }
-
-        @Override
-        protected String[] convertValue(String propertyValueFromSystem, String[] defaultValue) {
-            return isBlank(propertyValueFromSystem) ? defaultValue : propertyValueFromSystem.trim().split("(\\s*)?,(\\s*)?");
-        }
-    }
-
     private static class CachedProperty<T> extends GoSystemProperty<T> {
-        private final GoSystemProperty<T> wrappedProperty;
-        private T cachedValue;
+        @NotNull private final GoSystemProperty<T> wrappedProperty;
+        private final AtomicReference<T> cachedValue = new AtomicReference<>();
 
-        public CachedProperty(GoSystemProperty<T> goSystemProperty) {
+        public CachedProperty(@NotNull GoSystemProperty<T> goSystemProperty) {
             super(goSystemProperty.propertyName, goSystemProperty.defaultValue);
             wrappedProperty = goSystemProperty;
         }
 
         @Override
-        protected T convertValue(String propertyValueFromSystem, T defaultValue) {
-            if (cachedValue == null) {
-                cachedValue = wrappedProperty.convertValue(propertyValueFromSystem, defaultValue);
+        @NotNull T convertValue(@Nullable String propertyValueFromSystem, @NotNull T defaultValue) {
+            T value = cachedValue.get();
+            if (value != null) {
+                return value;
             }
-            return cachedValue;
+            T computed = wrappedProperty.convertValue(propertyValueFromSystem, defaultValue);
+            T prev = cachedValue.compareAndExchange(null, computed);
+            return prev == null ? computed : prev;
         }
 
-        public void clear() {
-            cachedValue = null;
+        @Override
+        public void clearIfNecessary() {
+            cachedValue.set(null);
         }
     }
 
     private static class GoBooleanSystemProperty extends GoSystemProperty<Boolean> {
-        public GoBooleanSystemProperty(String propertyName, Boolean defaultValue) {
+        public GoBooleanSystemProperty(@NotNull String propertyName, @NotNull Boolean defaultValue) {
             super(propertyName, defaultValue);
         }
 
         @Override
-        protected Boolean convertValue(String propertyValueFromSystem, Boolean defaultValue) {
-            if (propertyValueFromSystem == null) {
-                return defaultValue;
-            }
-            return "Y".equalsIgnoreCase(propertyValueFromSystem) || "true".equalsIgnoreCase(propertyValueFromSystem);
+        @NotNull Boolean convertValue(@Nullable String propertyValueFromSystem, @NotNull Boolean defaultValue) {
+            return propertyValueFromSystem == null ? defaultValue : "Y".equalsIgnoreCase(propertyValueFromSystem) || "true".equalsIgnoreCase(propertyValueFromSystem);
         }
     }
 }

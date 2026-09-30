@@ -19,12 +19,10 @@ import com.thoughtworks.go.config.exceptions.BadRequestException;
 import com.thoughtworks.go.domain.BaseCollection;
 import com.thoughtworks.go.domain.ConfigErrors;
 import com.thoughtworks.go.domain.config.Admin;
-import org.apache.commons.lang3.StringUtils;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static com.thoughtworks.go.util.ExceptionUtils.bombIf;
 import static com.thoughtworks.go.util.ExceptionUtils.bombIfNull;
 import static org.apache.commons.lang3.StringUtils.isBlank;
 
@@ -65,11 +63,6 @@ public class RolesConfig extends BaseCollection<Role> implements Validatable {
         return add(new RoleConfig(roleName));
     }
 
-    public boolean remove(Role role) {
-        bombIf(!this.contains(role), () -> "Role '" + CaseInsensitiveString.str(role.getName()) + "' does not exist.");
-        return super.remove(role);
-    }
-
     public void removeIfExists(Role role) {
         super.remove(role);
     }
@@ -105,7 +98,7 @@ public class RolesConfig extends BaseCollection<Role> implements Validatable {
     @SuppressWarnings("unchecked")
     public <T extends Role> T findByNameAndType(final CaseInsensitiveString roleName, Class<T> cls) {
         for (Role role : this) {
-            if (role.getName().equals(roleName) && (role.getClass().getCanonicalName().equals(cls.getCanonicalName()))) {
+            if (role.getName().equals(roleName) && role.getClass().getCanonicalName().equals(cls.getCanonicalName())) {
                 return (T) role;
             }
         }
@@ -146,9 +139,9 @@ public class RolesConfig extends BaseCollection<Role> implements Validatable {
     public List<PluginRoleConfig> pluginRoleConfigsFor(String authConfigId) {
         List<PluginRoleConfig> rolesConfig = new ArrayList<>();
         for (Role role : this) {
-            if (role instanceof PluginRoleConfig) {
-                if (((PluginRoleConfig) role).getAuthConfigId().equals(authConfigId)) {
-                    rolesConfig.add((PluginRoleConfig) role);
+            if (role instanceof PluginRoleConfig configurationProperties) {
+                if (configurationProperties.getAuthConfigId().equals(authConfigId)) {
+                    rolesConfig.add(configurationProperties);
                 }
             }
         }
@@ -183,12 +176,10 @@ public class RolesConfig extends BaseCollection<Role> implements Validatable {
         return rolesConfig;
     }
 
-    private static final Map<String, Class<? extends Role>> ROLE_FILTER_MAP = new LinkedHashMap<>();
-
-    static {
-        ROLE_FILTER_MAP.put("gocd", RoleConfig.class);
-        ROLE_FILTER_MAP.put("plugin", PluginRoleConfig.class);
-    }
+    private static final Map<String, Class<? extends Role>> ROLE_FILTER_MAP = Map.of(
+        "gocd", RoleConfig.class,
+        "plugin", PluginRoleConfig.class
+    );
 
     public RolesConfig ofType(String pluginType) {
         if (isBlank(pluginType)) {
@@ -198,10 +189,10 @@ public class RolesConfig extends BaseCollection<Role> implements Validatable {
         Class<? extends Role> roleClass = ROLE_FILTER_MAP.get(pluginType);
 
         if (roleClass == null) {
-            throw new BadRequestException("Bad role type `" + pluginType + "`. Valid values are " + StringUtils.join(ROLE_FILTER_MAP.keySet(), ", "));
+            throw new BadRequestException("Bad role type `" + pluginType + "`. Valid values are " + String.join(", ", ROLE_FILTER_MAP.keySet()));
         }
 
-        return this.stream().filter(role -> role.getClass().isAssignableFrom(roleClass)).collect(Collectors.toCollection(RolesConfig::new));
+        return this.stream().filter(roleClass::isInstance).collect(Collectors.toCollection(RolesConfig::new));
 
     }
 }

@@ -16,16 +16,16 @@
 package com.thoughtworks.go.plugin.api.response.validation;
 
 
+import java.util.Objects;
+
 /**
  * Represents error reported when validation fails
  */
 public class ValidationError {
-
     private static final String EMPTY_KEY = "";
 
-    private String key;
-
-    private String message;
+    private final String key;
+    private final String message;
 
     /**
      * creates instance of ValidationError
@@ -73,14 +73,8 @@ public class ValidationError {
 
         ValidationError validationError = (ValidationError) o;
 
-        if (key != null ? !key.equals(validationError.key) : validationError.key != null) {
-            return false;
-        }
-        if (message != null ? !message.equals(validationError.message) : validationError.message != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(key, validationError.key) &&
+            Objects.equals(message, validationError.message);
     }
 
     @Override

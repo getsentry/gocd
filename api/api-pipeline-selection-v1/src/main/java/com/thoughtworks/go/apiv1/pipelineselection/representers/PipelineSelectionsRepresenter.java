@@ -18,18 +18,18 @@ package com.thoughtworks.go.apiv1.pipelineselection.representers;
 import com.google.gson.*;
 import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.server.domain.user.DashboardFilter;
+import com.thoughtworks.go.server.domain.user.Marshaling;
 
 import java.lang.reflect.Type;
 
-import static com.thoughtworks.go.server.domain.user.Marshaling.CaseInsensitiveStringSerializer;
 import static com.thoughtworks.go.server.domain.user.Marshaling.DashboardFilterSerializer;
 
 public class PipelineSelectionsRepresenter {
-    private static final Gson GSON = new GsonBuilder().
-            registerTypeAdapter(PipelineSelectionResponse.class, new PersonalizationResponseSerializer()).
-            registerTypeAdapter(DashboardFilter.class, new DashboardFilterSerializer()).
-            registerTypeAdapter(CaseInsensitiveString.class, new CaseInsensitiveStringSerializer()).
-            create();
+    private static final Gson GSON = new GsonBuilder()
+        .registerTypeAdapter(PipelineSelectionResponse.class, new PersonalizationResponseSerializer())
+        .registerTypeAdapter(DashboardFilter.class, new DashboardFilterSerializer())
+        .registerTypeAdapter(CaseInsensitiveString.class, new Marshaling.CaseInsensitiveStringSerializer())
+        .create();
 
     public static String toJSON(PipelineSelectionResponse pipelineSelectionResponse) {
         return GSON.toJson(pipelineSelectionResponse, PipelineSelectionResponse.class);
@@ -40,7 +40,7 @@ public class PipelineSelectionsRepresenter {
         public JsonElement serialize(PipelineSelectionResponse src, Type typeOfSrc, JsonSerializationContext context) {
             JsonObject serialized = new JsonObject();
             JsonArray filters = new JsonArray();
-            src.filters().filters().forEach((f) -> filters.add(context.serialize(f, DashboardFilter.class)));
+            src.filters().filters().forEach(f -> filters.add(context.serialize(f, DashboardFilter.class)));
             serialized.add("filters", filters);
             return serialized;
         }

@@ -21,16 +21,12 @@ import java.util.zip.ZipEntry;
 public class ZipPath {
     private final String path;
 
-    ZipPath() {
-        this("");
-    }
-
     ZipPath(String path) {
         this.path = path;
     }
 
     ZipPath(ZipPath old, File file) {
-        String prefix = old.path.equals("") ? "" : old.path + "/";
+        String prefix = old.path.isEmpty() ? "" : old.path + "/";
         this.path = prefix + file.getName();
     }
 

@@ -20,26 +20,24 @@ import com.thoughtworks.go.domain.BaseCollection;
 import com.thoughtworks.go.domain.CommentRenderer;
 import com.thoughtworks.go.domain.PipelinePauseInfo;
 import com.thoughtworks.go.domain.StageIdentifier;
-import com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModel;
-import com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModels;
-import com.thoughtworks.go.presentation.pipelinehistory.StageInstanceModel;
-import com.thoughtworks.go.presentation.pipelinehistory.StageInstanceModels;
+import com.thoughtworks.go.presentation.pipelinehistory.*;
 import com.thoughtworks.go.server.presentation.PipelineHistoryGroupingUtil;
 import com.thoughtworks.go.server.util.Pagination;
-import com.thoughtworks.go.util.TimeConverter;
 import com.thoughtworks.go.util.json.JsonAware;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 import static com.thoughtworks.go.config.CaseInsensitiveString.str;
-import static com.thoughtworks.go.util.UrlUtil.encodeInUtf8;
+import static com.thoughtworks.go.util.UriEncodingUtil.encodePathPartial;
 import static java.lang.String.valueOf;
 
 public class PipelineHistoryJsonPresentationModel implements JsonAware {
     private final PipelinePauseInfo pipelinePauseInfo;
     private final PipelineConfig pipelineConfig;
     private final Pagination pagination;
-    private final TimeConverter timeConverter = new TimeConverter();
     private final boolean canForce;
     private final boolean hasForceBuildCause;
     private final PipelineHistoryGroups pipelineHistoryGroups;
@@ -73,10 +71,10 @@ public class PipelineHistoryJsonPresentationModel implements JsonAware {
         this.hasForceBuildCause = hasForceBuildCause;
         this.hasBuildCauseInBuffer = hasBuildCauseInBuffer;
         this.canPause = canPause;
-        createGroupForCurrentConfigIfItHasChanged(null);
+        createGroupForCurrentConfigIfItHasChanged();
     }
 
-    private void createGroupForCurrentConfigIfItHasChanged(Map<String, StageIdentifier> latest) {
+    private void createGroupForCurrentConfigIfItHasChanged() {
         if (pipelineHistoryGroups.isEmpty()) {
             if (hasBuildCauseInBuffer || pipelineConfig.isFirstStageManualApproval()) {
                 createGroupForCurrentConfig();
@@ -89,13 +87,13 @@ public class PipelineHistoryJsonPresentationModel implements JsonAware {
     }
 
     private boolean hasPipelineConfigChanged() {
-        return !pipelineHistoryGroups.first().match(pipelineConfig);
+        return !pipelineHistoryGroups.getFirst().match(pipelineConfig);
     }
 
     private void createGroupForCurrentConfig() {
         PipelineInstanceGroupModel group = new PipelineInstanceGroupModel(
                 new StageConfigurationModels(pipelineConfig));
-        pipelineHistoryGroups.add(0, group);
+        pipelineHistoryGroups.addFirst(group);
     }
 
     @Override
@@ -152,10 +150,8 @@ public class PipelineHistoryJsonPresentationModel implements JsonAware {
             jsonMap.put("pipelineId", item.getId());
             jsonMap.put("label", item.getLabel());
             jsonMap.put("counterOrLabel", item.getPipelineIdentifier().instanceIdentifier());
-            jsonMap.put("scheduled_date", timeConverter.getHumanReadableStringWithTimeZone(item.getScheduledDate()));
             jsonMap.put("scheduled_timestamp", item.getScheduledDate() != null ? item.getScheduledDate().getTime() : null);
             jsonMap.put("buildCauseBy", item.getApprovedByForDisplay());
-            jsonMap.put("modification_date", getModificationDate(item));
             jsonMap.put("materialRevisions", materialRevisionsJson(item));
             jsonMap.put("stages", stageHistoryAsJson(item, item.getStageHistory()));
             jsonMap.put("revision", item.getRevisionOfLatestModification());
@@ -173,12 +169,6 @@ public class PipelineHistoryJsonPresentationModel implements JsonAware {
         return jsonVisitor.json();
     }
 
-    // TODO #1234 - should not get latest modified date
-    private TimeConverter.ConvertedTime getModificationDate(PipelineInstanceModel item) {
-        Date mostRecentModificationDate = item.getBuildCause().getMaterialRevisions().getDateOfLatestModification();
-        return timeConverter.getConvertedTime(mostRecentModificationDate);
-    }
-
     private List<Map<String, Object>> stageHistoryAsJson(PipelineInstanceModel pipelineInstanceModel, StageInstanceModels stageHistory) {
         List<Map<String, Object>> json = new ArrayList<>();
         for (StageInstanceModel stageHistoryItem : stageHistory) {
@@ -188,7 +178,7 @@ public class PipelineHistoryJsonPresentationModel implements JsonAware {
             jsonMap.put("stageStatus", stageHistoryItem.getState().toString());
             StageIdentifier stageIdentifier = new StageIdentifier(pipelineInstanceModel.getPipelineIdentifier(),
                     stageHistoryItem.getName(), stageHistoryItem.getCounter());
-            jsonMap.put("stageLocator", encodeInUtf8(stageIdentifier.stageLocator()));
+            jsonMap.put("stageLocator", encodePathPartial(stageIdentifier.stageLocator()));
             jsonMap.put("getCanRun", Boolean.toString(stageHistoryItem.getCanRun()));
             if (!stageHistoryItem.getCanRun()) {
                 jsonMap.put("errorMessage", stageHistoryItem.getErrorMessage());

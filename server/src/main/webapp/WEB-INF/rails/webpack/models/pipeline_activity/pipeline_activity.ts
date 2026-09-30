@@ -26,6 +26,7 @@ import {
   StageConfigJSON,
   StageJSON
 } from "models/pipeline_activity/pipeline_activity_json";
+import {CommentServerFormat} from "../../helpers/render_comment";
 
 const TimeFormatter = require("helpers/time_formatter");
 
@@ -88,13 +89,15 @@ export class Modification {
   revision: Stream<string>;
   date: Stream<string>;
   comment: Stream<string>;
+  commentFormat: Stream<CommentServerFormat>;
   modifiedFiles: Stream<string[]>;
 
-  constructor(user: string, revision: string, date: string, comment: string, modifiedFiles: string[]) {
+  constructor(user: string, revision: string, date: string, comment: string, commentFormat: CommentServerFormat, modifiedFiles: string[]) {
     this.user          = Stream(user);
     this.revision      = Stream(revision);
     this.date          = Stream(date);
     this.comment       = Stream(comment);
+    this.commentFormat = Stream(commentFormat);
     this.modifiedFiles = Stream(modifiedFiles);
   }
 
@@ -103,6 +106,7 @@ export class Modification {
       modification.revision,
       modification.date,
       modification.comment,
+      modification.commentFormat,
       modification.modifiedFiles);
   }
 }
@@ -252,10 +256,8 @@ export class PipelineRunInfo {
   pipelineId: Stream<number>;
   label: Stream<string>;
   counterOrLabel: Stream<string>;
-  scheduledDate: Stream<string>;
   scheduledTimestamp: Stream<Date>;
   buildCauseBy: Stream<string>;
-  modificationDate: Stream<string>;
   materialRevisions: Stream<MaterialRevisions>;
   stages: Stream<Stages>;
   revision: Stream<string>;
@@ -264,10 +266,8 @@ export class PipelineRunInfo {
   constructor(pipelineId: number,
               label: string,
               counterOrLabel: string,
-              scheduled_date: string,
               scheduled_timestamp: Date,
               buildCauseBy: string,
-              modification_date: string,
               materialRevisions: MaterialRevisions,
               stages: Stages,
               revision: string,
@@ -275,10 +275,8 @@ export class PipelineRunInfo {
     this.pipelineId         = Stream(pipelineId);
     this.label              = Stream(label);
     this.counterOrLabel     = Stream(counterOrLabel);
-    this.scheduledDate      = Stream(scheduled_date);
     this.scheduledTimestamp = Stream(scheduled_timestamp);
     this.buildCauseBy       = Stream(buildCauseBy);
-    this.modificationDate   = Stream(modification_date);
     this.materialRevisions  = Stream(materialRevisions);
     this.stages             = Stream(stages);
     this.revision           = Stream(revision);
@@ -289,10 +287,8 @@ export class PipelineRunInfo {
     return new PipelineRunInfo(pipelineRunInfo.pipelineId,
       pipelineRunInfo.label,
       pipelineRunInfo.counterOrLabel,
-      pipelineRunInfo.scheduled_date,
       parseDate(pipelineRunInfo.scheduled_timestamp),
       pipelineRunInfo.buildCauseBy,
-      pipelineRunInfo.modification_date,
       MaterialRevisions.fromJSON(pipelineRunInfo.materialRevisions),
       Stages.fromJSON(pipelineRunInfo.stages),
       pipelineRunInfo.revision,

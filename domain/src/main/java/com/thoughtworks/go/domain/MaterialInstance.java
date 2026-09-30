@@ -16,7 +16,6 @@
 package com.thoughtworks.go.domain;
 
 import com.google.gson.reflect.TypeToken;
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.materials.AbstractMaterial;
 import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.util.json.JsonHelper;
@@ -27,6 +26,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.util.ExceptionUtils.bombIfNull;
 
 /**
@@ -85,27 +85,29 @@ public abstract class MaterialInstance extends PersistentObject {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof MaterialInstance that)) return false;
-        if (!super.equals(o)) return false;
-        return Objects.equals(url, that.url) &&
-                Objects.equals(username, that.username) &&
-                Objects.equals(pipelineName, that.pipelineName) &&
-                Objects.equals(stageName, that.stageName) &&
-                Objects.equals(view, that.view) &&
-                Objects.equals(useTickets, that.useTickets) &&
-                Objects.equals(branch, that.branch) &&
-                Objects.equals(submoduleFolder, that.submoduleFolder) &&
-                Objects.equals(checkExternals, that.checkExternals) &&
-                Objects.equals(workspace, that.workspace) &&
-                Objects.equals(projectPath, that.projectPath) &&
-                Objects.equals(domain, that.domain);
+        if (this == o) {
+            return true;
+        }
+        return o instanceof MaterialInstance that &&
+            super.equals(o) &&
+            Objects.equals(url, that.url) &&
+            Objects.equals(username, that.username) &&
+            Objects.equals(pipelineName, that.pipelineName) &&
+            Objects.equals(stageName, that.stageName) &&
+            Objects.equals(view, that.view) &&
+            Objects.equals(useTickets, that.useTickets) &&
+            Objects.equals(branch, that.branch) &&
+            Objects.equals(submoduleFolder, that.submoduleFolder) &&
+            Objects.equals(checkExternals, that.checkExternals) &&
+            Objects.equals(workspace, that.workspace) &&
+            Objects.equals(projectPath, that.projectPath) &&
+            Objects.equals(domain, that.domain);
     }
 
     public abstract Material toOldMaterial(String name, String folder, String password);
 
     protected void setName(String name, AbstractMaterial material) {
-        material.setName(name == null ? null : new CaseInsensitiveString(name));
+        material.setName(name == null ? null : cis(name));
     }
 
     public String getFlyweightName() {
@@ -126,7 +128,7 @@ public abstract class MaterialInstance extends PersistentObject {
 
     public void setAdditionalData(String additionalData) {
         this.additionalData = additionalData;
-        this.additionalDataMap = JsonHelper.safeFromJson(this.additionalData, TypeToken.getParameterized(Map.class, String.class, String.class).getType());
+        this.additionalDataMap = JsonHelper.safeFromJsonExposeOnly(this.additionalData, TypeToken.getParameterized(Map.class, String.class, String.class).getType());
     }
 
     public Map<String, String> getAdditionalDataMap() {

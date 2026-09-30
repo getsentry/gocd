@@ -15,12 +15,7 @@
  */
 package com.thoughtworks.go.server.service.support;
 
-import com.thoughtworks.go.i18n.LocalizedMessage;
-import com.thoughtworks.go.server.domain.Username;
-import com.thoughtworks.go.server.service.SecurityService;
-import com.thoughtworks.go.server.service.result.LocalizedOperationResult;
-import com.thoughtworks.go.serverhealth.HealthStateType;
-import com.thoughtworks.go.util.DateUtils;
+import com.thoughtworks.go.util.Dates;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,35 +25,23 @@ import java.util.*;
 
 @Component
 public class ServerStatusService {
-    private SecurityService securityService;
-    private List<ServerInfoProvider> providers = new ArrayList<>();
     private static final Logger LOGGER = LoggerFactory.getLogger(ServerStatusService.class);
 
-    @Autowired
-    public ServerStatusService(SecurityService securityService, ServerInfoProvider... providerArray) {
-        this.securityService = securityService;
+    private final List<ServerInfoProvider> providers = new ArrayList<>();
 
+    @Autowired
+    public ServerStatusService(ServerInfoProvider... providerArray) {
         providers.addAll(Arrays.asList(providerArray));
         providers.sort(Comparator.comparingDouble(ServerInfoProvider::priority));
     }
 
-    public Map<String, Object> asJson(Username username, LocalizedOperationResult result) {
-        if (!securityService.isUserAdmin(username)) {
-            result.forbidden(LocalizedMessage.forbiddenToEdit(), HealthStateType.forbidden());
-            return null;
-        }
-
-        return serverInfoAsJson();
-
-    }
-
-    private Map<String, Object> serverInfoAsJson() {
+    public Map<String, Object> asJsonCompatibleMap() {
         LinkedHashMap<String, Object> json = new LinkedHashMap<>();
-        json.put("Timestamp", DateUtils.formatISO8601(new Date()));
+        json.put("Timestamp", Dates.formatIso8601SystemCompactOffsetNoMillis(new Date()));
 
         for (ServerInfoProvider provider : providers) {
             try {
-                json.put(provider.name(), provider.asJson());
+                json.put(provider.name(), provider.asJsonCompatibleMap());
             } catch (Exception e) {
                 json.put(provider.getClass().getCanonicalName(), String.format("Provider %s threw an exception: %s", provider.getClass(), e.getMessage()));
                 LOGGER.warn("An API support page provider failed.", e);

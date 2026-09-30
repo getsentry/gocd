@@ -16,57 +16,57 @@
 (function (c) {
   "use strict";
 
-  function AnsiFormatter() {
-
-    function transform(state, ansiUp) {
-      if (state.text.length === 0)
-        return state.text;
-
-      if (!state.bright && state.fg === null && state.bg === null)
-        return state.text;
-
-      var classes = [], styles = [], node_attrs = {};
-
-      var fg = state.fg, bg = state.bg;
-
-      if (fg === null && state.bright)
-        fg = ansiUp.ansi_colors[1][7];
-
-      if (fg) {
-        if (fg.class_name !== "truecolor") {
-          classes.push(fg.class_name + "-fg");
-        }
-        else {
-          styles.push("color:rgb(" + fg.rgb.join(",") + ")");
-        }
-      }
-
-      if (bg) {
-        if (bg.class_name !== "truecolor") {
-          classes.push(bg.class_name + "-bg");
-        }
-        else {
-          styles.push("background-color:rgb(" + bg.rgb.join(",") + ")");
-        }
-      }
-
-      if (classes.length)
-        node_attrs["class"] = classes.join(" ");
-
-      if (styles.length)
-        node_attrs.style = styles.join(";");
-      return c("span", node_attrs, state.text);
+  class CrelAnsiUp extends AnsiUp {
+    constructor() {
+      super();
+      super.use_classes = true;
     }
 
-    function compose(segments, ansiUp) {
-      if (segments.length === 1) return segments[0];
-
-      return segments;
+    ansi_to_crel(txt) {
+      const blocks = this.render_nodes_to_crel(this.ansi_to_structured(txt));
+      return blocks.length === 1 ? blocks[0] : blocks;
     }
 
-    this.transform = transform;
-    this.compose = compose;
+    render_nodes_to_crel(nodes) {
+      return nodes
+        .map((node) => this.render_node_to_crel(node))
+        .filter((n) => n !== null);
+    }
+
+    render_node_to_crel(node) {
+      if (node.type === 'text') {
+        return node.text;
+      } else if (node.type === 'styled') {
+        return this.styled_node_to_crel(node);
+      } else if (node.type === 'link') {
+        return this.hyperlink_to_crel(node);
+      }
+      return null;
+    }
+
+    styled_node_to_crel(node) {
+      if (!this.has_styling(node.attrs)) {
+        return this.render_nodes_to_crel(node.children);
+      }
+      const { styles, classes } = this.attrs_to_styles_classes(node.attrs);
+
+      const node_attrs = {};
+
+      if (classes && classes.length) {
+        node_attrs["class"] = classes.join(' ');
+      }
+
+      if (styles && styles.length) {
+        node_attrs["style"] = styles.join('; ');
+      }
+
+      return c("span", node_attrs, this.render_nodes_to_crel(node.children));
+    }
+
+    hyperlink_to_crel(node) {
+      return c("a", { "href": node.url, "target": "_blank" }, this.render_nodes_to_crel(node.children));
+    }
   }
 
-  window.AnsiFormatter = AnsiFormatter;
+  window.CrelAnsiUp = CrelAnsiUp;
 })(crel);

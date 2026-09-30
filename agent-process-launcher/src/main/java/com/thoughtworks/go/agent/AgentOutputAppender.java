@@ -32,8 +32,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
-import static org.apache.commons.lang3.StringUtils.isNotBlank;
-
 class AgentOutputAppender {
     enum Outstream {
         STDOUT(ConsoleTarget.SystemOut),
@@ -55,6 +53,7 @@ class AgentOutputAppender {
         ConsoleAppender<ILoggingEvent> appender = new ConsoleAppender<>();
         appender.setTarget(target.target.getName());
         appender.setEncoder(LogHelper.encoder("%msg%n"));
+        appender.setContext(LogHelper.LOGGER_CONTEXT);
         appender.start();
         appenders.add(appender);
     }
@@ -98,7 +97,7 @@ class AgentOutputAppender {
         );
 
         for (String logDir : logDirs) {
-            if (isNotBlank(logDir)) {
+            if (logDir != null && !logDir.isBlank()) {
                 return logDir;
             }
         }

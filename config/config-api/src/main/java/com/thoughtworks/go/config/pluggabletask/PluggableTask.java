@@ -31,13 +31,9 @@ import com.thoughtworks.go.plugin.access.pluggabletask.TaskPreference;
 import com.thoughtworks.go.plugin.api.config.Property;
 import com.thoughtworks.go.plugin.api.task.TaskConfig;
 import com.thoughtworks.go.plugin.api.task.TaskConfigProperty;
-import org.apache.commons.lang3.StringUtils;
 
 import javax.annotation.PostConstruct;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Understands configuration of pluggable task
@@ -73,6 +69,11 @@ public class PluggableTask extends AbstractTask {
 
     public Configuration getConfiguration() {
         return configuration;
+    }
+
+    @Override
+    public String describe() {
+        return "Plugin with ID: " + getPluginConfiguration().getId();
     }
 
     @Override
@@ -113,9 +114,9 @@ public class PluggableTask extends AbstractTask {
         ConfigurationPropertyBuilder builder = new ConfigurationPropertyBuilder();
         for (ConfigurationProperty property : configurations) {
 
-            if(isValidPluginConfiguration(property.getConfigKeyName())) {
+            if (isValidPluginConfiguration(property.getConfigKeyName())) {
                 configuration.add(builder.create(property.getConfigKeyName(), property.getConfigValue(), property.getEncryptedValue(),
-                                                 pluginConfigurationFor(property.getConfigKeyName()).getOption(Property.SECURE)));
+                    pluginConfigurationFor(property.getConfigKeyName()).getOption(Property.SECURE)));
             } else {
                 configuration.add(property);
             }
@@ -154,10 +155,10 @@ public class PluggableTask extends AbstractTask {
     @Override
     public boolean validateTree(ValidationContext validationContext) {
         validate(validationContext);
-        return (onCancelConfig.validateTree(validationContext) && errors.isEmpty() && !configuration.hasErrors());
+        return onCancelConfig.validateTree(validationContext) && errors.isEmpty() && !configuration.hasErrors();
     }
 
-//  This method is called from PluggableTaskService to validate Tasks.
+    //  This method is called from PluggableTaskService to validate Tasks.
     public boolean isValid() {
         if (PluggableTaskConfigStore.store().preferenceFor(pluginConfiguration.getId()) == null) {
             addError(TYPE, String.format("Could not find plugin for given pluggable id:[%s].", pluginConfiguration.getId()));
@@ -165,7 +166,7 @@ public class PluggableTask extends AbstractTask {
 
         configuration.validateTree();
 
-        return (errors.isEmpty() && !configuration.hasErrors());
+        return errors.isEmpty() && !configuration.hasErrors();
     }
 
     @Override
@@ -186,7 +187,9 @@ public class PluggableTask extends AbstractTask {
             List<? extends Property> propertyDefinitions = preference.getConfig().list();
             for (Property propertyDefinition : propertyDefinitions) {
                 ConfigurationProperty configuredProperty = configuration.getProperty(propertyDefinition.getKey());
-                if (configuredProperty == null) continue;
+                if (configuredProperty == null) {
+                    continue;
+                }
                 taskProperties.add(new TaskProperty(propertyDefinition.getOption(Property.DISPLAY_NAME), configuredProperty.getDisplayValue(), configuredProperty.getConfigKeyName()));
             }
             return taskProperties;
@@ -204,7 +207,7 @@ public class PluggableTask extends AbstractTask {
             Map<String, String> mapValue = new HashMap<>();
             mapValue.put(VALUE_KEY, property.getValue());
             if (!property.errors().isEmpty()) {
-                mapValue.put(ERRORS_KEY, StringUtils.join(property.errors().getAll(), ", "));
+                mapValue.put(ERRORS_KEY, property.errors().asString());
             }
             configMap.put(property.getConfigKeyName(), mapValue);
         }
@@ -225,14 +228,8 @@ public class PluggableTask extends AbstractTask {
 
         PluggableTask that = (PluggableTask) o;
 
-        if (configuration != null ? !configuration.equals(that.configuration) : that.configuration != null) {
-            return false;
-        }
-        if (!pluginConfiguration.equals(that.pluginConfiguration)) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(configuration, that.configuration) &&
+            pluginConfiguration.equals(that.pluginConfiguration);
     }
 
     @Override

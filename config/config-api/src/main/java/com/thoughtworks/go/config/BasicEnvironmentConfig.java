@@ -24,6 +24,7 @@ import org.apache.commons.lang3.builder.ToStringBuilder;
 
 import java.util.*;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.config.CaseInsensitiveString.str;
 import static com.thoughtworks.go.util.command.EnvironmentVariableContext.GO_ENVIRONMENT_NAME;
 import static java.util.stream.Collectors.toCollection;
@@ -63,10 +64,11 @@ public class BasicEnvironmentConfig implements EnvironmentConfig {
                 continue;//other rule will error that we reference unknown pipeline
             }
             if (validationContext.shouldCheckConfigRepo()) {
-                if (!configRepos.isReferenceAllowed(this.origin, pipelineConfig.getOrigin()))
+                if (!configRepos.isReferenceAllowed(this.origin, pipelineConfig.getOrigin())) {
                     pipelineRefConfig.addError(EnvironmentPipelineConfig.ORIGIN,
                             String.format("Environment defined in %s cannot reference a pipeline in %s",
                                     this.origin, displayNameFor(pipelineConfig.getOrigin())));
+                }
             }
         }
     }
@@ -161,7 +163,7 @@ public class BasicEnvironmentConfig implements EnvironmentConfig {
 
     @Override
     public boolean contains(String pipelineName) {
-        return pipelines.containsPipelineNamed(new CaseInsensitiveString(pipelineName));
+        return pipelines.containsPipelineNamed(cis(pipelineName));
     }
 
     @Override
@@ -194,40 +196,20 @@ public class BasicEnvironmentConfig implements EnvironmentConfig {
             return true;
         }
 
-        EnvironmentConfig that = as(EnvironmentConfig.class, o);
-        if (that == null)
-            return false;
-
-        if (agents != null ? !agents.equals(that.getAgents()) : that.getAgents() != null) {
-            return false;
-        }
-        if (name != null ? !name.equals(that.name()) : that.name() != null) {
-            return false;
-        }
-        if (pipelines != null ? !pipelines.equals(that.getPipelines()) : that.getPipelines() != null) {
-            return false;
-        }
-        if (variables != null ? !variables.equals(that.getVariables()) : that.getVariables() != null) {
-            return false;
-        }
-
-        return true;
+        return o instanceof EnvironmentConfig that &&
+            Objects.equals(agents, that.getAgents()) &&
+            Objects.equals(name, that.name()) &&
+            Objects.equals(pipelines, that.getPipelines()) &&
+            Objects.equals(variables, that.getVariables());
     }
 
     @Override
     public int hashCode() {
-        int result = (name != null ? name.hashCode() : 0);
+        int result = name != null ? name.hashCode() : 0;
         result = 31 * result + (agents != null ? agents.hashCode() : 0);
         result = 31 * result + (pipelines != null ? pipelines.hashCode() : 0);
         result = 31 * result + (variables != null ? variables.hashCode() : 0);
         return result;
-    }
-
-    private static <T> T as(Class<T> clazz, Object o) {
-        if (clazz.isInstance(o)) {
-            return clazz.cast(o);
-        }
-        return null;
     }
 
     @Override
@@ -290,7 +272,7 @@ public class BasicEnvironmentConfig implements EnvironmentConfig {
 
         Map<String, String> attributeMap = (Map<String, String>) attributes;
         if (attributeMap.containsKey(NAME_FIELD)) {
-            name = new CaseInsensitiveString(attributeMap.get(NAME_FIELD));
+            name = cis(attributeMap.get(NAME_FIELD));
         }
         if (attributeMap.containsKey(PIPELINES_FIELD)) {
             pipelines.setConfigAttributes(attributeMap.get(PIPELINES_FIELD));

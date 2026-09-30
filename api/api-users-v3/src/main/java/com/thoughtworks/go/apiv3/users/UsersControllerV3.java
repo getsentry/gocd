@@ -19,7 +19,7 @@ import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.base.OutputWriter;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.apiv3.users.model.UserToRepresent;
 import com.thoughtworks.go.apiv3.users.representers.BulkDeletionFailureResultRepresenter;
@@ -36,6 +36,7 @@ import com.thoughtworks.go.server.service.SecurityService;
 import com.thoughtworks.go.server.service.UserService;
 import com.thoughtworks.go.server.service.result.BulkUpdateUsersOperationResult;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import com.thoughtworks.go.util.TriState;
@@ -56,18 +57,18 @@ import static spark.Spark.*;
 @Component
 public class UsersControllerV3 extends ApiController implements SparkSpringController {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private UserService userService;
     private SecurityService securityService;
     private RoleConfigService roleConfigService;
 
     @Autowired
-    public UsersControllerV3(ApiAuthenticationHelper apiAuthenticationHelper,
+    public UsersControllerV3(ApiAuthorizationHelper apiAuthorizationHelper,
                              UserService userService,
                              SecurityService securityService,
                              RoleConfigService roleConfigService) {
         super(ApiVersion.v3);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.userService = userService;
         this.securityService = securityService;
         this.roleConfigService = roleConfigService;
@@ -79,15 +80,15 @@ public class UsersControllerV3 extends ApiController implements SparkSpringContr
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
             before("/*", mimeType, this::verifyContentType);
 
-            before("", this.mimeType, this.apiAuthenticationHelper::checkAdminUserAnd403);
-            before("/*", this.mimeType, this.apiAuthenticationHelper::checkAdminUserAnd403);
+            before("", this.mimeType, this.apiAuthorizationHelper::checkAdminUserAnd403);
+            before("/*", this.mimeType, this.apiAuthorizationHelper::checkAdminUserAnd403);
 
             get("", this.mimeType, this::index);
             post("", this.mimeType, this::create);
@@ -100,14 +101,14 @@ public class UsersControllerV3 extends ApiController implements SparkSpringContr
         });
     }
 
-    public String index(Request req, Response res) throws Exception {
+    public String index(Request req, Response res) throws IOException {
         Collection<User> allUsers = userService.allUsers();
         Map<Username, RolesConfig> usersToRolesMap = roleConfigService.getRolesForUser(allUsers.stream().map(User::getUsername).collect(Collectors.toCollection(ArrayList::new)));
         List<UserToRepresent> users = allUsers.stream().map((User user) -> getUserToRepresent(user, usersToRolesMap)).collect(Collectors.toList());
         return writerForTopLevelObject(req, res, writer -> UsersRepresenter.toJSON(writer, users));
     }
 
-    public String show(Request req, Response res) throws Exception {
+    public String show(Request req, Response res) throws IOException {
         String loginName = req.params("login_name");
         User user = userService.findUserByName(loginName);
 
@@ -119,7 +120,7 @@ public class UsersControllerV3 extends ApiController implements SparkSpringContr
         return writerForTopLevelObject(req, res, writer -> UserRepresenter.toJSON(writer, toRepresent));
     }
 
-    public String create(Request req, Response res) throws Exception {
+    public String create(Request req, Response res) throws IOException {
         HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
         User user = buildUserEntityFromRequestBody(req, false);
 
@@ -130,7 +131,7 @@ public class UsersControllerV3 extends ApiController implements SparkSpringContr
         return saveUserAndRenderResult(req, res, result, user, user, user.getName());
     }
 
-    public String patchUser(Request req, Response res) throws Exception {
+    public String patchUser(Request req, Response res) throws IOException {
         String username = req.params("login_name");
 
         HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
@@ -148,14 +149,14 @@ public class UsersControllerV3 extends ApiController implements SparkSpringContr
         return saveUserAndRenderResult(req, res, result, existingUser, userFromRequest, username);
     }
 
-    public String deleteUser(Request req, Response res) throws Exception {
+    public String deleteUser(Request req, Response res) throws IOException {
         String username = req.params("login_name");
         HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
         userService.deleteUser(username, currentUsernameString(), result);
         return renderHTTPOperationResult(result, req, res);
     }
 
-    public String bulkUpdateUsersState(Request req, Response res) throws Exception {
+    public String bulkUpdateUsersState(Request req, Response res) throws IOException {
         BulkUpdateUsersOperationResult result = new BulkUpdateUsersOperationResult();
         JsonReader jsonReader = GsonTransformer.getInstance().jsonReaderFrom(req.body());
         List<String> users = jsonReader.readStringArrayIfPresent("users").orElse(Collections.emptyList());
@@ -171,7 +172,7 @@ public class UsersControllerV3 extends ApiController implements SparkSpringContr
         return renderHTTPOperationResult(result, req, res);
     }
 
-    public String bulkDelete(Request req, Response res) throws Exception {
+    public String bulkDelete(Request req, Response res) throws IOException {
         BulkUpdateUsersOperationResult result = new BulkUpdateUsersOperationResult();
         JsonReader jsonReader = GsonTransformer.getInstance().jsonReaderFrom(req.body());
         List<String> users = jsonReader.readStringArrayIfPresent("users").orElse(Collections.emptyList());

@@ -22,9 +22,9 @@ describe StagesHelper do
 
   before do
     @stage = StageMother.scheduledStage("cruise", 10, "dev", 5, "unit")
-    @stage_summary = StageSummaryModel.new(@stage, Stages.new(), JobDurationStrategy::ConstantJobDuration.new(10), @stage.getIdentifier())
+    @stage_summary = StageSummaryModel.new(@stage, Stages.new(), JobDurationStrategy::ConstantJobDuration.new(java.time.Duration.ofMillis(10)), @stage.getIdentifier())
     @new_stage = Stage.new()
-    @new_stage_summary = StageSummaryModel.new(@new_stage, Stages.new(), JobDurationStrategy::ConstantJobDuration.new(10), StageIdentifier.new())
+    @new_stage_summary = StageSummaryModel.new(@new_stage, Stages.new(), JobDurationStrategy::ConstantJobDuration.new(java.time.Duration.ofMillis(10)), StageIdentifier.new())
   end
 
   it "should generate pipeline url when stage identifier is given" do
@@ -63,13 +63,5 @@ describe StagesHelper do
     link = link_with_current_tab "Materials", "materials"
     expect(link).to_not have_selector("li.current")
     expect(link).to have_selector("li a[href='/pipelines/foo_bar/1/stage-name/1/materials']", :text => "Materials")
-  end
-
-  it "should return true when config version mismatches" do
-    expect(is_config_used_to_run_this_stage_out_of_sync_with_current?('foo', 'bar')).to eq(true)
-  end
-
-  it "should return false when config version matches" do
-    expect(is_config_used_to_run_this_stage_out_of_sync_with_current?('foo', 'foo')).to eq(false)
   end
 end

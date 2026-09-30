@@ -22,12 +22,14 @@ import com.thoughtworks.go.plugin.access.pluggabletask.TaskExtension;
 import com.thoughtworks.go.plugin.infra.PluginRequestProcessorRegistry;
 import com.thoughtworks.go.util.command.CommandLineException;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
+import com.thoughtworks.go.util.command.TaggedStreamConsumer;
 import com.thoughtworks.go.work.DefaultGoPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 import java.nio.charset.Charset;
+import java.util.Objects;
 
 public abstract class Builder implements Serializable {
     private static final Logger LOGGER = LoggerFactory.getLogger(Builder.class);
@@ -37,7 +39,7 @@ public abstract class Builder implements Serializable {
     private int exitCode = UNSET_EXIT_CODE;
 
     protected final RunIfConfigs conditions;
-    private String description;
+    private final String description;
     private Builder cancelBuilder;
 
     public Builder(RunIfConfigs conditions, Builder cancelBuilder, String description) {
@@ -75,37 +77,29 @@ public abstract class Builder implements Serializable {
 
         Builder builder = (Builder) o;
 
-        if (cancelBuilder != null ? !cancelBuilder.equals(builder.cancelBuilder) : builder.cancelBuilder != null) {
-            return false;
-        }
-        if (conditions != null ? !conditions.equals(builder.conditions) : builder.conditions != null) {
-            return false;
-        }
-        if (description != null ? !description.equals(builder.description) : builder.description != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(cancelBuilder, builder.cancelBuilder) &&
+            Objects.equals(conditions, builder.conditions) &&
+            Objects.equals(description, builder.description);
     }
 
     @Override
     public int hashCode() {
         int result;
-        result = (conditions != null ? conditions.hashCode() : 0);
+        result = conditions != null ? conditions.hashCode() : 0;
         result = 31 * result + (description != null ? description.hashCode() : 0);
         result = 31 * result + (cancelBuilder != null ? cancelBuilder.hashCode() : 0);
         return result;
     }
 
     public void cancel(DefaultGoPublisher publisher, EnvironmentVariableContext environmentVariableContext, TaskExtension taskExtension, ArtifactExtension artifactExtension, Charset consoleLogCharset) {
-        publisher.taggedConsumeLineWithPrefix(DefaultGoPublisher.CANCEL_TASK_START, "On Cancel Task: " + cancelBuilder.getDescription()); // odd capitalization, but consistent with UI
+        publisher.taggedConsumeLineWithPrefix(TaggedStreamConsumer.CANCEL_TASK_START, "On Cancel Task: " + cancelBuilder.getDescription()); // odd capitalization, but consistent with UI
         try {
             cancelBuilder.build(publisher, environmentVariableContext, taskExtension, artifactExtension, null, consoleLogCharset);
             // As this message will output before the running task outputs its task status, do not use the same
             // wording (i.e. "Task status: %s") as the order of outputted lines may be confusing
-            publisher.taggedConsumeLineWithPrefix(DefaultGoPublisher.CANCEL_TASK_PASS, "On Cancel Task completed");
+            publisher.taggedConsumeLineWithPrefix(TaggedStreamConsumer.CANCEL_TASK_PASS, "On Cancel Task completed");
         } catch (Exception e) {
-            publisher.taggedConsumeLineWithPrefix(DefaultGoPublisher.CANCEL_TASK_FAIL, "On Cancel Task failed");
+            publisher.taggedConsumeLineWithPrefix(TaggedStreamConsumer.CANCEL_TASK_FAIL, "On Cancel Task failed");
             LOGGER.error("", e);
         }
     }
@@ -113,7 +107,9 @@ public abstract class Builder implements Serializable {
     protected void logException(DefaultGoPublisher publisher, Exception e) {
         publisher.taggedConsumeLine(DefaultGoPublisher.ERR, String.format("Error: %s", e.getMessage()));
         LOGGER.error(e.getMessage(), e);
-        if (e instanceof RuntimeException) throw (RuntimeException)e;
+        if (e instanceof RuntimeException re) {
+            throw re;
+        }
         throw new CommandLineException(e);
     }
 

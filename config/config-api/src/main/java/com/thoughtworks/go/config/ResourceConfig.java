@@ -16,9 +16,11 @@
 package com.thoughtworks.go.config;
 
 import com.thoughtworks.go.domain.ConfigErrors;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 
 import java.io.Serializable;
+
+import static org.apache.commons.lang3.StringUtils.trimToNull;
 
 @ConfigTag("resource")
 public class ResourceConfig implements Serializable, Comparable<ResourceConfig>, Validatable {
@@ -33,28 +35,22 @@ public class ResourceConfig implements Serializable, Comparable<ResourceConfig>,
     private ConfigErrors configErrors = new ConfigErrors();
 
 
-    public ResourceConfig() {
-    }
+    public ResourceConfig() {}
 
     public ResourceConfig(String name) {
         setName(name);
     }
 
-    public ResourceConfig(ResourceConfig resourceConfig) {
-        this(resourceConfig.name);
-        this.configErrors = resourceConfig.configErrors;
-    }
-
-    public boolean hasErrors(){
+    public boolean hasErrors() {
         return !this.errors().isEmpty();
     }
 
     public String getName() {
-        return StringUtils.trimToNull(name);
+        return trimToNull(name);
     }
 
     public void setName(String name) {
-        this.name = StringUtils.trimToNull(name);
+        this.name = trimToNull(name);
     }
 
     @Override
@@ -64,12 +60,15 @@ public class ResourceConfig implements Serializable, Comparable<ResourceConfig>,
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         ResourceConfig that = (ResourceConfig) o;
-
-        return getName() != null ? getName().equalsIgnoreCase(that.getName()) : that.getName() == null;
+        return Strings.CI.equals(getName(), that.getName());
     }
 
     @Override
@@ -92,7 +91,7 @@ public class ResourceConfig implements Serializable, Comparable<ResourceConfig>,
         if (validationContext != null && validationContext.isWithinTemplates()) {
             if (!name.matches(VALID_REGEX_WHEN_IN_TEMPLATES)) {
                 configErrors.add(JobConfig.RESOURCES,
-                        String.format("Resource name '%s' is not valid. Valid names can contain valid parameter syntax or valid alphanumeric with hyphens,dots or pipes", getName()));
+                    String.format("Resource name '%s' is not valid. Valid names can contain valid parameter syntax or valid alphanumeric with hyphens,dots or pipes", getName()));
             }
             return;
         }

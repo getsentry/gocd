@@ -43,14 +43,16 @@ public abstract class WebhookRequest implements HasAuth, HasEvents, RequestConte
         this.request = request;
     }
 
+    @Override
     public abstract String event();
 
+    @Override
     public Request request() {
         return request;
     }
 
     public BadRequestException die(String message) {
-        LOGGER.error("[WebHook] " + message);
+        LOGGER.error("[WebHook] {}", message);
         return new BadRequestException(message);
     }
 
@@ -66,7 +68,7 @@ public abstract class WebhookRequest implements HasAuth, HasEvents, RequestConte
         final T payload;
 
         try {
-            LOGGER.debug(format("[WebHook] Parsing '%s' payload!", contentType));
+            LOGGER.debug("[WebHook] Parsing '{}' payload!", contentType);
             payload = GsonTransformer.getInstance().fromJson(body, type);
         } catch (Throwable e) {
             throw die(format("Failed to deserialize payload. Error: %s; Body: %s; Content-Type: %s", e.getMessage(), body, contentType));

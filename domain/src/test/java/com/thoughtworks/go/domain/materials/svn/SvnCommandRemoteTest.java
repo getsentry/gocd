@@ -30,6 +30,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -70,15 +71,15 @@ public class SvnCommandRemoteTest {
     @Test
     public void shouldSupportSvnLog() {
         List<Modification> info = command.latestModification();
-        assertThat(info.get(0).getComment()).isEqualTo("Added simple build shell to dump the environment to console.");
+        assertThat(info.getFirst().getComment()).isEqualTo("Added simple build shell to dump the environment to console.");
     }
 
     @Test
     public void shouldSupportModificationsSince() {
         List<Modification> info = command.modificationsSince(new SubversionRevision(2));
         assertThat(info.size()).isEqualTo(2);
-        assertThat(info.get(0).getRevision()).isEqualTo("4");
-        assertThat(info.get(1).getRevision()).isEqualTo("3");
+        assertThat(info.getFirst().getRevision()).isEqualTo("4");
+        assertThat(info.getLast().getRevision()).isEqualTo("3");
     }
 
     @Test
@@ -298,7 +299,7 @@ public class SvnCommandRemoteTest {
     public void shouldMaskPassword_commit() throws IOException {
         command.checkoutTo(outputStreamConsumer, workingDir, new SubversionRevision(2));
         File newFile = new File(workingDir.getAbsolutePath() + "/foo");
-        FileUtils.writeStringToFile(newFile, "content", UTF_8);
+        Files.writeString(newFile.toPath(), "content", UTF_8);
         command.add(outputStreamConsumer, newFile);
 
         try {

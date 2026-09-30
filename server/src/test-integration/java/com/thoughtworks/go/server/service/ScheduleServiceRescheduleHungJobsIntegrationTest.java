@@ -25,7 +25,7 @@ import com.thoughtworks.go.domain.materials.svn.SvnCommand;
 import com.thoughtworks.go.helper.AgentMother;
 import com.thoughtworks.go.helper.SvnTestRepo;
 import com.thoughtworks.go.helper.TestRepo;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.dao.JobInstanceDao;
 import com.thoughtworks.go.server.dao.PipelineSqlMapDao;
@@ -50,8 +50,8 @@ import org.springframework.transaction.support.TransactionCallbackWithoutResult;
 import java.io.IOException;
 import java.nio.file.Path;
 
+import static com.thoughtworks.go.domain.buildcause.BuildCause.APPROVER_AUTOMATICALLY_TRIGGERED;
 import static com.thoughtworks.go.helper.ModificationsMother.modifySomeFiles;
-import static com.thoughtworks.go.util.GoConstants.DEFAULT_APPROVED_BY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ExtendWith(SpringExtension.class)
@@ -78,7 +78,7 @@ public class ScheduleServiceRescheduleHungJobsIntegrationTest {
 
     private PipelineConfig evolveConfig;
     private static final String STAGE_NAME = "dev";
-    private static final GoConfigFileHelper CONFIG_HELPER = new GoConfigFileHelper();
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
     public Subversion repository;
     public static TestRepo testRepo;
 
@@ -90,18 +90,18 @@ public class ScheduleServiceRescheduleHungJobsIntegrationTest {
     @BeforeEach
     public void setup() throws Exception {
         dbHelper.onSetUp();
-        CONFIG_HELPER.usingCruiseConfigDao(goConfigDao);
-        CONFIG_HELPER.onSetUp();
+        configHelper.usingCruiseConfigDao(goConfigDao);
+        configHelper.onSetUp();
         repository = new SvnCommand(null, testRepo.projectRepositoryUrl());
-        evolveConfig = CONFIG_HELPER.addPipeline("evolve", STAGE_NAME, repository, "unit");
-        CONFIG_HELPER.addPipeline("studios", "stageName", repository, "functional");
+        evolveConfig = configHelper.addPipeline("evolve", STAGE_NAME, repository, "unit");
+        configHelper.addPipeline("studios", "stageName", repository, "functional");
         goCache.clear();
     }
 
     @AfterEach
     public void teardown() throws Exception {
         dbHelper.onTearDown();
-        CONFIG_HELPER.onTearDown();
+        configHelper.onTearDown();
         FileUtils.deleteQuietly(goConfigService.artifactsDir());
     }
 
@@ -109,7 +109,7 @@ public class ScheduleServiceRescheduleHungJobsIntegrationTest {
     public void shouldNotRescheduleCancelledBuilds() {
         String agentId = "uuid";
         final Pipeline pipeline = instanceFactory.createPipelineInstance(evolveConfig, modifySomeFiles(evolveConfig), new DefaultSchedulingContext(
-                DEFAULT_APPROVED_BY), "md5-test", new TimeProvider());
+            APPROVER_AUTOMATICALLY_TRIGGERED), "md5-test", new TimeProvider());
         dbHelper.savePipelineWithStagesAndMaterials(pipeline);
         buildAssignmentService.assignWorkToAgent(agent(new Agent(agentId)));
 
@@ -133,11 +133,11 @@ public class ScheduleServiceRescheduleHungJobsIntegrationTest {
         AgentInstance instance = agent(agent);
         BuildCause buildCause = modifySomeFiles(evolveConfig);
         dbHelper.saveMaterials(buildCause.getMaterialRevisions());
-        Pipeline pipeline = instanceFactory.createPipelineInstance(evolveConfig, buildCause, new DefaultSchedulingContext(DEFAULT_APPROVED_BY), "md5-test", new TimeProvider());
+        Pipeline pipeline = instanceFactory.createPipelineInstance(evolveConfig, buildCause, new DefaultSchedulingContext(APPROVER_AUTOMATICALLY_TRIGGERED), "md5-test", new TimeProvider());
         buildAssignmentService.onTimer();
 
         Stage stage = pipeline.getFirstStage();
-        JobInstance jobInstance = stage.getJobInstances().get(0);
+        JobInstance jobInstance = stage.getJobInstances().getFirst();
         jobInstance.setAgentUuid(agent.getUuid());
         jobInstance.changeState(JobState.Building);
         pipelineDao.saveWithStages(pipeline);
@@ -153,11 +153,11 @@ public class ScheduleServiceRescheduleHungJobsIntegrationTest {
     }
 
     private JobInstance buildOf(Pipeline pipeline) {
-        return stageOf(pipeline).getJobInstances().first();
+        return stageOf(pipeline).getJobInstances().getFirst();
     }
 
     private Stage stageOf(Pipeline pipeline) {
-        Stage stage = pipeline.getStages().first();
+        Stage stage = pipeline.getStages().getFirst();
         for (JobInstance jobInstance : stage.getJobInstances()) {
             jobInstance.setIdentifier(new JobIdentifier(pipeline.getName(), -1, pipeline.getLabel(), stage.getName(),
                     String.valueOf(stage.getCounter()), jobInstance.getName()));

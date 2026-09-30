@@ -20,7 +20,7 @@ import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.CrudController;
 import com.thoughtworks.go.api.base.OutputWriter;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.api.util.MessageJson;
 import com.thoughtworks.go.apiv4.configrepos.representers.ConfigRepoConfigRepresenterV4;
@@ -37,10 +37,10 @@ import com.thoughtworks.go.server.service.ConfigRepoService;
 import com.thoughtworks.go.server.service.EntityHashingService;
 import com.thoughtworks.go.server.service.MaterialConfigConverter;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import spark.Request;
 import spark.Response;
@@ -51,19 +51,21 @@ import static com.thoughtworks.go.api.util.HaltApiResponses.haltBecauseEntityAlr
 import static com.thoughtworks.go.api.util.HaltApiResponses.haltBecauseEtagDoesNotMatch;
 import static com.thoughtworks.go.config.policy.SupportedEntity.CONFIG_REPO;
 import static com.thoughtworks.go.util.CachedDigestUtils.sha512_256Hex;
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
+import static java.net.HttpURLConnection.HTTP_CREATED;
 import static java.util.stream.Collectors.toCollection;
 import static spark.Spark.*;
 
 @Component
 public class ConfigReposControllerV4 extends ApiController implements SparkSpringController, CrudController<ConfigRepoConfig> {
-    private final ApiAuthenticationHelper authHelper;
+    private final ApiAuthorizationHelper authHelper;
     private final ConfigRepoService service;
     private final EntityHashingService entityHashingService;
     private final MaterialUpdateService materialUpdateService;
     private final MaterialConfigConverter converter;
 
     @Autowired
-    public ConfigReposControllerV4(ApiAuthenticationHelper authHelper, ConfigRepoService service, EntityHashingService entityHashingService, MaterialUpdateService materialUpdateService, MaterialConfigConverter converter) {
+    public ConfigReposControllerV4(ApiAuthorizationHelper authHelper, ConfigRepoService service, EntityHashingService entityHashingService, MaterialUpdateService materialUpdateService, MaterialConfigConverter converter) {
         super(ApiVersion.v4);
         this.authHelper = authHelper;
         this.service = service;
@@ -78,7 +80,7 @@ public class ConfigReposControllerV4 extends ApiController implements SparkSprin
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
@@ -190,10 +192,10 @@ public class ConfigReposControllerV4 extends ApiController implements SparkSprin
     String triggerUpdate(Request req, Response res) {
         MaterialConfig materialConfig = repoFromRequest(req).getRepo();
         if (materialUpdateService.updateMaterial(converter.toMaterial(materialConfig))) {
-            res.status(HttpStatus.CREATED.value());
+            res.status(HTTP_CREATED);
             return MessageJson.create("OK");
         } else {
-            res.status(HttpStatus.CONFLICT.value());
+            res.status(HTTP_CONFLICT);
             return MessageJson.create("Update already in progress.");
         }
     }
@@ -210,7 +212,7 @@ public class ConfigReposControllerV4 extends ApiController implements SparkSprin
             return notModified(res);
         }
 
-        return jsonizeAsTopLevelObject(req, (w) -> PartialConfigRepresenter.toJSON(w, def));
+        return jsonizeAsTopLevelObject(req, w -> PartialConfigRepresenter.toJSON(w, def));
     }
 
     private ConfigRepoConfig repoFromRequest(Request req) {

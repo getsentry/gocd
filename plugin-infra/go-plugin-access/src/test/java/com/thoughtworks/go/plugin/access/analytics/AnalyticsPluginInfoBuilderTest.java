@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.plugin.access.analytics;
 
-
 import com.thoughtworks.go.plugin.access.common.settings.PluginSettingsConfiguration;
 import com.thoughtworks.go.plugin.access.common.settings.PluginSettingsProperty;
 import com.thoughtworks.go.plugin.api.config.Property;
@@ -40,7 +39,7 @@ public class AnalyticsPluginInfoBuilderTest {
     @BeforeEach
     public void setUp() {
         extension = mock(AnalyticsExtension.class);
-        when(extension.getCapabilities(any(String.class))).thenReturn(new Capabilities(Collections.emptyList()));
+        when(extension.getCapabilities(any())).thenReturn(new Capabilities(Collections.emptyList()));
     }
 
     @Test

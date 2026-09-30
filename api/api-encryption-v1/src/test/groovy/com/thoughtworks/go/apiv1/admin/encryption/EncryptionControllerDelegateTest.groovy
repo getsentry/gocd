@@ -16,13 +16,14 @@
 package com.thoughtworks.go.apiv1.admin.encryption
 
 import com.thoughtworks.go.api.SecurityTestTrait
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper
 import com.thoughtworks.go.apiv1.admin.encryption.representers.EncryptedValueRepresenter
 import com.thoughtworks.go.security.CryptoException
 import com.thoughtworks.go.security.GoCipher
 import com.thoughtworks.go.spark.AnyAdminUserSecurity
 import com.thoughtworks.go.spark.ControllerTrait
 import com.thoughtworks.go.spark.SecurityServiceTrait
+import io.github.bucket4j.TimeMeter
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -37,12 +38,14 @@ import static org.mockito.Mockito.spy
 class EncryptionControllerDelegateTest implements SecurityServiceTrait, ControllerTrait<EncryptionControllerDelegate> {
   public static final int REQUESTS_PER_MINUTE = 10
   private GoCipher cipher = spy(new GoCipher())
-  TestingTicker ticker = new TestingTicker().useSystemClock()
+  TimeMeter timeMeter = new TestingTimeMeter().useSystemClock()
 
   @Nested
   class Index {
     @Nested
     class Security implements SecurityTestTrait, AnyAdminUserSecurity {
+      @Delegate SecurityServiceTrait s = EncryptionControllerDelegateTest.this
+      @Delegate ControllerTrait<EncryptionControllerDelegate> c = EncryptionControllerDelegateTest.this
 
       @Override
       String getControllerMethodUnderTest() {
@@ -56,12 +59,7 @@ class EncryptionControllerDelegateTest implements SecurityServiceTrait, Controll
     }
 
     @Nested
-    class AsAuthorizedUser {
-      @BeforeEach
-      void setUp() {
-        enableSecurity()
-      }
-
+    class AsNormalUser {
       @Test
       void 'it should return encrypted value of submitted plain text passed'() {
         loginAsAdmin()
@@ -100,8 +98,8 @@ class EncryptionControllerDelegateTest implements SecurityServiceTrait, Controll
       class RateLimit {
         @BeforeEach
         void setUp() {
-          ticker.freeze()
-          ticker.time = 0
+          timeMeter.freeze()
+          timeMeter.time = 0
         }
 
         @Test
@@ -110,7 +108,7 @@ class EncryptionControllerDelegateTest implements SecurityServiceTrait, Controll
 
           REQUESTS_PER_MINUTE.times { i ->
             postWithApiHeader(controller.controllerBasePath(), [value: 'foo'])
-            ticker.forward(interval(REQUESTS_PER_MINUTE) - 1, TimeUnit.MILLISECONDS)
+            timeMeter.forward(interval(REQUESTS_PER_MINUTE) - 1, TimeUnit.MILLISECONDS)
 
             assertThatResponse()
               .isOk()
@@ -136,7 +134,7 @@ class EncryptionControllerDelegateTest implements SecurityServiceTrait, Controll
 
           (REQUESTS_PER_MINUTE).times { i ->
             postWithApiHeader(controller.controllerBasePath(), [value: 'foo'])
-            ticker.forward(interval(REQUESTS_PER_MINUTE) - 1, TimeUnit.MILLISECONDS)
+            timeMeter.forward(interval(REQUESTS_PER_MINUTE) - 1, TimeUnit.MILLISECONDS)
 
             assertThatResponse()
               .isOk()
@@ -171,6 +169,6 @@ class EncryptionControllerDelegateTest implements SecurityServiceTrait, Controll
 
   @Override
   EncryptionControllerDelegate createControllerInstance() {
-    return new EncryptionControllerDelegate(new ApiAuthenticationHelper(securityService, goConfigService), cipher, REQUESTS_PER_MINUTE, ticker)
+    return new EncryptionControllerDelegate(new ApiAuthorizationHelper(securityService, goConfigService), cipher, REQUESTS_PER_MINUTE, timeMeter)
   }
 }

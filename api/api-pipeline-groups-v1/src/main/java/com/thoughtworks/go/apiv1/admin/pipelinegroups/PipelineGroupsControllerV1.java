@@ -21,7 +21,7 @@ import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.CrudController;
 import com.thoughtworks.go.api.base.OutputWriter;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.apiv1.admin.pipelinegroups.representers.PipelineGroupRepresenter;
 import com.thoughtworks.go.apiv1.admin.pipelinegroups.representers.PipelineGroupsRepresenter;
@@ -33,12 +33,14 @@ import com.thoughtworks.go.server.newsecurity.utils.SessionUtils;
 import com.thoughtworks.go.server.service.EntityHashingService;
 import com.thoughtworks.go.server.service.PipelineConfigsService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import spark.Request;
 import spark.Response;
+import spark.route.HttpMethod;
 
 import java.io.IOException;
 import java.util.Optional;
@@ -52,27 +54,27 @@ import static spark.Spark.*;
 @Component
 public class PipelineGroupsControllerV1 extends ApiController implements SparkSpringController, CrudController<PipelineConfigs> {
     private final PipelineConfigsService pipelineConfigsService;
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final EntityHashingService entityHashingService;
 
     @Autowired
-    public PipelineGroupsControllerV1(PipelineConfigsService pipelineConfigsService, ApiAuthenticationHelper apiAuthenticationHelper, EntityHashingService entityHashingService) {
+    public PipelineGroupsControllerV1(PipelineConfigsService pipelineConfigsService, ApiAuthorizationHelper apiAuthorizationHelper, EntityHashingService entityHashingService) {
         super(ApiVersion.v1);
         this.pipelineConfigsService = pipelineConfigsService;
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.entityHashingService = entityHashingService;
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerPath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
             before("/*", mimeType, this::verifyContentType);
-            before("", mimeType, onlyOn(apiAuthenticationHelper::checkAdminUserAnd403, "POST"));
-            before("", mimeType, onlyOn(apiAuthenticationHelper::checkAdminUserOrGroupAdminUserAnd403, "GET", "HEAD"));
-            before(Routes.PipelineGroupsAdmin.NAME_PATH, mimeType, apiAuthenticationHelper::checkPipelineGroupAdminOfPipelineOrGroupInURLUserAnd403);
+            before("", mimeType, onlyOn(apiAuthorizationHelper::checkAdminUserAnd403, HttpMethod.post));
+            before("", mimeType, onlyOn(apiAuthorizationHelper::checkAnyPipelineGroupAdminUserAnd403, HttpMethod.get, HttpMethod.head));
+            before(Routes.PipelineGroupsAdmin.NAME_PATH, mimeType, apiAuthorizationHelper::checkPipelineGroupAdminViaNameParamsAnd403);
 
             get("", mimeType, this::index);
             post("", mimeType, this::create);
@@ -180,6 +182,6 @@ public class PipelineGroupsControllerV1 extends ApiController implements SparkSp
     }
 
     private Stream<PipelineConfigs> streamAllPipelineGroups() {
-        return pipelineConfigsService.getGroupsForUser(currentUserLoginName().toString()).stream();
+        return pipelineConfigsService.getGroupsForUser(currentUsernameCis().toString()).stream();
     }
 }

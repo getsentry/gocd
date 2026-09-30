@@ -15,17 +15,16 @@
  */
 package com.thoughtworks.go.util.command;
 
-import ch.qos.logback.classic.Level;
 import com.thoughtworks.go.util.LogFixture;
 import com.thoughtworks.go.util.ProcessManager;
 import com.thoughtworks.go.util.ProcessWrapper;
-import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.event.Level;
 
 import java.io.File;
 import java.io.IOException;
@@ -33,7 +32,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.regex.Matcher;
 
 import static com.thoughtworks.go.util.LogFixture.logFixtureFor;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -89,7 +87,7 @@ public class CommandLineTest {
                 + " " + DBL_QUOTE + ARG_SPACES + DBL_QUOTE;
         assertEquals(expectedWithQuotes, cl.toString());
 
-        assertEquals(expectedWithQuotes.replaceAll(DBL_QUOTE, ""), cl.toStringForDisplay());
+        assertEquals(expectedWithQuotes.replace(DBL_QUOTE, ""), cl.toStringForDisplay());
 
         assertEquals(expectedWithQuotes, cl + "", "Did the impl of CommandLine.toString() change?");
     }
@@ -100,7 +98,7 @@ public class CommandLineTest {
         final String argWithMismatchedDblQuote = "argMisMatch='singlequoted\"WithMismatchedDblQuote'";
         cl2.withArg(argWithMismatchedDblQuote);
         assertEquals(DBL_QUOTE + EXEC_WITH_SPACES + DBL_QUOTE + " " +
-                        DBL_QUOTE + argWithMismatchedDblQuote.replaceAll("\"", Matcher.quoteReplacement("\\\"")) + DBL_QUOTE, cl2.toString(),
+                        DBL_QUOTE + argWithMismatchedDblQuote.replace("\"", "\\\"") + DBL_QUOTE, cl2.toString(),
                 "Should escape double quotes inside the string");
     }
 
@@ -295,7 +293,7 @@ public class CommandLineTest {
 
         File shellScript = Files.createFile(temporaryFolder.resolve("hello-world.sh")).toFile();
 
-        FileUtils.writeStringToFile(shellScript, "echo ${PWD}", UTF_8);
+        Files.writeString(shellScript.toPath(), "echo ${PWD}", UTF_8);
         assertThat(shellScript.setExecutable(true)).isTrue();
 
         CommandLine line = CommandLine.createCommandLine("../hello-world.sh").withWorkingDir(subFolder).withEncoding(UTF_8);
@@ -309,7 +307,7 @@ public class CommandLineTest {
     private File createScriptInSubFolder(String name, String content) throws IOException {
         File shellScript = new File(subFolder, name);
 
-        FileUtils.writeStringToFile(shellScript, content, UTF_8);
+        Files.writeString(shellScript.toPath(), content, UTF_8);
         return shellScript;
     }
 

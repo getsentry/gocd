@@ -6,8 +6,9 @@ supply the GoCD server image that
 builds and runs as Sentry's deploy service (prod: `deploy.getsentry.net`).
 
 - Default branch: `prod`. Whatever is on `prod` is what the next server image build ships.
-- Forked from upstream at `647a5201b5` (2025-03-24). GoCD version 25.2.0 (`GO_VERSION_SEGMENTS`
-  in `build.gradle`).
+- Upstream baseline: release `26.1.0`, commit `55b7b460510bb739c1ae6d226ff7fb650596dca2`.
+  Fork upgrades retain upstream history with a merge; compare fork patches against that tag.
+  GoCD version is defined by `GO_VERSION_SEGMENTS` in `build.gradle`.
 - No CI runs here (`.github/` was removed). The build that matters runs in
   devinfra-deployment-service's Cloud Build; see
   [How devinfra-deployment-service uses GoCD](#how-devinfra-deployment-service-uses-gocd).
@@ -16,14 +17,16 @@ builds and runs as Sentry's deploy service (prod: `deploy.getsentry.net`).
 
 ## Local setup
 
-Toolchain versions are pinned in `.tool-versions` (Temurin JDK 21, Node 22). On macOS:
+Toolchains are declared in `mise.toml` (JDK 25, Node 24). Java 21 is the runtime minimum. On macOS:
 
 ```sh
-brew install node@22 yarn openjdk@21 docker-buildx
+brew install node@24 corepack openjdk@25 docker-buildx
 ```
 
 Gradle will not download a JDK (`org.gradle.java.installations.auto-download=false` in
-`gradle.properties`), so put JDK 21 and Node 22 first on `PATH`, as in the build command below.
+`gradle.properties`), so put JDK 25, Node 24, and Corepack first on `PATH`. Corepack selects
+Yarn 4.17.0 from the Rails `package.json`. If a global Yarn or pnpm installation conflicts with
+Homebrew linking Corepack, use its keg bin directory explicitly rather than replacing those tools.
 
 Docker must be able to find the Homebrew buildx plugin. In `~/.docker/config.json`:
 
@@ -44,12 +47,13 @@ cd server/src/main/webapp/WEB-INF/rails && yarn run webpack-watch
 Build the server Docker image the same way Cloud Build does:
 
 ```sh
-PATH=/opt/homebrew/opt/openjdk@21/bin:/opt/homebrew/opt/node@22/bin:$PATH \
-  ./gradlew -PdockerBuildLocalZip :docker:gocd-server:debian-12:docker
+JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home \
+PATH=/opt/homebrew/opt/openjdk@25/bin:/opt/homebrew/opt/node@24/bin:/opt/homebrew/opt/corepack/bin:$PATH \
+  ./gradlew -PdockerBuildLocalZip :docker:gocd-server:debian-13:docker
 ```
 
 - Template: `buildSrc/src/main/resources/gocd-docker-server/Dockerfile.server.ftl`
-- Rendered Dockerfile: `docker/gocd-server/target/debian-12/docker-gocd-server/Dockerfile`
+- Rendered Dockerfile: `docker/gocd-server/target/debian-13/docker-gocd-server/Dockerfile`
 - Result: local image `gocd-server:latest`, built for the host architecture (arm64 on Apple
   Silicon; Cloud Build produces amd64). Automated image verification is disabled in
   `BuildDockerImageTask.groovy`, so check the image by hand.
@@ -64,9 +68,9 @@ cd server/src/main/webapp/WEB-INF/rails && yarn run jasmine-ci
 
 ## What this fork changes
 
-`git diff 647a5201b5..prod` shows the full set. Keep this list current when adding or dropping a
-patch, and re-check each item when merging from upstream. None of these patches came with tests;
-add tests when you touch one.
+`git diff 26.1.0..prod` shows the full set. Keep this list current when adding or dropping a
+patch, and re-check each item when merging from upstream. The Git clone test uses a fresh
+directory; preserve this isolation when testing retries. Add behavior tests when touching a patch.
 
 Deploy safety:
 
@@ -83,25 +87,27 @@ Security:
   outside the target directory.
 - `webpack/helpers/dom.ts` accepts only function event handlers; string handlers are no longer
   compiled with `new Function`.
-- Dependency bumps: `bcprov-jdk18on` 1.80.2 and `jruby-rack` 1.2.4.1 (`dependencies.gradle`), and
-  an `svgo` resolution (`rails/package.json`, which also raises the webpack heap to 4096 MB).
+- Rack has a 2.2.24 minimum in the Rails `Gemfile`, with a verified gem checksum in `Gemfile.lock`.
+  Java dependencies now live in `build.gradle`; upstream supersedes the former Bouncy Castle
+  and jruby-rack pins. Upstream webpack 5 removes the old svgo dependency and its resolution.
+  The fork retains the 4096 MB webpack heap in `rails/package.json`.
 - An XXE fix in `GoConfigService` was merged (#18) and then reverted (#28). The revert gives no
   reason, so find out why before re-applying it.
 
 Build:
 
-- The server image is Debian 12 and is tagged `gocd-server:latest` (`settings-docker.gradle`,
+- The server image is Debian 13 and is tagged `gocd-server:latest` (`settings-docker.gradle`,
   `BuildDockerImageTask.getImageNameWithTag`). Upstream builds Wolfi and tags `v<version>`.
 - The built image is loaded into the local Docker daemon and kept, not verified and deleted.
-- The Tanuki wrapper delta pack is fetched from the `sentry-dev-infra-build-assets` GCS mirror
-  (`installers/tanuki.gradle`).
+- Tanuki 3.6.5 now downloads from its upstream source with a verified SHA-256
+  (`installers/tanuki.gradle`). The old GCS mirror contains 3.5.60, not the upgraded wrapper.
 
 ## Contracts devinfra-deployment-service relies on
 
 Breaking any of these breaks GoCD's own deploy. Change both repos together.
 
 - **Build entry point.** `cloudbuild.yaml` runs
-  `./gradlew -PdockerBuildLocalZip :docker:gocd-server:debian-12:docker` and then builds
+  `./gradlew -PdockerBuildLocalZip :docker:gocd-server:debian-13:docker` and then builds
   `FROM gocd-server:latest`.
 - **Debian base.** The devinfra image layer uses `apt-get`, `lsb_release`, the PGDG apt repo, and
   the `go` user (UID 1000).
@@ -129,7 +135,7 @@ Breaking any of these breaks GoCD's own deploy. Change both repos together.
     and `/go/api/stages/{pipeline}/{stage}/history`.
   - `/go/api/users` (v3) and `/go/api/admin/encrypt` (v1).
 - **Plugin API compatibility** for every plugin in [GoCD plugins in use](#gocd-plugins-in-use).
-- **Agent version skew.** Elastic agents run an upstream go-agent tarball (25.1.0-20129, from
+- **Agent version skew.** Elastic agents run an upstream go-agent tarball (26.1.0-22803, from
   devinfra's `gocd_agent/Dockerfile`), not a build of this repo. Bump that tarball when a server
   change needs newer agents.
 
@@ -144,7 +150,7 @@ at `../devinfra-deployment-service`. Snapshot as of its commit `0faabc727d` (202
   fires on pushes to devinfra-deployment-service, not to this repo. Each GCP project watches one
   branch: `prod` for prod, `staging` for prod-staging, and a personal branch for dev projects.
 - `cloudbuild.yaml` shallow-clones this repo's `prod` branch and builds it inside
-  `gocd_server_src_builder/Dockerfile` (JDK 21, Node 22, Yarn). It then layers
+  `gocd_server_src_builder/Dockerfile` (JDK 25, Node 24, Corepack/Yarn). It then layers
   `gocd_server/Dockerfile` on top and pushes
   `us-west1-docker.pkg.dev/<project>/gocd/server:<devinfra SHA>`. The image tag records the
   devinfra commit; the gocd commit is recorded only in the `gocd.git.sha` image label.
@@ -171,8 +177,8 @@ namespace `gocd`, using `helm-values.yaml.tftpl`:
 - A GCE ingress behind IAP. Access is granted to `role-deploy-user@sentry.io` and a handful of
   service accounts (GitHub Actions pipeline validation, eng-pipes, devinfra-metrics,
   incident-scout-bot, Babysitter).
-- One static agent from the chart's default image, meant for trivial jobs that need no
-  credentials. Everything else runs on elastic agents.
+- One static agent pinned to `gocd/gocd-agent-debian-13:v26.1.0`, meant for trivial jobs that
+  need no credentials. Everything else runs on elastic agents.
 - Plugins installed through `GOCD_PLUGIN_INSTALL_*` env vars (see
   [GoCD plugins in use](#gocd-plugins-in-use)).
 - `shouldPreconfigure: false`. Instead, the ConfigMap `gocd-server-entrypoint.d` (built from
@@ -231,7 +237,7 @@ contains:
   `gocd/**/*.jsonnet,gocd/**/jsonnetfile.json,gocd/pipelines/*.yaml`. The rest default to the
   bundled `yaml.config.plugin` with `gocd/**/*.yaml`. devinfra-deployment-service itself uses YAML
   from `gocd/production/**/*.yaml`.
-- **Agent image:** `gocd_agent/Dockerfile` (Python 3.13 + upstream go-agent 25.1.0-20129 + JRE 21)
+- **Agent image:** `gocd_agent/Dockerfile` (Python 3.13 + upstream go-agent 26.1.0-22803 + JRE 21)
   bundles terraform, gcloud, kubectl, helm, sentry-cli, jq/yq, uv, and the `devinfra` CLIs from
   `gocd_agent/scripts` (`checks-*`, `gocd-*`, `k8s-*`, ...).
 - **Tasks:** jobs are `script:` tasks, which run through the script-executor plugin.
@@ -278,8 +284,14 @@ These plugins are bundled into the server zip by this repo (`tw-go-plugins/build
 
 | Plugin | Version | Used by devinfra-deployment-service? |
 | --- | --- | --- |
-| `tomzo/gocd-yaml-config-plugin` (`yaml.config.plugin`) | v1.0.0-423 | Yes: the default `plugin-id` for deploy targets, including devinfra-deployment-service's own pipelines |
-| `tomzo/gocd-json-config-plugin` | v1.0.0-273 | No |
-| `gocd/gocd-ldap-authentication-plugin` | v2.3.0-386 | No |
-| `gocd/gocd-filebased-authentication-plugin` | v2.2.0-300 | No |
-| `gocd/gocd-file-based-secrets-plugin` | v1.2.0-310 | No |
+| `tomzo/gocd-yaml-config-plugin` (`yaml.config.plugin`) | v2.0.0-541 | Yes: the default `plugin-id` for deploy targets, including devinfra-deployment-service's own pipelines |
+| `tomzo/gocd-json-config-plugin` | v2.0.0-387 | No |
+| `gocd/gocd-ldap-authentication-plugin` | v4.0.0-535 | No |
+| `gocd/gocd-filebased-authentication-plugin` | v3.0.0-418 | No |
+| `gocd/gocd-file-based-secrets-plugin` | v2.0.0-437 | No |
+
+## Upgrade evidence
+
+See [GoCD 26.1 upgrade review](docs/gocd-upgrade-26.1.md) for release/API review, fork patch
+disposition, plugin inventory, validation results, and staging gates. The repeatable operational
+playbook lives in `../devinfra-deployment-service/AGENTS.md`.

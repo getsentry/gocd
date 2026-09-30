@@ -16,11 +16,12 @@
 package com.thoughtworks.go.domain;
 
 import com.thoughtworks.go.config.*;
-import com.thoughtworks.go.server.service.InstanceFactory;
 import com.thoughtworks.go.util.Clock;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 
 /**
  * Understands how to match job instances associated with run-multiple-instance Jobs
@@ -38,7 +39,7 @@ public class RunMultipleInstance implements JobType {
     public void createRerunInstances(JobInstance oldJob, JobInstances jobInstances, SchedulingContext context, StageConfig stageConfig, final Clock clock, InstanceFactory instanceFactory) {
 		context = context.rerunContext();
 		String configName = translateToConfigName(oldJob.getName());
-		JobConfig jobConfig = stageConfig.jobConfigByConfigName(new CaseInsensitiveString(configName));
+		JobConfig jobConfig = stageConfig.jobConfigByConfigName(cis(configName));
 		if (jobConfig == null) {
 			throw new CannotRerunJobException(configName, "Configuration for job doesn't exist.");
 		}
@@ -65,7 +66,7 @@ public class RunMultipleInstance implements JobType {
 
 	@Override
     public void createJobInstances(JobInstances jobs, SchedulingContext context, JobConfig config, String stageName, final JobNameGenerator nameGenerator, final Clock clock, InstanceFactory instanceFactory) {
-		Integer totalInstances = context.isRerun() ? 1 : config.getRunInstanceCountValue();
+		int totalInstances = context.isRerun() ? 1 : config.getRunInstanceCountValue();
 		for (int counter = 1; counter <= totalInstances; counter++) {
 			String jobName = nameGenerator.generateName(counter);
 
@@ -84,8 +85,8 @@ public class RunMultipleInstance implements JobType {
 		return context;
 	}
 
-	private Integer getOldJobIndex(String jobName) {
-		return Integer.valueOf(jobName.split("-" + RunMultipleInstanceJobTypeConfig.MARKER + "-")[1]);
+	private int getOldJobIndex(String jobName) {
+		return Integer.parseInt(jobName.split("-" + RunMultipleInstanceJobTypeConfig.MARKER + "-")[1]);
 	}
 
 	private static class IdentityNameGenerator implements JobNameGenerator {
@@ -102,7 +103,7 @@ public class RunMultipleInstance implements JobType {
 	}
 
 	public static class CounterBasedJobNameGenerator implements JobNameGenerator {
-		private String name;
+		private final String name;
 
 		public CounterBasedJobNameGenerator(String name) {
 			this.name = name;

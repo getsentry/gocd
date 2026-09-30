@@ -29,6 +29,7 @@ import com.thoughtworks.go.domain.packagerepository.PackageRepository;
 import com.thoughtworks.go.domain.scm.SCM;
 import com.thoughtworks.go.remote.work.BuildAssignment;
 import com.thoughtworks.go.server.exceptions.RulesViolationException;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,16 +38,17 @@ import org.springframework.stereotype.Service;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.server.exceptions.RulesViolationException.throwCannotRefer;
 import static com.thoughtworks.go.server.exceptions.RulesViolationException.throwSecretConfigNotFound;
 import static java.lang.String.format;
-import static org.apache.commons.lang3.StringUtils.join;
 
 @Service
 public class RulesService {
     private static final Logger LOGGER = LoggerFactory.getLogger(RulesService.class);
-    private GoConfigService goConfigService;
+    private final GoConfigService goConfigService;
 
     @Autowired
     public RulesService(GoConfigService goConfigService) {
@@ -62,7 +64,7 @@ public class RulesService {
                     .findPipelineByName(pipelineName)
                     .materialConfigs()
                     .getByMaterialFingerPrint(scmMaterial.getFingerprint());
-            PipelineConfigs group = goConfigService.findGroupByPipeline(pipelineName);
+            Optional<PipelineConfigs> group = goConfigService.findGroupByPipelineOptional(pipelineName);
             ScmMaterialConfig scmMaterialConfig = (ScmMaterialConfig) materialConfig;
             SecretParams secretParams = SecretParams.parse(scmMaterialConfig.getPassword());
             secretParams.forEach(secretParam -> {
@@ -70,12 +72,12 @@ public class RulesService {
                 SecretConfig secretConfig = goConfigService.getSecretConfigById(secretConfigId);
                 if (secretConfig == null) {
                     addError(pipelinesWithErrors, pipelineName, format("Pipeline '%s' is referring to non-existent secret config '%s'.", pipelineName, secretConfigId));
-                } else if (!secretConfig.canRefer(group.getClass(), group.getGroup())) {
+                } else if (!group.map(g -> secretConfig.canRefer(g.getClass(), g.getGroup())).orElseThrow()) {
                     addError(pipelinesWithErrors, pipelineName, format("Pipeline '%s' does not have permission to refer to secrets using secret config '%s'", pipelineName, secretConfigId));
                 }
             });
         });
-        if (!pipelinesWithErrors.isEmpty()) {
+        if (LOGGER.isDebugEnabled() && !pipelinesWithErrors.isEmpty()) {
             LOGGER.debug("[Material Update] Failure: {}", errorString(pipelinesWithErrors));
         }
         if (!pipelines.isEmpty() && pipelines.size() == pipelinesWithErrors.size()) {
@@ -108,7 +110,7 @@ public class RulesService {
     public void validateSecretConfigReferences(BuildAssignment buildAssignment) {
         SecretParams secretParams = buildAssignment.getSecretParams();
         JobIdentifier jobIdentifier = buildAssignment.getJobIdentifier();
-        PipelineConfigs group = goConfigService.findGroupByPipeline(new CaseInsensitiveString(jobIdentifier.getPipelineName()));
+        PipelineConfigs group = goConfigService.findGroupByPipeline(cis(jobIdentifier.getPipelineName()));
         String errorMessagePrefix = format("Job: '%s' in Pipeline: '%s' and Pipeline Group:", jobIdentifier.getBuildName(), jobIdentifier.getPipelineName());
         validateSecretConfigReferences(secretParams, group.getClass(), group.getGroup(), errorMessagePrefix);
     }
@@ -153,7 +155,7 @@ public class RulesService {
         }
     }
 
-    protected void validateSecretConfigReferences(SecretParams secretParams, Class<? extends Validatable> entityClass, String entityName, String entityNameOrErrorMessagePrefix) {
+    void validateSecretConfigReferences(SecretParams secretParams, Class<? extends Validatable> entityClass, String entityName, String entityNameOrErrorMessagePrefix) {
         secretParams.forEach(secretParam -> {
             SecretConfig secretConfig = goConfigService.cruiseConfig().getSecretConfigs().find(secretParam.getSecretConfigId());
 
@@ -167,31 +169,26 @@ public class RulesService {
         });
     }
 
-    private void addError(Map<CaseInsensitiveString, StringBuilder> pipelinesWithErrors, CaseInsensitiveString pipelineName, String message) {
-        if (pipelinesWithErrors == null) {
-            pipelinesWithErrors = new HashMap<>();
-        }
-        if (!pipelinesWithErrors.containsKey(pipelineName)) {
-            pipelinesWithErrors.put(pipelineName, new StringBuilder());
-        }
-        StringBuilder stringBuilder = pipelinesWithErrors.get(pipelineName).append(message).append('\n');
-        pipelinesWithErrors.put(pipelineName, stringBuilder);
+    private void addError(@NotNull Map<CaseInsensitiveString, StringBuilder> pipelinesWithErrors, CaseInsensitiveString pipelineName, String message) {
+        pipelinesWithErrors.computeIfAbsent(pipelineName, k -> new StringBuilder())
+            .append(message)
+            .append('\n');
     }
 
     private String errorString(Map<CaseInsensitiveString, StringBuilder> errors) {
-        return join(errors.values(), '\n').trim();
+        return String.join("\n", errors.values()).trim();
     }
 
-    protected Map<CaseInsensitiveString, StringBuilder> validate(SecretParams secretParams, Class<? extends Validatable> entityClass, String entityName, String entityNameOrErrorMessagePrefix) {
+    private Map<CaseInsensitiveString, StringBuilder> validate(SecretParams secretParams, Class<? extends Validatable> entityClass, String entityName, String entityNameOrErrorMessagePrefix) {
         Map<CaseInsensitiveString, StringBuilder> pipelinesWithErrors = new HashMap<>();
         secretParams
                 .groupBySecretConfigId()
                 .forEach((secretConfigId, secretParam) -> {
                     SecretConfig secretConfig = goConfigService.getSecretConfigById(secretConfigId);
                     if (secretConfig == null) {
-                        addError(pipelinesWithErrors, new CaseInsensitiveString(entityName), format("%s '%s' is referring to non-existent secret config '%s'.", entityNameOrErrorMessagePrefix, entityName, secretConfigId));
+                        addError(pipelinesWithErrors, cis(entityName), format("%s '%s' is referring to non-existent secret config '%s'.", entityNameOrErrorMessagePrefix, entityName, secretConfigId));
                     } else if (!secretConfig.canRefer(entityClass, entityName)) {
-                        addError(pipelinesWithErrors, new CaseInsensitiveString(entityName), format("%s '%s' does not have permission to refer to secrets using secret config '%s'.", entityNameOrErrorMessagePrefix, entityName, secretConfigId));
+                        addError(pipelinesWithErrors, cis(entityName), format("%s '%s' does not have permission to refer to secrets using secret config '%s'.", entityNameOrErrorMessagePrefix, entityName, secretConfigId));
                     }
                 });
         return pipelinesWithErrors;

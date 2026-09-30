@@ -15,10 +15,10 @@
  */
 package com.thoughtworks.go.server.dao;
 
-import com.google.gson.GsonBuilder;
 import com.thoughtworks.go.domain.NullPlugin;
 import com.thoughtworks.go.domain.Plugin;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
+import com.thoughtworks.go.util.json.JsonHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -67,7 +67,7 @@ public class PluginSqlMapDaoIntegrationTest {
         Plugin plugin = savePlugin("plugin-id");
 
         assertThat(pluginSqlMapDao.getAllPlugins().size()).isEqualTo(1);
-        Plugin pluginInDB = pluginSqlMapDao.getAllPlugins().get(0);
+        Plugin pluginInDB = pluginSqlMapDao.getAllPlugins().getFirst();
         assertThat(pluginInDB).isEqualTo(plugin);
     }
 
@@ -88,10 +88,10 @@ public class PluginSqlMapDaoIntegrationTest {
     public void shouldReturnCorrectPluginIfPluginIdExists() {
         Plugin plugin = savePlugin("plugin-id");
 
-        assertThat((Object) goCache.get(pluginSqlMapDao.cacheKeyForPluginSettings("plugin-id"))).isNull();
+        assertThat(goCache.<Object>get(pluginSqlMapDao.cacheKeyForPluginSettings("plugin-id"))).isNull();
         Plugin pluginInDB = pluginSqlMapDao.findPlugin("plugin-id");
         assertThat(pluginInDB).isEqualTo(plugin);
-        assertThat((Object) goCache.get(pluginSqlMapDao.cacheKeyForPluginSettings("plugin-id"))).isEqualTo(pluginInDB);
+        assertThat(goCache.<Object>get(pluginSqlMapDao.cacheKeyForPluginSettings("plugin-id"))).isEqualTo(pluginInDB);
     }
 
     @Test
@@ -106,7 +106,7 @@ public class PluginSqlMapDaoIntegrationTest {
 
         List<Plugin> plugins = pluginSqlMapDao.getAllPlugins();
         assertThat(plugins.size()).isEqualTo(1);
-        assertThat(plugins.get(0)).isEqualTo(plugin1);
+        assertThat(plugins.getFirst()).isEqualTo(plugin1);
 
         Plugin plugin2 = savePlugin("plugin-id-2");
 
@@ -119,12 +119,12 @@ public class PluginSqlMapDaoIntegrationTest {
     public void shouldDoNothingWhenAPluginToDeleteDoesNotExists() {
         String pluginId = "my.fancy.plugin.id";
 
-        assertThat((Object) goCache.get(pluginSqlMapDao.cacheKeyForPluginSettings(pluginId))).isNull();
+        assertThat(goCache.<Object>get(pluginSqlMapDao.cacheKeyForPluginSettings(pluginId))).isNull();
         assertThat(pluginSqlMapDao.getAllPlugins().size()).isEqualTo(0);
 
         pluginSqlMapDao.deletePluginIfExists(pluginId);
 
-        assertThat((Object) goCache.get(pluginSqlMapDao.cacheKeyForPluginSettings(pluginId))).isNull();
+        assertThat(goCache.<Object>get(pluginSqlMapDao.cacheKeyForPluginSettings(pluginId))).isNull();
         assertThat(pluginSqlMapDao.getAllPlugins().size()).isEqualTo(0);
     }
 
@@ -137,12 +137,12 @@ public class PluginSqlMapDaoIntegrationTest {
         Plugin pluginInDB = pluginSqlMapDao.findPlugin(pluginId);
         assertThat(pluginInDB).isEqualTo(plugin);
 
-        assertThat((Object) goCache.get(pluginSqlMapDao.cacheKeyForPluginSettings(pluginId))).isEqualTo(plugin);
+        assertThat(goCache.<Object>get(pluginSqlMapDao.cacheKeyForPluginSettings(pluginId))).isEqualTo(plugin);
         assertThat(pluginSqlMapDao.getAllPlugins().size()).isEqualTo(1);
 
         pluginSqlMapDao.deletePluginIfExists(pluginId);
 
-        assertThat((Object) goCache.get(pluginSqlMapDao.cacheKeyForPluginSettings(pluginId))).isNull();
+        assertThat(goCache.<Object>get(pluginSqlMapDao.cacheKeyForPluginSettings(pluginId))).isNull();
         assertThat(pluginSqlMapDao.getAllPlugins().size()).isEqualTo(0);
     }
 
@@ -173,6 +173,6 @@ public class PluginSqlMapDaoIntegrationTest {
         for (int i = 0; i < args.length - 2; i = i + 2) {
             configuration.put(args[i], args[i + 1]);
         }
-        return new GsonBuilder().create().toJson(configuration);
+        return JsonHelper.toJson(configuration);
     }
 }

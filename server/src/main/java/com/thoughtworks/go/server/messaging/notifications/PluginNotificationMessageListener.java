@@ -22,9 +22,10 @@ import com.thoughtworks.go.serverhealth.HealthStateScope;
 import com.thoughtworks.go.serverhealth.HealthStateType;
 import com.thoughtworks.go.serverhealth.ServerHealthService;
 import com.thoughtworks.go.serverhealth.ServerHealthState;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static java.lang.String.join;
 
 public class PluginNotificationMessageListener implements GoMessageListener<PluginNotificationMessage<?>> {
     private static final Logger LOGGER = LoggerFactory.getLogger(PluginNotificationMessageListener.class);
@@ -40,14 +41,18 @@ public class PluginNotificationMessageListener implements GoMessageListener<Plug
     public void onMessage(PluginNotificationMessage<?> message) {
         HealthStateScope scope = HealthStateScope.aboutPlugin(message.pluginId());
         try {
-            LOGGER.debug("Sending {} notification message {} for plugin {}", message.getRequestName(), message, message.pluginId());
-            Result result = notificationExtension.notify(message.pluginId(), message.getRequestName(), message.getData());
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("Sending {} notification message {} for plugin {}", message.requestName(), message, message.pluginId());
+            }
+            Result result = notificationExtension.notify(message.pluginId(), message.requestName(), message.data());
 
             if (result.isSuccessful()) {
                 serverHealthService.removeByScope(scope);
-                LOGGER.debug("Successfully sent {} notification message {} for plugin {}", message.getRequestName(), message, message.pluginId());
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.debug("Successfully sent {} notification message {} for plugin {}", message.requestName(), message, message.pluginId());
+                }
             } else {
-                String errorDescription = result.getMessages() == null ? null : StringUtils.join(result.getMessages(), ", ");
+                String errorDescription = result.getMessages() == null ? null : join(", ", result.getMessages());
                 handlePluginNotifyError(message.pluginId(), scope, errorDescription, null);
             }
         } catch (Exception e) {

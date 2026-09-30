@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class BuildTaskTest {
@@ -67,9 +68,9 @@ public class BuildTaskTest {
             }
         };
         task.setConfigAttributes(Map.of(BuildTask.BUILD_FILE, "foo/build.xml", BuildTask.TARGET, "foo.target", BuildTask.WORKING_DIRECTORY, "work_dir"));
-        assertThat(task.getBuildFile()).isEqualTo(("foo/build.xml"));
-        assertThat(task.getTarget()).isEqualTo(("foo.target"));
-        assertThat(task.workingDirectory()).isEqualTo(("work_dir"));
+        assertThat(task.getBuildFile()).isEqualTo("foo/build.xml");
+        assertThat(task.getTarget()).isEqualTo("foo.target");
+        assertThat(task.workingDirectory()).isEqualTo("work_dir");
         task.setConfigAttributes(Map.of(BuildTask.BUILD_FILE, "", BuildTask.TARGET, "", BuildTask.WORKING_DIRECTORY, ""));
         assertThat(task.getBuildFile()).isNull();
         assertThat(task.getTarget()).isNull();
@@ -132,9 +133,9 @@ public class BuildTaskTest {
         };
         task.setConfigAttributes(Map.of(BuildTask.BUILD_FILE, "foo/build.xml", BuildTask.TARGET, "foo.target", BuildTask.WORKING_DIRECTORY, "work_dir"));
         task.setConfigAttributes(Map.of());
-        assertThat(task.getBuildFile()).isEqualTo(("foo/build.xml"));
-        assertThat(task.getTarget()).isEqualTo(("foo.target"));
-        assertThat(task.workingDirectory()).isEqualTo(("work_dir"));
+        assertThat(task.getBuildFile()).isEqualTo("foo/build.xml");
+        assertThat(task.getTarget()).isEqualTo("foo.target");
+        assertThat(task.workingDirectory()).isEqualTo("work_dir");
     }
 
     @Test
@@ -198,15 +199,15 @@ public class BuildTaskTest {
         };
         task.setWorkingDirectory("/blah");
         CruiseConfig config = GoConfigMother.configWithPipelines("pipeline");
-        PipelineConfig pipeline = config.pipelineConfigByName(new CaseInsensitiveString("pipeline"));
-        StageConfig stage = pipeline.get(0);
-        JobConfig job = stage.getJobs().get(0);
+        PipelineConfig pipeline = config.pipelineConfigByName(cis("pipeline"));
+        StageConfig stage = pipeline.getFirst();
+        JobConfig job = stage.getJobs().getFirst();
         job.addTask(task);
 
         List<ConfigErrors> errors = config.validateAfterPreprocess();
         assertThat(errors.size()).isEqualTo(1);
         String message = "Task of job 'job' in stage 'stage' of pipeline 'pipeline' has path '/blah' which is outside the working directory.";
-        assertThat(task.errors().on(BuildTask.WORKING_DIRECTORY)).isEqualTo(message);
+        assertThat(task.errors().firstErrorOn(BuildTask.WORKING_DIRECTORY)).isEqualTo(message);
     }
 
     @Test
@@ -216,13 +217,13 @@ public class BuildTaskTest {
         BuildTask task = new AntTask();
         task.setWorkingDirectory("/blah");
         StageConfig stageConfig = StageConfigMother.manualStage("manualStage");
-        stageConfig.getJobs().get(0).addTask(task);
-        PipelineTemplateConfig template = new PipelineTemplateConfig(new CaseInsensitiveString("some-template"), stageConfig);
+        stageConfig.getJobs().getFirst().addTask(task);
+        PipelineTemplateConfig template = new PipelineTemplateConfig(cis("some-template"), stageConfig);
         config.addTemplate(template);
 
         List<ConfigErrors> errors = config.validateAfterPreprocess();
         assertThat(errors.size()).isEqualTo(1);
         String message = "Task of job 'default' in stage 'manualStage' of template 'some-template' has path '/blah' which is outside the working directory.";
-        assertThat(task.errors().on(BuildTask.WORKING_DIRECTORY)).isEqualTo(message);
+        assertThat(task.errors().firstErrorOn(BuildTask.WORKING_DIRECTORY)).isEqualTo(message);
     }
 }

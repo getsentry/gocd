@@ -20,7 +20,6 @@ import com.thoughtworks.go.domain.materials.Revision;
 import com.thoughtworks.go.util.TempDirUtils;
 import com.thoughtworks.go.util.command.*;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -34,6 +33,7 @@ import java.util.List;
 
 import static com.thoughtworks.go.util.command.ProcessOutputStreamConsumer.inMemoryConsumer;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.commons.lang3.StringUtils.split;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -94,7 +94,7 @@ public class HgCommandTest {
     public void shouldGetLatestModifications() {
         List<Modification> actual = hgCommand.latestOneModificationAsModifications();
         assertThat(actual.size()).isEqualTo(1);
-        final Modification modification = actual.get(0);
+        final Modification modification = actual.getFirst();
         assertThat(modification.getComment()).isEqualTo("test");
         assertThat(modification.getUserName()).isEqualTo("cruise");
         assertThat(modification.getModifiedFiles().size()).isEqualTo(1);
@@ -102,11 +102,11 @@ public class HgCommandTest {
 
     @Test
     public void shouldNotIncludeCommitFromAnotherBranchInGetLatestModifications() {
-        Modification lastCommit = hgCommand.latestOneModificationAsModifications().get(0);
+        Modification lastCommit = hgCommand.latestOneModificationAsModifications().getFirst();
 
         makeACommitToSecondBranch();
         hg(workingDirectory, "pull").runOrBomb(null);
-        Modification actual = hgCommand.latestOneModificationAsModifications().get(0);
+        Modification actual = hgCommand.latestOneModificationAsModifications().getFirst();
         assertThat(actual).isEqualTo(lastCommit);
         assertThat(actual.getComment()).isEqualTo(lastCommit.getComment());
     }
@@ -115,8 +115,8 @@ public class HgCommandTest {
     public void shouldGetModifications() {
         List<Modification> actual = hgCommand.modificationsSince(new StringRevision(REVISION_0));
         assertThat(actual.size()).isEqualTo(2);
-        assertThat(actual.get(0).getRevision()).isEqualTo(REVISION_2);
-        assertThat(actual.get(1).getRevision()).isEqualTo(REVISION_1);
+        assertThat(actual.getFirst().getRevision()).isEqualTo(REVISION_2);
+        assertThat(actual.getLast().getRevision()).isEqualTo(REVISION_1);
     }
 
     @Test
@@ -126,14 +126,14 @@ public class HgCommandTest {
 
         List<Modification> actual = hgCommand.modificationsSince(new StringRevision(REVISION_0));
         assertThat(actual.size()).isEqualTo(2);
-        assertThat(actual.get(0).getRevision()).isEqualTo(REVISION_2);
-        assertThat(actual.get(1).getRevision()).isEqualTo(REVISION_1);
+        assertThat(actual.getFirst().getRevision()).isEqualTo(REVISION_2);
+        assertThat(actual.getLast().getRevision()).isEqualTo(REVISION_1);
     }
 
     @Test
     public void shouldUpdateToSpecificRevision() {
         InMemoryStreamConsumer output = ProcessOutputStreamConsumer.inMemoryConsumer();
-        assertThat(output.getStdOut()).isEqualTo("");
+        assertThat(output.getStdOut()).isEmpty();
         File newFile = new File(clientRepo, "test.txt");
         assertThat(newFile.exists()).isFalse();
         Revision revision = createNewFileAndCheckIn(serverRepo);
@@ -207,7 +207,7 @@ public class HgCommandTest {
         List<String> branches = hg(secondBranchWorkingCopy, "branches").runOrBomb(null).output();
         List<String> branchNames = new ArrayList<>();
         for (String branchDetails : branches) {
-            branchNames.add(StringUtils.split(branchDetails, " ")[0]);
+            branchNames.add(split(branchDetails, " ")[0]);
         }
         assertThat(branchNames.size()).isEqualTo(2);
         assertThat(branchNames.contains(branchName)).isTrue();

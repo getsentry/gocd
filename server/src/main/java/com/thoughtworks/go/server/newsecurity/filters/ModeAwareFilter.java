@@ -18,8 +18,6 @@ package com.thoughtworks.go.server.newsecurity.filters;
 import com.thoughtworks.go.CurrentGoCDVersion;
 import com.thoughtworks.go.server.newsecurity.filters.helpers.ServerUnavailabilityResponse;
 import com.thoughtworks.go.server.service.MaintenanceModeService;
-import com.thoughtworks.go.util.SystemEnvironment;
-import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,18 +27,20 @@ import org.springframework.security.web.util.matcher.RegexRequestMatcher;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.RequestMethod;
 
+import javax.annotation.PreDestroy;
 import javax.servlet.*;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Objects;
 
+import static com.thoughtworks.go.util.SystemEnvironment.WEBAPP_CONTEXT_PATH;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 @Component
 public class ModeAwareFilter implements Filter {
     private static final Logger LOGGER = LoggerFactory.getLogger("GO_MODE_AWARE_FILTER");
-    private final SystemEnvironment systemEnvironment;
     private final MaintenanceModeService maintenanceModeService;
 
     private static final OrRequestMatcher ALLOWED_MAINTENANCE_MODE_REQUEST_MATCHER = new OrRequestMatcher(
@@ -53,8 +53,7 @@ public class ModeAwareFilter implements Filter {
     );
 
     @Autowired
-    public ModeAwareFilter(SystemEnvironment systemEnvironment, MaintenanceModeService maintenanceModeService) {
-        this.systemEnvironment = systemEnvironment;
+    public ModeAwareFilter(MaintenanceModeService maintenanceModeService) {
         this.maintenanceModeService = maintenanceModeService;
     }
 
@@ -79,11 +78,11 @@ public class ModeAwareFilter implements Filter {
 
     String generateHTMLResponse() throws IOException {
         String path = "server_in_maintenance_mode.html";
-        try (InputStream resourceAsStream = getClass().getClassLoader().getResourceAsStream(path)) {
-            return IOUtils.toString(resourceAsStream, UTF_8)
-                    .replaceAll("%updatedBy%", maintenanceModeService.updatedBy())
-                    .replaceAll("%updatedOn%", maintenanceModeService.updatedOn())
-                    .replaceAll("%docsBaseUrl%", CurrentGoCDVersion.getInstance().baseDocsUrl());
+        try (InputStream resourceAsStream = Objects.requireNonNull(getClass().getClassLoader().getResourceAsStream(path))) {
+            return new String(resourceAsStream.readAllBytes(), UTF_8)
+                    .replace("%updatedBy%", maintenanceModeService.updatedBy())
+                    .replace("%updatedOn%", maintenanceModeService.updatedOn())
+                    .replace("%docsBaseUrl%", CurrentGoCDVersion.getInstance().baseDocsUrl());
         }
     }
 
@@ -100,8 +99,9 @@ public class ModeAwareFilter implements Filter {
     }
 
     private boolean isAllowedRequest(HttpServletRequest servletRequest) {
-        if ((systemEnvironment.getWebappContextPath() + "/auth/security_check").equals(servletRequest.getRequestURI()))
+        if ((WEBAPP_CONTEXT_PATH + "/auth/security_check").equals(servletRequest.getRequestURI())) {
             return true;
+        }
 
         return isReadOnlyRequest(servletRequest);
     }
@@ -111,6 +111,7 @@ public class ModeAwareFilter implements Filter {
                 RequestMethod.HEAD.name().equalsIgnoreCase(servletRequest.getMethod());
     }
 
+    @PreDestroy
     @Override
     public void destroy() {
     }

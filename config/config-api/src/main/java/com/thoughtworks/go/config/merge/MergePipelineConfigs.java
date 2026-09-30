@@ -19,11 +19,16 @@ import com.thoughtworks.go.config.*;
 import com.thoughtworks.go.config.remote.ConfigOrigin;
 import com.thoughtworks.go.domain.ConfigErrors;
 import com.thoughtworks.go.domain.PipelineConfigVisitor;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.TestOnly;
 
 import java.util.*;
+import java.util.function.BiPredicate;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 /**
  * Understands pipeline group configuration in many parts.
@@ -49,57 +54,64 @@ public class MergePipelineConfigs implements PipelineConfigs {
     }
 
     public void addPart(BasicPipelineConfigs pipelineConfigs) {
-        if (!StringUtils.equals(pipelineConfigs.getGroup(), this.getGroup()))
+        if (!Strings.CS.equals(pipelineConfigs.getGroup(), this.getGroup())) {
             throw new IllegalArgumentException("Group names must be the same in merge");
+        }
         this.parts.add(pipelineConfigs);
     }
 
     private void validateGroupNameUniqueness(List<PipelineConfigs> parts) {
-        String name = parts.get(0).getGroup();
+        String name = parts.getFirst().getGroup();
         for (PipelineConfigs part : parts) {
             String otherName = part.getGroup();
-            if (!StringUtils.equals(otherName, name))
+            if (!Strings.CS.equals(otherName, name)) {
                 throw new IllegalArgumentException("Group names must be the same in merge");
+            }
         }
     }
 
 
     public PipelineConfigs getAuthorizationPart() {
         PipelineConfigs found = this.getAuthorizationPartOrNull();
-        if (found == null)
+        if (found == null) {
             throw bomb("No valid configuration part to store authorization");
+        }
 
         return found;
     }
 
     public PipelineConfigs getAuthorizationPartOrNull() {
         for (PipelineConfigs part : parts) {
-            if (part.getOrigin() != null && part.getOrigin().isLocal())
+            if (part.getOrigin() != null && part.getOrigin().isLocal()) {
                 return part;
+            }
         }
         return null;
     }
 
     public PipelineConfigs getPartWithPipeline(CaseInsensitiveString pipelineName) {
         for (PipelineConfigs part : parts) {
-            if (part.hasPipeline(pipelineName))
+            if (part.hasPipeline(pipelineName)) {
                 return part;
+            }
         }
         return null;
     }
 
     public PipelineConfigs getFirstEditablePartOrNull() {
         for (PipelineConfigs part : parts) {
-            if (isEditable(part))
+            if (part.isEditable()) {
                 return part;
+            }
         }
         return null;
     }
 
     public PipelineConfigs getFirstEditablePart() {
         PipelineConfigs found = getFirstEditablePartOrNull();
-        if (found == null)
+        if (found == null) {
             throw bomb("No editable configuration part");
+        }
 
         return found;
     }
@@ -142,7 +154,7 @@ public class MergePipelineConfigs implements PipelineConfigs {
     }
 
     public static String sanitizedGroupName(String group) {
-        return StringUtils.isBlank(group) ? DEFAULT_GROUP : group;
+        return isBlank(group) ? DEFAULT_GROUP : group;
     }
 
     @Override
@@ -163,8 +175,9 @@ public class MergePipelineConfigs implements PipelineConfigs {
     public PipelineConfig findBy(CaseInsensitiveString pipelineName) {
         for (PipelineConfigs part : this.parts) {
             PipelineConfig found = part.findBy(pipelineName);
-            if (found != null)
+            if (found != null) {
                 return found;
+            }
         }
         return null;
     }
@@ -180,57 +193,30 @@ public class MergePipelineConfigs implements PipelineConfigs {
 
     @Override
     public boolean isEmpty() {
-        return size() == 0;
-    }
-
-    @Override
-    public boolean hasRemoteParts() {
-        return getOrigin() != null && !getOrigin().isLocal();
-    }
-
-    @Override
-    public boolean contains(PipelineConfig o) {
-        for (PipelineConfigs part : this.parts) {
-            if (part.contains(o))
-                return true;
-        }
-        return false;
+        return parts.isEmpty() || parts.stream().allMatch(PipelineConfigs::isEmpty);
     }
 
     @Override
     public void remove(PipelineConfig pipelineConfig) {
         PipelineConfigs part = this.getPartWithPipeline(pipelineConfig.name());
-        if (!isEditable(part))
+        if (!part.isEditable()) {
             throw bomb("Cannot remove pipeline fron non-editable configuration source");
+        }
 
         part.remove(pipelineConfig);
     }
 
     @Override
-    public PipelineConfig remove(int i) {
-        if (i < 0)
-            throw new IndexOutOfBoundsException();
-
-        int start = 0;
-        for (PipelineConfigs part : this.parts) {
-            int end = start + part.size();
-            if (i < end)
-                return part.remove(i - start);
-            start = end;
-        }
-        throw new IndexOutOfBoundsException();
-    }
-
-    @Override
     public void validateGroupNameAndAddErrorsTo(ConfigErrors errors) {
-        this.parts.get(0).validateGroupNameAndAddErrorsTo(errors);
+        this.parts.getFirst().validateGroupNameAndAddErrorsTo(errors);
     }
 
     @Override
     public PipelineConfigs getLocal() {
         for (PipelineConfigs part : this.parts) {
-            if (part.isLocal())
+            if (part.isLocal()) {
                 return part;
+            }
         }
         return null;
     }
@@ -240,12 +226,19 @@ public class MergePipelineConfigs implements PipelineConfigs {
         return getOrigin() == null || getOrigin().isLocal();
     }
 
+    @TestOnly
+    @Override
+    public PipelineConfig getFirst() {
+        return get(0);
+    }
+
     @Override
     public boolean add(PipelineConfig pipelineConfig) {
         verifyUniqueName(pipelineConfig);
         PipelineConfigs part = this.getFirstEditablePartOrNull();
-        if (part == null)
+        if (part == null) {
             throw bomb("No editable configuration sources");
+        }
 
         return part.add(pipelineConfig);
     }
@@ -258,84 +251,54 @@ public class MergePipelineConfigs implements PipelineConfigs {
 
     private boolean alreadyContains(PipelineConfig pipelineConfig) {
         for (PipelineConfigs part : this.parts) {
-            if (part.hasPipeline(pipelineConfig.name()))
+            if (part.hasPipeline(pipelineConfig.name())) {
                 return true;
+            }
         }
         return false;
     }
 
-    public PipelineConfigs getPartWithIndex(int i) {
-        if (i < 0)
-            throw new IndexOutOfBoundsException();
-
-        int start = 0;
-        for (PipelineConfigs part : this.parts) {
-            int end = start + part.size();
-            if (i < end)
-                return part;
-            start = end;
-        }
-        throw new IndexOutOfBoundsException();
-    }
-
     public PipelineConfigs getPartWithIndexForInsert(int i) {
-        if (i < 0)
+        if (i < 0) {
             throw new IndexOutOfBoundsException();
-
-        int start = 0;
-        for (PipelineConfigs part : this.parts) {
-            int end = start + part.size();
-            if (i < end)
-                return part;
-            start = end;
         }
-        return this.parts.get(this.parts.size() - 1);
-    }
-
-
-    @Override
-    public PipelineConfig get(int i) {
-        if (i < 0)
-            throw new IndexOutOfBoundsException();
-
-        int start = 0;
-        for (PipelineConfigs part : this.parts) {
-            int end = start + part.size();
-            if (i < end)
-                return part.get(i - start);
-            start = end;
-        }
-        throw new IndexOutOfBoundsException();
-    }
-
-
-    @Override
-    public boolean addWithoutValidation(PipelineConfig pipelineConfig) {
-        PipelineConfigs part = this.getFirstEditablePartOrNull();
-        if (part == null)
-            throw bomb("No editable configuration sources");
-
-        return part.addWithoutValidation(pipelineConfig);
-    }
-
-    @Override
-    public PipelineConfig set(int i, PipelineConfig pipelineConfig) {
-        if (i < 0)
-            throw new IndexOutOfBoundsException();
 
         int start = 0;
         for (PipelineConfigs part : this.parts) {
             int end = start + part.size();
             if (i < end) {
-                if (isEditable(part)) {
-                    return part.set(i - start, pipelineConfig);
-                } else {
-                    throw bomb(String.format("Cannot edit pipeline %s", pipelineConfig.name()));
-                }
+                return part;
+            }
+            start = end;
+        }
+        return this.parts.getLast();
+    }
+
+    @Override
+    public PipelineConfig get(int i) {
+        if (i < 0) {
+            throw new IndexOutOfBoundsException();
+        }
+
+        int start = 0;
+        for (PipelineConfigs part : this.parts) {
+            int end = start + part.size();
+            if (i < end) {
+                return part.get(i - start);
             }
             start = end;
         }
         throw new IndexOutOfBoundsException();
+    }
+
+    @Override
+    public boolean addWithoutValidation(PipelineConfig pipelineConfig) {
+        PipelineConfigs part = this.getFirstEditablePartOrNull();
+        if (part == null) {
+            throw bomb("No editable configuration sources");
+        }
+
+        return part.addWithoutValidation(pipelineConfig);
     }
 
     @Override
@@ -347,8 +310,9 @@ public class MergePipelineConfigs implements PipelineConfigs {
     @Override
     public void add(int index, PipelineConfig pipelineConfig) {
         PipelineConfigs part = getPartWithIndexForInsert(index);
-        if (!isEditable(part))
+        if (!part.isEditable()) {
             throw bomb("Cannot add pipeline to non-editable configuration part");
+        }
 
         int start = getFirstIndexInPart(part);
 
@@ -359,34 +323,19 @@ public class MergePipelineConfigs implements PipelineConfigs {
         int start = 0;
         for (PipelineConfigs part : this.parts) {
             int end = start + part.size();
-            if (part.equals(p))
+            if (part.equals(p)) {
                 return start;
+            }
             start = end;
         }
         return -1;
     }
 
     @Override
-    public int indexOf(PipelineConfig o) {
-        int start = 0;
-        for (PipelineConfigs part : this.parts) {
-            int end = start + part.size();
-
-            int internalIndex = part.indexOf(o);
-            if (internalIndex > 0)
-                return start + internalIndex;
-
-            start = end;
-        }
-        return -1;
-    }
-
-    @Override
-    public Iterator<PipelineConfig> iterator() {
+    public @NotNull Iterator<PipelineConfig> iterator() {
         return new Iterator<>() {
-
+            private final int count = size();
             private int currentIndex = 0;
-            private int count = size();
 
             @Override
             public boolean hasNext() {
@@ -398,7 +347,6 @@ public class MergePipelineConfigs implements PipelineConfigs {
                 return get(currentIndex++);
             }
 
-
             @Override
             public void remove() {
                 throw new RuntimeException("Not implemented");
@@ -409,7 +357,7 @@ public class MergePipelineConfigs implements PipelineConfigs {
 
     @Override
     public String getGroup() {
-        return this.parts.get(0).getGroup();
+        return this.parts.getFirst().getGroup();
     }
 
     @Override
@@ -418,17 +366,13 @@ public class MergePipelineConfigs implements PipelineConfigs {
             return;
         }
         for (PipelineConfigs part : this.parts) {
-            if (!isEditable(part)) {
+            if (!part.isEditable()) {
                 throw bomb("Cannot update group name because there are non-editable parts");
             }
         }
         for (PipelineConfigs part : this.parts) {
             part.setGroup(group);
         }
-    }
-
-    private boolean isEditable(PipelineConfigs part) {
-        return part.getOrigin() != null && part.getOrigin().canEdit();
     }
 
     @Override
@@ -441,27 +385,31 @@ public class MergePipelineConfigs implements PipelineConfigs {
         if (!isSameGroup(groupName)) {
             return;
         }
-        this.set(getIndex(pipelineName), pipeline);
+        CaseInsensitiveString name = cis(pipelineName);
+        if (!this.tryReplace((part, p) -> p.name().equals(name) && checkEditable(part, name), pipeline)) {
+            throw new IndexOutOfBoundsException("Unable to find pipeline " + pipelineName + " to update");
+        }
+    }
+
+    private boolean checkEditable(PipelineConfigs part, CaseInsensitiveString pipelineName) {
+        if (!part.isEditable()) {
+            throw bomb("Cannot edit pipeline " +  pipelineName);
+        }
+        return true;
+    }
+
+    @Override
+    public boolean tryReplace(BiPredicate<PipelineConfigs, PipelineConfig> matcher, PipelineConfig newItem) {
+        for (PipelineConfigs part : this.parts) {
+            if (part.tryReplace(matcher, newItem)) {;
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isSameGroup(String groupName) {
-        return StringUtils.equalsIgnoreCase(groupName, this.getGroup());
-    }
-
-    private int getIndex(String pipelineName) {
-        CaseInsensitiveString caseName = new CaseInsensitiveString(pipelineName);
-        int start = 0;
-        for (PipelineConfigs part : this.parts) {
-            int end = start + part.size();
-
-            if (part.hasPipeline(caseName)) {
-                int internalIndex = part.indexOf(part.findBy(caseName));
-                return start + internalIndex;
-            }
-
-            start = end;
-        }
-        return -1;
+        return Strings.CI.equals(groupName, this.getGroup());
     }
 
     @Override
@@ -475,20 +423,11 @@ public class MergePipelineConfigs implements PipelineConfigs {
     }
 
     @Override
-    public void add(List<String> allGroup) {
-        allGroup.add(this.getGroup());
-    }
-
-    @Override
-    public boolean exist(int pipelineIndex) {
-        throw new RuntimeException("Not implemented");
-    }
-
-    @Override
     public boolean hasPipeline(CaseInsensitiveString pipelineName) {
         for (PipelineConfigs part : this.parts) {
-            if (part.hasPipeline(pipelineName))
+            if (part.hasPipeline(pipelineName)) {
                 return true;
+            }
         }
         return false;
     }
@@ -498,15 +437,6 @@ public class MergePipelineConfigs implements PipelineConfigs {
         for (PipelineConfig pipelineConfig : this) {
             visitor.visit(pipelineConfig);
         }
-    }
-
-    @Override
-    public boolean hasTemplate() {
-        for (PipelineConfigs part : this.parts) {
-            if (part.hasTemplate())
-                return true;
-        }
-        return false;
     }
 
     @Override
@@ -560,36 +490,16 @@ public class MergePipelineConfigs implements PipelineConfigs {
     }
 
     @Override
-    public List<AdminUser> getOperateUsers() {
-        return this.getAuthorizationPart().getOperateUsers();
-    }
-
-    @Override
-    public List<AdminRole> getOperateRoles() {
-        return this.getAuthorizationPart().getOperateRoles();
-    }
-
-    @Override
-    public List<String> getOperateRoleNames() {
-        return this.getAuthorizationPart().getOperateRoleNames();
-    }
-
-    @Override
-    public List<String> getOperateUserNames() {
-        return this.getAuthorizationPart().getOperateUserNames();
-    }
-
-    @Override
     public void cleanupAllUsagesOfRole(Role roleToDelete) {
         this.getAuthorizationPart().cleanupAllUsagesOfRole(roleToDelete);
     }
 
-
     @Override
     public boolean hasAuthorizationDefined() {
         PipelineConfigs authPart = this.getAuthorizationPartOrNull();
-        if (authPart == null)
+        if (authPart == null) {
             return false;
+        }
         return authPart.hasAuthorizationDefined();
     }
 
@@ -605,35 +515,41 @@ public class MergePipelineConfigs implements PipelineConfigs {
 
 
     @Override
-    public boolean hasViewPermission(CaseInsensitiveString username, UserRoleMatcher userRoleMatcher, boolean everyoneIsAllowedToViewIfNoAuthIsDefined) {
-        return this.getAuthorizationPart().hasViewPermission(username, userRoleMatcher, everyoneIsAllowedToViewIfNoAuthIsDefined);
+    public boolean hasViewPermission(CaseInsensitiveString username, UserRoleMatcher userRoleMatcher) {
+        return this.getAuthorizationPart().hasViewPermission(username, userRoleMatcher);
     }
 
     @Override
     public boolean hasViewPermissionDefined() {
         PipelineConfigs authPart = this.getAuthorizationPartOrNull();
-        if (authPart == null)
+        if (authPart == null) {
             return false;
+        }
         return authPart.hasViewPermissionDefined();
     }
 
     @Override
     public boolean hasOperationPermissionDefined() {
         PipelineConfigs authPart = this.getAuthorizationPartOrNull();
-        if (authPart == null)
+        if (authPart == null) {
             return false;
+        }
         return authPart.hasOperationPermissionDefined();
     }
 
     @Override
-    public boolean hasOperatePermission(CaseInsensitiveString username, UserRoleMatcher userRoleMatcher, boolean everyoneIsAllowedToOperateIfNoAuthIsDefined) {
-        return this.getAuthorizationPart().hasOperatePermission(username, userRoleMatcher, everyoneIsAllowedToOperateIfNoAuthIsDefined);
+    public boolean hasOperatePermission(CaseInsensitiveString username, UserRoleMatcher userRoleMatcher) {
+        return this.getAuthorizationPart().hasOperatePermission(username, userRoleMatcher);
     }
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         MergePipelineConfigs that = (MergePipelineConfigs) o;
         return Objects.equals(parts, that.parts);
     }

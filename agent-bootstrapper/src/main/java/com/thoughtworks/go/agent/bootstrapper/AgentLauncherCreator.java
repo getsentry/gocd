@@ -17,9 +17,13 @@ package com.thoughtworks.go.agent.bootstrapper;
 
 import com.thoughtworks.cruise.agent.common.launcher.AgentLauncher;
 
+import java.io.IOException;
+
 /**
  * Understands how to create a launcher object
  */
 public interface AgentLauncherCreator extends AutoCloseable {
     AgentLauncher createLauncher();
+    @Override
+    void close() throws IOException;
 }

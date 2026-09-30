@@ -22,7 +22,7 @@ import com.thoughtworks.go.server.messaging.MessagingService;
 import com.thoughtworks.go.server.service.support.DaemonThreadStatsCollector;
 import com.thoughtworks.go.serverhealth.ServerHealthService;
 import com.thoughtworks.go.util.SystemEnvironment;
-import org.apache.activemq.ActiveMQConnection;
+import jakarta.jms.*;
 import org.apache.activemq.ActiveMQConnectionFactory;
 import org.apache.activemq.broker.BrokerService;
 import org.apache.activemq.broker.ConnectionContext;
@@ -30,26 +30,27 @@ import org.apache.activemq.broker.region.Destination;
 import org.apache.activemq.broker.region.Subscription;
 import org.apache.activemq.command.ActiveMQQueue;
 import org.apache.activemq.util.BrokerSupport;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import javax.jms.*;
+import javax.annotation.PreDestroy;
 import java.util.List;
 
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
 
 @Component
 public class ActiveMqMessagingService implements MessagingService<GoMessage> {
+    private static final Logger LOG = LoggerFactory.getLogger(ActiveMqMessagingService.class);
 
     private static final String BROKER_NAME = "go-server";
     private static final String BROKER_URL = "vm://go-server";
     private final DaemonThreadStatsCollector daemonThreadStatsCollector;
-    private final ActiveMQConnection connection;
+    private final QueueConnection connection;
     private final BrokerService broker;
     private final SystemEnvironment systemEnvironment;
     private final ServerHealthService serverHealthService;
-
-    public ActiveMQConnectionFactory factory;
 
     @Autowired
     public ActiveMqMessagingService(DaemonThreadStatsCollector daemonThreadStatsCollector, SystemEnvironment systemEnvironment, ServerHealthService serverHealthService) throws Exception {
@@ -64,17 +65,14 @@ public class ActiveMqMessagingService implements MessagingService<GoMessage> {
         broker.getManagementContext().setConnectorPort(systemEnvironment.getActivemqConnectorPort());
         broker.start();
 
-
-        factory = new ActiveMQConnectionFactory(BROKER_URL);
+        ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(BROKER_URL);
         factory.getPrefetchPolicy().setQueuePrefetch(systemEnvironment.getActivemqQueuePrefetch());
         factory.setCopyMessageOnSend(false);
         factory.setTrustAllPackages(true);
 
-        connection = (ActiveMQConnection) factory.createConnection();
+        connection = (QueueConnection) factory.createConnection();
         connection.start();
-
     }
-
 
     @Override
     public MessageSender createSender(String topic) {
@@ -98,7 +96,6 @@ public class ActiveMqMessagingService implements MessagingService<GoMessage> {
             throw bomb(e);
         }
     }
-
 
     @Override
     public MessageSender createQueueSender(String queueName) {
@@ -141,12 +138,14 @@ public class ActiveMqMessagingService implements MessagingService<GoMessage> {
         }
     }
 
+    @PreDestroy
     @Override
-    public void stop() throws JMSException {
-        connection.close();
+    public void stop() throws Exception {
         try {
-            broker.stop();
-        } catch (Exception ignore) {
+            connection.close();
+        } catch (Exception ex) {
+            LOG.info("Error during internal broker connection closure being ignored.", ex);
         }
+        broker.stop();
     }
 }

@@ -17,7 +17,7 @@ package com.thoughtworks.go.apiv1.configrepooperations;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.HaltApiResponses;
 import com.thoughtworks.go.apiv1.configrepooperations.representers.PreflightResultRepresenter;
 import com.thoughtworks.go.config.*;
@@ -31,12 +31,11 @@ import com.thoughtworks.go.config.remote.EphemeralConfigOrigin;
 import com.thoughtworks.go.config.remote.PartialConfig;
 import com.thoughtworks.go.domain.config.Configuration;
 import com.thoughtworks.go.domain.materials.MaterialConfig;
-import com.thoughtworks.go.plugin.access.configrepo.InvalidPartialConfigException;
 import com.thoughtworks.go.server.service.ConfigRepoService;
 import com.thoughtworks.go.server.service.GoConfigService;
 import com.thoughtworks.go.server.util.UuidGenerator;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
-import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import spark.Request;
@@ -45,7 +44,6 @@ import spark.utils.StringUtils;
 
 import javax.servlet.http.Part;
 import java.io.IOException;
-import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
@@ -58,16 +56,16 @@ import static spark.Spark.*;
 public class ConfigRepoOperationsControllerV1 extends ApiController implements SparkSpringController {
     private static final UuidGenerator UUID = new UuidGenerator();
 
-    private final ApiAuthenticationHelper authenticationHelper;
+    private final ApiAuthorizationHelper authorizationHelper;
     private final GoConfigPluginService pluginService;
     private final ConfigRepoService service;
     private final GoConfigService gcs;
     private final PartialConfigService partialConfigService;
 
     @Autowired
-    public ConfigRepoOperationsControllerV1(ApiAuthenticationHelper authenticationHelper, GoConfigPluginService pluginService, ConfigRepoService service, GoConfigService gcs, PartialConfigService partialConfigService) {
+    public ConfigRepoOperationsControllerV1(ApiAuthorizationHelper authorizationHelper, GoConfigPluginService pluginService, ConfigRepoService service, GoConfigService gcs, PartialConfigService partialConfigService) {
         super(ApiVersion.v1);
-        this.authenticationHelper = authenticationHelper;
+        this.authorizationHelper = authorizationHelper;
         this.pluginService = pluginService;
         this.service = service;
         this.gcs = gcs;
@@ -80,14 +78,14 @@ public class ConfigRepoOperationsControllerV1 extends ApiController implements S
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
-            before("", mimeType, authenticationHelper::checkAdminUserAnd403);
+            before("", mimeType, authorizationHelper::checkAdminUserAnd403);
             before("", mimeType, this::verifyContentType);
 
             before("/*", mimeType, this::setContentType);
-            before("/*", mimeType, authenticationHelper::checkAdminUserAnd403);
+            before("/*", mimeType, authorizationHelper::checkAdminUserAnd403);
             before(PREFLIGHT_PATH, mimeType, this::setMultipartUpload);
 
             post(PREFLIGHT_PATH, mimeType, this::preflight);
@@ -109,10 +107,7 @@ public class ConfigRepoOperationsControllerV1 extends ApiController implements S
                 if (!"files[]".equals(ul.getName())) {
                     continue;
                 }
-
-                StringWriter w = new StringWriter();
-                IOUtils.copy(ul.getInputStream(), w, StandardCharsets.UTF_8);
-                contents.put(ul.getSubmittedFileName(), w.toString());
+                contents.put(ul.getSubmittedFileName(), new String(ul.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
             }
 
             if (contents.isEmpty()) {

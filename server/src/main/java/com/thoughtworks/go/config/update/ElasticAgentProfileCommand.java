@@ -15,10 +15,10 @@
  */
 package com.thoughtworks.go.config.update;
 
-import com.thoughtworks.go.config.BasicCruiseConfig;
 import com.thoughtworks.go.config.ConfigSaveValidationContext;
 import com.thoughtworks.go.config.ConfigTag;
 import com.thoughtworks.go.config.CruiseConfig;
+import com.thoughtworks.go.config.Validatable;
 import com.thoughtworks.go.config.commands.EntityConfigUpdateCommand;
 import com.thoughtworks.go.config.elastic.ElasticProfile;
 import com.thoughtworks.go.config.elastic.ElasticProfiles;
@@ -27,12 +27,12 @@ import com.thoughtworks.go.config.exceptions.RecordNotFoundException;
 import com.thoughtworks.go.plugin.access.elastic.ElasticAgentExtension;
 import com.thoughtworks.go.plugin.api.response.validation.ValidationResult;
 import com.thoughtworks.go.server.service.result.LocalizedOperationResult;
-import org.apache.commons.lang3.StringUtils;
 
 import java.util.Map;
 
 import static com.thoughtworks.go.i18n.LocalizedMessage.resourceNotFound;
 import static com.thoughtworks.go.serverhealth.HealthStateType.notFound;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 public abstract class ElasticAgentProfileCommand implements EntityConfigUpdateCommand<ElasticProfile> {
     private final ElasticAgentExtension extension;
@@ -56,7 +56,7 @@ public abstract class ElasticAgentProfileCommand implements EntityConfigUpdateCo
 
     @Override
     public void clearErrors() {
-        BasicCruiseConfig.clearErrors(elasticProfile);
+        Validatable.clearErrors(elasticProfile);
     }
 
     @Override
@@ -83,16 +83,16 @@ public abstract class ElasticAgentProfileCommand implements EntityConfigUpdateCo
 
         if (preprocessedProfile.getAllErrors().isEmpty()) {
             getPluginProfiles(preprocessedConfig).validate(null);
-            BasicCruiseConfig.copyErrors(preprocessedProfile, elasticProfile);
+            Validatable.copyErrors(preprocessedProfile, elasticProfile);
             return preprocessedProfile.getAllErrors().isEmpty();
         }
 
-        BasicCruiseConfig.copyErrors(preprocessedProfile, elasticProfile);
+        Validatable.copyErrors(preprocessedProfile, elasticProfile);
         return false;
     }
 
     protected final ElasticProfile findExistingProfile(CruiseConfig cruiseConfig) {
-        if (elasticProfile == null || StringUtils.isBlank(elasticProfile.getId())) {
+        if (elasticProfile == null || isBlank(elasticProfile.getId())) {
             if (elasticProfile != null) {
                 elasticProfile.addError("id", getObjectDescriptor() + " cannot have a blank id.");
             }

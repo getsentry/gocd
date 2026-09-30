@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.plugin.infra.plugininfo;
 
-import org.apache.commons.collections4.IterableUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -45,7 +44,7 @@ public class DefaultPluginRegistry implements PluginRegistry {
     }
 
     public GoPluginBundleDescriptor unloadPlugin(GoPluginBundleDescriptor bundleDescriptor) {
-        final GoPluginDescriptor firstPluginDescriptor = bundleDescriptor.descriptors().get(0);
+        final GoPluginDescriptor firstPluginDescriptor = bundleDescriptor.descriptors().getFirst();
         final GoPluginDescriptor pluginInBundle = getPluginByIdOrFileName(firstPluginDescriptor.id(), firstPluginDescriptor.fileName());
 
         if (pluginInBundle == null) {
@@ -74,9 +73,13 @@ public class DefaultPluginRegistry implements PluginRegistry {
             }
         }
 
-        return IterableUtils.find(idToDescriptorMap.values(), object -> object.fileName().equals(fileName));
+        return idToDescriptorMap.values().stream()
+            .filter(object -> object.fileName().equals(fileName))
+            .findAny()
+            .orElse(null);
     }
 
+    @Override
     public void markPluginInvalid(String bundleSymbolicName, List<String> messages) {
         final GoPluginBundleDescriptor bundleDescriptor = getBundleDescriptor(bundleSymbolicName);
         if (bundleDescriptor == null) {
@@ -98,28 +101,27 @@ public class DefaultPluginRegistry implements PluginRegistry {
 
     @Override
     public GoPluginBundleDescriptor getBundleDescriptor(String bundleSymbolicName) {
-        final GoPluginDescriptor descriptor = IterableUtils.find(idToDescriptorMap.values(),
-                pluginDescriptor -> pluginDescriptor.bundleDescriptor().bundleSymbolicName().equals(bundleSymbolicName));
-
-        if (descriptor == null) {
-            return null;
-        }
-        return descriptor.bundleDescriptor();
+        return idToDescriptorMap.values().stream()
+            .filter(pluginDescriptor -> pluginDescriptor.bundleDescriptor().bundleSymbolicName().equals(bundleSymbolicName))
+            .findAny()
+            .map(GoPluginDescriptor::bundleDescriptor)
+            .orElse(null);
     }
 
     @Override
     public String pluginIDFor(String bundleSymbolicName, String extensionClassCanonicalName) {
         final GoPluginBundleDescriptor bundleDescriptor = getBundleDescriptor(bundleSymbolicName);
 
-        final GoPluginDescriptor firstPluginDescriptor = bundleDescriptor.descriptors().get(0);
+        final GoPluginDescriptor firstPluginDescriptor = bundleDescriptor.descriptors().getFirst();
         if (firstPluginDescriptor.extensionClasses().isEmpty()) {
             return firstPluginDescriptor.id();
         }
 
-        final GoPluginDescriptor descriptorWithExtension = IterableUtils.find(bundleDescriptor.descriptors(),
-                pluginDescriptor -> pluginDescriptor.extensionClasses().contains(extensionClassCanonicalName));
-
-        return descriptorWithExtension == null ? null : descriptorWithExtension.id();
+        return bundleDescriptor.descriptors().stream()
+            .filter(pluginDescriptor -> pluginDescriptor.extensionClasses().contains(extensionClassCanonicalName))
+            .findAny()
+            .map(GoPluginDescriptor::id)
+            .orElse(null);
     }
 
     @Override

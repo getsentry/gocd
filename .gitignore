@@ -14,20 +14,17 @@
 # limitations under the License.
 ##########################################################################
 
-# intellij
+# IDEs / Editors
 .idea/
 !.idea/copyright/
 !.idea/codeStyleSettings.xml
 !.idea/jsLinters/eslint.xml
 bin/
 *.iml
-
-# eclipse
 .project
 .classpath
 .settings/
-
-# vim swap files
+.vscode/
 [._]*.s[a-w][a-z]
 [._]s[a-w][a-z]
 
@@ -37,13 +34,10 @@ tags
 # temporary files from vim and emacs
 *~
 
-# Avoid ignoring Gradle wrapper jar file (.jar files are usually ignored)
+# Gradle
 !gradle-wrapper.jar
-
 .gradle/
 
-# gradle cache of project
-.gradletasknamecache
 
 # virtual machine crash logs
 hs_err_pid*
@@ -275,13 +269,6 @@ server/target/
 server/test-repo/
 server/testdata/test-agent.jar
 server/tfs-impl-14.jar
-server/src/main/webapp/WEB-INF/rails/db/config.git/
-server/src/main/webapp/WEB-INF/rails/logs/
-server/src/main/webapp/WEB-INF/rails/node_modules/
-server/src/main/webapp/WEB-INF/rails/public/assets/
-server/src/main/webapp/WEB-INF/rails/gems/jruby
-server/src/main/webapp/WEB-INF/rails/webpack/gen/
-server/src/main/webapp/WEB-INF/rails/yarn-license-report/
 spark/spark-base/out/
 spark/spark-base/target/
 spark/spark-spa/logs/
@@ -468,10 +455,6 @@ api/api-agents-v7/out/
 api/api-agents-v7/target/
 api/api-agents-v7/logs/
 api/api-agents-v7/config/
-api/api-version-infos-v1/out/
-api/api-version-infos-v1/target/
-api/api-version-infos-v1/logs/
-api/api-version-infos-v1/config/
 api/api-abstract-material-test/out/
 api/api-abstract-material-test/target/
 api/api-abstract-material-test/logs/

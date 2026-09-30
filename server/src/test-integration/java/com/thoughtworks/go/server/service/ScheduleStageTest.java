@@ -20,6 +20,7 @@ import com.thoughtworks.go.config.EnvironmentVariablesConfig;
 import com.thoughtworks.go.config.GoConfigDao;
 import com.thoughtworks.go.domain.*;
 import com.thoughtworks.go.fixture.PipelineWithMultipleStages;
+import com.thoughtworks.go.fixture.PipelineWithTwoStages;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.dao.StageDao;
 import com.thoughtworks.go.server.newsecurity.SessionUtilsHelper;
@@ -64,53 +65,53 @@ public class ScheduleStageTest {
     @Autowired
     private TransactionTemplate transactionTemplate;
 
-    private PipelineWithMultipleStages fixture;
+    private PipelineWithMultipleStages pipelineFixture;
     private GoConfigFileHelper configHelper;
 
     @BeforeEach
     public void setUp(@TempDir Path tempDir) throws Exception {
         configHelper = new GoConfigFileHelper().usingCruiseConfigDao(dao);
-        fixture = new PipelineWithMultipleStages(3, materialRepository, transactionTemplate, tempDir);
-        fixture.usingThreeJobs();
-        fixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
+        pipelineFixture = new PipelineWithMultipleStages(3, materialRepository, transactionTemplate, tempDir);
+        pipelineFixture.usingThreeJobs();
+        pipelineFixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
     }
 
     @AfterEach
     public void tearDown() throws Exception {
-        fixture.onTearDown();
+        pipelineFixture.onTearDown();
     }
 
     @Test
     public void shouldRerunStageUsingPipelineCounter() {
-        Pipeline pipeline = fixture.createdPipelineWithAllStagesPassed();
-        Stage oldStage = pipeline.getStages().byName(fixture.devStage);
+        Pipeline pipeline = pipelineFixture.createdPipelineWithAllStagesPassed();
+        Stage oldStage = pipeline.getStages().byName(pipelineFixture.devStage);
 
-        scheduleService.rerunStage(pipeline.getName(), pipeline.getCounter(), fixture.devStage);
+        scheduleService.rerunStage(pipeline.getName(), pipeline.getCounter(), pipelineFixture.devStage);
         Stage stage = dbHelper.getStageDao().mostRecentStage(
-                new StageConfigIdentifier(pipeline.getName(), fixture.devStage));
+                new StageConfigIdentifier(pipeline.getName(), pipelineFixture.devStage));
         assertThat(stage.getCounter()).isEqualTo(oldStage.getCounter() + 1);
     }
 
     @Test
     public void shouldResolveEnvironmentVariablesForStateReRun() {
-        Pipeline pipeline = fixture.createdPipelineWithAllStagesPassed();
+        Pipeline pipeline = pipelineFixture.createdPipelineWithAllStagesPassed();
 
         EnvironmentVariablesConfig pipelineVariables = new EnvironmentVariablesConfig();
         pipelineVariables.add("pipelineEnv", "pipelineFoo");
         pipelineVariables.add("stageEnv", "pipelineBar");
         pipelineVariables.add("jobEnv", "pipelineBaz");
-        configHelper.addEnvironmentVariableToPipeline(fixture.pipelineName, pipelineVariables);
+        configHelper.addEnvironmentVariableToPipeline(pipelineFixture.pipelineName, pipelineVariables);
 
         EnvironmentVariablesConfig stageVariables = new EnvironmentVariablesConfig();
         stageVariables.add("stageEnv", "stageBar");
         stageVariables.add("jobEnv", "stageBaz");
-        configHelper.addEnvironmentVariableToStage(fixture.pipelineName, fixture.devStage, stageVariables);
+        configHelper.addEnvironmentVariableToStage(pipelineFixture.pipelineName, pipelineFixture.devStage, stageVariables);
 
         EnvironmentVariablesConfig jobVariables = new EnvironmentVariablesConfig();
         jobVariables.add("jobEnv", "jobBaz");
-        configHelper.addEnvironmentVariableToJob(fixture.pipelineName, fixture.devStage, fixture.JOB_FOR_DEV_STAGE, jobVariables);
+        configHelper.addEnvironmentVariableToJob(pipelineFixture.pipelineName, pipelineFixture.devStage, PipelineWithTwoStages.JOB_FOR_DEV_STAGE, jobVariables);
 
-        Stage stage = scheduleService.rerunStage(pipeline.getName(), pipeline.getCounter(), fixture.devStage);
+        Stage stage = scheduleService.rerunStage(pipeline.getName(), pipeline.getCounter(), pipelineFixture.devStage);
 
         dbHelper.passStage(stage);
 
@@ -120,31 +121,31 @@ public class ScheduleStageTest {
         expectedVariableOrder.add("jobEnv", "jobBaz");
 
         JobInstances jobInstances = stage.getJobInstances();
-        assertThat(jobInstances.getByName(fixture.JOB_FOR_DEV_STAGE).getPlan().getVariables()).isEqualTo(expectedVariableOrder);
+        assertThat(jobInstances.getByName(PipelineWithTwoStages.JOB_FOR_DEV_STAGE).getPlan().getVariables()).isEqualTo(expectedVariableOrder);
     }
 
     @Test
     public void shouldResolveEnvironmentVariablesForJobReRun() {
-        Pipeline pipeline = fixture.createdPipelineWithAllStagesPassed();
+        Pipeline pipeline = pipelineFixture.createdPipelineWithAllStagesPassed();
 
-       Stage oldStage = stageDao.stageById(pipeline.getStages().byName(fixture.devStage).getId());
+       Stage oldStage = stageDao.stageById(pipeline.getStages().byName(pipelineFixture.devStage).getId());
 
         EnvironmentVariablesConfig pipelineVariables = new EnvironmentVariablesConfig();
         pipelineVariables.add("pipelineEnv", "pipelineFoo");
         pipelineVariables.add("stageEnv", "pipelineBar");
         pipelineVariables.add("jobEnv", "pipelineBaz");
-        configHelper.addEnvironmentVariableToPipeline(fixture.pipelineName, pipelineVariables);
+        configHelper.addEnvironmentVariableToPipeline(pipelineFixture.pipelineName, pipelineVariables);
 
         EnvironmentVariablesConfig stageVariables = new EnvironmentVariablesConfig();
         stageVariables.add("stageEnv", "stageBar");
         stageVariables.add("jobEnv", "stageBaz");
-        configHelper.addEnvironmentVariableToStage(fixture.pipelineName, fixture.devStage, stageVariables);
+        configHelper.addEnvironmentVariableToStage(pipelineFixture.pipelineName, pipelineFixture.devStage, stageVariables);
 
         EnvironmentVariablesConfig jobVariables = new EnvironmentVariablesConfig();
         jobVariables.add("jobEnv", "jobBaz");
-        configHelper.addEnvironmentVariableToJob(fixture.pipelineName, fixture.devStage, fixture.JOB_FOR_DEV_STAGE, jobVariables);
+        configHelper.addEnvironmentVariableToJob(pipelineFixture.pipelineName, pipelineFixture.devStage, PipelineWithTwoStages.JOB_FOR_DEV_STAGE, jobVariables);
 
-        Stage stage = scheduleService.rerunJobs(oldStage, List.of(fixture.JOB_FOR_DEV_STAGE), new HttpOperationResult());
+        Stage stage = scheduleService.rerunJobs(oldStage, List.of(PipelineWithTwoStages.JOB_FOR_DEV_STAGE), new HttpOperationResult());
 
         EnvironmentVariables expectedVariableOrder = new EnvironmentVariables();
         expectedVariableOrder.add("pipelineEnv", "pipelineFoo");
@@ -152,20 +153,20 @@ public class ScheduleStageTest {
         expectedVariableOrder.add("jobEnv", "jobBaz");
 
         JobInstances jobInstances = stage.getJobInstances();
-        assertThat(jobInstances.getByName(fixture.JOB_FOR_DEV_STAGE).getPlan().getVariables()).isEqualTo(expectedVariableOrder);
+        assertThat(jobInstances.getByName(PipelineWithTwoStages.JOB_FOR_DEV_STAGE).getPlan().getVariables()).isEqualTo(expectedVariableOrder);
     }
 
     @Test
     public void shouldRerunOnlyGivenJobsFromExistingStage() {
-        Pipeline pipeline = fixture.createdPipelineWithAllStagesPassed();
+        Pipeline pipeline = pipelineFixture.createdPipelineWithAllStagesPassed();
 
-        Stage stage = scheduleService.rerunStage(pipeline.getName(), pipeline.getCounter(), fixture.devStage);
+        Stage stage = scheduleService.rerunStage(pipeline.getName(), pipeline.getCounter(), pipelineFixture.devStage);
 
         dbHelper.passStage(stage);
 
         assertThat(stage.hasRerunJobs()).isFalse();
 
-        Stage oldStage = stageDao.stageById(pipeline.getStages().byName(fixture.devStage).getId());
+        Stage oldStage = stageDao.stageById(pipeline.getStages().byName(pipelineFixture.devStage).getId());
 
         assertThat(oldStage.hasRerunJobs()).isFalse();
 
@@ -202,15 +203,15 @@ public class ScheduleStageTest {
 
     @Test
     public void shouldConsiderCopyOfRerunJobACopyAndNotRerun() {
-        Pipeline pipeline = fixture.createdPipelineWithAllStagesPassed();
+        Pipeline pipeline = pipelineFixture.createdPipelineWithAllStagesPassed();
 
-        Stage stage = scheduleService.rerunStage(pipeline.getName(), pipeline.getCounter(), fixture.devStage);
+        Stage stage = scheduleService.rerunStage(pipeline.getName(), pipeline.getCounter(), pipelineFixture.devStage);
 
         assertThat(stage.hasRerunJobs()).isFalse();
 
         dbHelper.passStage(stage);
 
-        Stage oldStage = stageDao.stageById(pipeline.getStages().byName(fixture.devStage).getId());
+        Stage oldStage = stageDao.stageById(pipeline.getStages().byName(pipelineFixture.devStage).getId());
 
         assertThat(oldStage.hasRerunJobs()).isFalse();
 
@@ -254,11 +255,11 @@ public class ScheduleStageTest {
 
     @Test
     public void shouldFailRerunWhenJobConfigDoesNotExist() {
-        Pipeline pipeline = fixture.createPipelineWithFirstStageScheduled();
-        Stage oldStage = pipeline.getStages().byName(fixture.devStage);
+        Pipeline pipeline = pipelineFixture.createPipelineWithFirstStageScheduled();
+        Stage oldStage = pipeline.getStages().byName(pipelineFixture.devStage);
         dbHelper.pass(pipeline);
 
-        configHelper.removeJob(pipeline.getName(), fixture.devStage, "foo3");
+        configHelper.removeJob(pipeline.getName(), pipelineFixture.devStage, "foo3");
 
         HttpOperationResult result = new HttpOperationResult();
 
@@ -271,8 +272,8 @@ public class ScheduleStageTest {
 
     @Test
     public void shouldRerunJobsWithUserAsApprover() {
-        Pipeline pipeline = fixture.createdPipelineWithAllStagesPassed();
-        Stage oldStage = pipeline.getStages().byName(fixture.devStage);
+        Pipeline pipeline = pipelineFixture.createdPipelineWithAllStagesPassed();
+        Stage oldStage = pipeline.getStages().byName(pipelineFixture.devStage);
 
         SessionUtilsHelper.loginAs("looser");
         HttpOperationResult result = new HttpOperationResult();
@@ -285,8 +286,8 @@ public class ScheduleStageTest {
 
     @Test
     public void shouldFailWhenStageAlreadyActive() {
-        Pipeline pipeline = fixture.createPipelineWithFirstStageScheduled();
-        Stage oldStage = pipeline.getStages().byName(fixture.devStage);
+        Pipeline pipeline = pipelineFixture.createPipelineWithFirstStageScheduled();
+        Stage oldStage = pipeline.getStages().byName(pipelineFixture.devStage);
 
         HttpOperationResult result = new HttpOperationResult();
         Stage newStage = scheduleService.rerunJobs(oldStage, List.of("foo", "foo3"), result);
@@ -299,8 +300,8 @@ public class ScheduleStageTest {
 
     @Test
     public void shouldNotRunStageIfItsPreviousStageHasNotBeenRun() {
-        Pipeline pipeline = fixture.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
-        String theThirdStage = fixture.stageName(3);
+        Pipeline pipeline = pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
+        String theThirdStage = pipelineFixture.stageName(3);
         try {
             scheduleService.rerunStage(pipeline.getName(), pipeline.getCounter(), theThirdStage);
         } catch (Exception e) {
@@ -312,10 +313,10 @@ public class ScheduleStageTest {
 
     @Test
     public void shouldNotScheduleAStageIfAnyStageForThatPipelineIsAlreadyRunning() throws Exception {
-        fixture.createdPipelineWithAllStagesPassed();
+        pipelineFixture.createdPipelineWithAllStagesPassed();
         final List<Exception> exceptions = new ArrayList<>();
-        Thread t1 = new Thread(rerunStage(exceptions, fixture.devStage));
-        Thread t2 = new Thread(rerunStage(exceptions, fixture.ftStage));
+        Thread t1 = new Thread(rerunStage(exceptions, pipelineFixture.devStage));
+        Thread t2 = new Thread(rerunStage(exceptions, pipelineFixture.ftStage));
 
         t1.start();
         t2.start();
@@ -328,7 +329,7 @@ public class ScheduleStageTest {
     private Runnable rerunStage(final List<Exception> exceptions, final String ftStage) {
         return () -> {
             try {
-                scheduleService.rerunStage(fixture.pipelineName, fixture.pipelineCounter(), ftStage);
+                scheduleService.rerunStage(pipelineFixture.pipelineName, pipelineFixture.pipelineCounter(), ftStage);
             } catch (Exception e) {
                 exceptions.add(e);
             }

@@ -26,9 +26,8 @@ import com.thoughtworks.go.helper.*;
 import com.thoughtworks.go.presentation.pipelinehistory.StageHistoryEntry;
 import com.thoughtworks.go.presentation.pipelinehistory.StageHistoryPage;
 import com.thoughtworks.go.presentation.pipelinehistory.StageInstanceModels;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.persistence.MaterialRepository;
-import com.thoughtworks.go.server.service.InstanceFactory;
 import com.thoughtworks.go.server.service.ScheduleService;
 import com.thoughtworks.go.server.service.ScheduleTestUtil;
 import com.thoughtworks.go.server.service.result.HttpOperationResult;
@@ -37,10 +36,10 @@ import com.thoughtworks.go.server.transaction.TransactionTemplate;
 import com.thoughtworks.go.server.util.Pagination;
 import com.thoughtworks.go.util.Clock;
 import com.thoughtworks.go.util.GoConfigFileHelper;
+import com.thoughtworks.go.util.TestingClock;
 import com.thoughtworks.go.util.TimeProvider;
 import net.sf.ehcache.Element;
 import net.sf.ehcache.event.CacheEventListener;
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,17 +53,23 @@ import org.springframework.transaction.support.TransactionCallbackWithoutResult;
 import org.springframework.util.ReflectionUtils;
 
 import java.lang.reflect.Method;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
 
+import static com.thoughtworks.go.config.Approval.TYPE_MANUAL;
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static com.thoughtworks.go.config.CaseInsensitiveString.str;
 import static com.thoughtworks.go.domain.PersistentObject.NOT_PERSISTED;
+import static com.thoughtworks.go.domain.buildcause.BuildCause.APPROVER_AUTOMATICALLY_TRIGGERED;
 import static com.thoughtworks.go.helper.PipelineMother.custom;
 import static com.thoughtworks.go.helper.PipelineMother.twoBuildPlansWithResourcesAndMaterials;
-import static com.thoughtworks.go.util.GoConstants.DEFAULT_APPROVED_BY;
-import static com.thoughtworks.go.util.IBatisUtil.arguments;
 import static java.lang.String.format;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
+@SuppressWarnings({"unused", "UnusedAssignment"})
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(locations = {
     "classpath:/applicationContext-global.xml",
@@ -123,7 +128,7 @@ public class StageSqlMapDaoIntegrationTest {
     @Test
     public void shouldUpdateCompletingTransitionIdWhenUpdatingResult() {
         Pipeline pipeline = pipelineWithOnePassedAndOneCurrentlyRunning(mingleConfig)[1];
-        Stage stage = pipeline.getStages().get(0);
+        Stage stage = pipeline.getStages().getFirst();
         stage.setCompletedByTransitionId(10L);
         updateResultInTransaction(stage, StageResult.Passed);
         Stage reloaded = stageDao.stageById(stage.getId());
@@ -133,7 +138,7 @@ public class StageSqlMapDaoIntegrationTest {
     @Test
     public void onStageUpdateShouldSetTheLastTransitionedTimeOnTheUpdateStageSinceTheTimeIsGeneratedByADatabaseTrigger() {
         Pipeline pipeline = pipelineWithFirstStageRunning(mingleConfig);
-        Stage stage = pipeline.getStages().get(0);
+        Stage stage = pipeline.getStages().getFirst();
 
         assertThat(stage.getLastTransitionedTime()).isNull();
 
@@ -145,7 +150,7 @@ public class StageSqlMapDaoIntegrationTest {
     @Test
     public void shouldUpdateStageStateWhenUpdatingResult() {
         Pipeline pipeline = pipelineWithOnePassedAndOneCurrentlyRunning(mingleConfig)[1];
-        Stage stage = pipeline.getStages().get(0);
+        Stage stage = pipeline.getStages().getFirst();
         stage.calculateResult();
         StageState initialState = stage.stageState();
         updateResultInTransaction(stage, StageResult.Passed);
@@ -162,58 +167,54 @@ public class StageSqlMapDaoIntegrationTest {
 
         Stages stages = stageDao.getAllRunsOfStageForPipelineInstance(completed.getName(), completed.getCounter(), STAGE_DEV);
         assertThat(stages.size()).isEqualTo(2);
-        assertThat(stages.first().getIdentifier()).isEqualTo(new StageIdentifier(completed.getName(), completed.getCounter(), completed.getLabel(), STAGE_DEV, "1"));
-        assertThat(stages.last().getIdentifier()).isEqualTo(new StageIdentifier(completed.getName(), completed.getCounter(), completed.getLabel(), STAGE_DEV, "2"));
+        assertThat(stages.getFirst().getIdentifier()).isEqualTo(new StageIdentifier(completed.getName(), completed.getCounter(), completed.getLabel(), STAGE_DEV, "1"));
+        assertThat(stages.getLast().getIdentifier()).isEqualTo(new StageIdentifier(completed.getName(), completed.getCounter(), completed.getLabel(), STAGE_DEV, "2"));
     }
 
     @Test
     public void shouldGetPassedStagesByName() {
         List<Pipeline> completedPipelines = createFourPipelines();
 
-        Stages stages = stageDao.getPassedStagesByName(CaseInsensitiveString.str(mingleConfig.name()), STAGE_DEV, 2, 0);
-        Stage firstStage = stages.first();
-        Pipeline firstPipeline = completedPipelines.get(0);
+        Stages stages = stageDao.getPassedStagesByName(str(mingleConfig.name()), STAGE_DEV, 2, 0);
+        Stage firstStage = stages.getFirst();
+        Pipeline firstPipeline = completedPipelines.getFirst();
         assertThat(firstStage.getPipelineId()).isEqualTo(firstPipeline.getId());
         assertThat(firstStage.getIdentifier()).isEqualTo(new StageIdentifier(firstPipeline, firstStage));
-        assertThat(firstStage.getJobInstances().get(0).getName()).isEqualTo("NixBuild");
+        assertThat(firstStage.getJobInstances().getFirst().getName()).isEqualTo("NixBuild");
 
         assertThat(stages.size()).isEqualTo(2);
-        assertThat(stages.last().getPipelineId()).isEqualTo(completedPipelines.get(1).getId());
-        stages = stageDao.getPassedStagesByName(CaseInsensitiveString.str(mingleConfig.name()), STAGE_DEV, 2, 2);
+        assertThat(stages.getLast().getPipelineId()).isEqualTo(completedPipelines.get(1).getId());
+        stages = stageDao.getPassedStagesByName(str(mingleConfig.name()), STAGE_DEV, 2, 2);
         assertThat(stages.size()).isEqualTo(2);
-        assertThat(stages.first().getPipelineId()).isEqualTo(completedPipelines.get(2).getId());
-        assertThat(stages.last().getPipelineId()).isEqualTo(completedPipelines.get(3).getId());
+        assertThat(stages.getFirst().getPipelineId()).isEqualTo(completedPipelines.get(2).getId());
+        assertThat(stages.getLast().getPipelineId()).isEqualTo(completedPipelines.get(3).getId());
     }
 
     @Test
     public void shouldGetStageInstancesOfTheSameStageRunStartingFromTheLatest() {
-        List<Pipeline> completedPipelines = new ArrayList<>();
         mingleConfig.add(StageConfigMother.custom("new-stage", "job-1"));
         for (int i = 0; i < 10; i++) {
             Pipeline completed = dbHelper.schedulePipelineWithAllStages(mingleConfig, ModificationsMother.modifySomeFiles(mingleConfig));
             dbHelper.pass(completed);
-            completedPipelines.add(completed);
         }
-        List<Stage> stages = stageDao.findStageHistoryForChart(mingleConfig.name().toString(), mingleConfig.first().name().toString(), 10, 0);
-        assertStagesFound(stages, 10, CaseInsensitiveString.str(mingleConfig.first().name()));
+        List<Stage> stages = stageDao.findStageHistoryForChart(mingleConfig.name().toString(), mingleConfig.getFirst().name().toString(), 10, 0);
+        assertStagesFound(stages, 10, str(mingleConfig.getFirst().name()));
     }
 
     @Test
     public void shouldGetStageInstancesBasedUponAPageNumberAndLimit() {
-        List<Pipeline> completedPipelines = new ArrayList<>();
         mingleConfig.add(StageConfigMother.custom("new-stage", "job-1"));
         for (int i = 0; i < 10; i++) {
             Pipeline completed = dbHelper.schedulePipelineWithAllStages(mingleConfig, ModificationsMother.modifySomeFiles(mingleConfig));
             dbHelper.pass(completed);
-            completedPipelines.add(completed);
         }
 
-        List<Stage> stages = stageDao.findStageHistoryForChart(mingleConfig.name().toString(), mingleConfig.first().name().toString(), 5, 0);
-        assertThat(stages.get(0).getIdentifier().getPipelineCounter()).isEqualTo(10);
-        assertStagesFound(stages, 5, CaseInsensitiveString.str(mingleConfig.first().name()));
-        stages = stageDao.findStageHistoryForChart(mingleConfig.name().toString(), mingleConfig.first().name().toString(), 5, 5);
-        assertThat(stages.get(0).getIdentifier().getPipelineCounter()).isEqualTo(5);
-        assertStagesFound(stages, 5, CaseInsensitiveString.str(mingleConfig.first().name()));
+        List<Stage> stages = stageDao.findStageHistoryForChart(mingleConfig.name().toString(), mingleConfig.getFirst().name().toString(), 5, 0);
+        assertThat(stages.getFirst().getIdentifier().getPipelineCounter()).isEqualTo(10);
+        assertStagesFound(stages, 5, str(mingleConfig.getFirst().name()));
+        stages = stageDao.findStageHistoryForChart(mingleConfig.name().toString(), mingleConfig.getFirst().name().toString(), 5, 5);
+        assertThat(stages.getFirst().getIdentifier().getPipelineCounter()).isEqualTo(5);
+        assertStagesFound(stages, 5, str(mingleConfig.getFirst().name()));
     }
 
     @Test
@@ -227,8 +228,8 @@ public class StageSqlMapDaoIntegrationTest {
             completedPipelines.add(completed);
         }
         HttpOperationResult result = new HttpOperationResult();
-        scheduleService.rerunJobs(completedPipelines.get(0).getFirstStage(), List.of(CaseInsensitiveString.str(mingleConfig.first().getJobs().first().name())), result);
-        List<Stage> stages = stageDao.findStageHistoryForChart(mingleConfig.name().toString(), mingleConfig.first().name().toString(), 10, 0);
+        scheduleService.rerunJobs(completedPipelines.getFirst().getFirstStage(), List.of(str(mingleConfig.getFirst().getJobs().getFirst().name())), result);
+        List<Stage> stages = stageDao.findStageHistoryForChart(mingleConfig.name().toString(), mingleConfig.getFirst().name().toString(), 10, 0);
         assertThat(stages.size()).isEqualTo(5);
     }
 
@@ -236,20 +237,18 @@ public class StageSqlMapDaoIntegrationTest {
     public void shouldNotIncludeCancelledStagesWhileGettingLastStageInstances() {
         configHelper.addPipeline(mingleConfig);
         configHelper.turnOffSecurity();
-        List<Pipeline> completedPipelines = new ArrayList<>();
         Pipeline pipeline;
         for (int i = 0; i < 3; i++) {
             pipeline = dbHelper.schedulePipelineWithAllStages(mingleConfig, ModificationsMother.modifySomeFiles(mingleConfig));
             dbHelper.pass(pipeline);
-            completedPipelines.add(pipeline);
         }
-        List<Stage> stages = stageDao.findStageHistoryForChart(mingleConfig.name().toString(), mingleConfig.first().name().toString(), 10, 0);
+        List<Stage> stages = stageDao.findStageHistoryForChart(mingleConfig.name().toString(), mingleConfig.getFirst().name().toString(), 10, 0);
         assertThat(stages.size()).isEqualTo(3);
 
         pipeline = dbHelper.schedulePipelineWithAllStages(mingleConfig, ModificationsMother.modifySomeFiles(mingleConfig));
         dbHelper.cancelStage(pipeline.getFirstStage());
 
-        stages = stageDao.findStageHistoryForChart(mingleConfig.name().toString(), mingleConfig.first().name().toString(), 10, 0);
+        stages = stageDao.findStageHistoryForChart(mingleConfig.name().toString(), mingleConfig.getFirst().name().toString(), 10, 0);
         assertThat(stages.size()).isEqualTo(3);
     }
 
@@ -257,19 +256,17 @@ public class StageSqlMapDaoIntegrationTest {
     public void shouldGetTotalStageCountForChart() {
         configHelper.addPipeline(mingleConfig);
         configHelper.turnOffSecurity();
-        List<Pipeline> completedPipelines = new ArrayList<>();
         Pipeline pipeline;
         for (int i = 0; i < 3; i++) {
             pipeline = dbHelper.schedulePipelineWithAllStages(mingleConfig, ModificationsMother.modifySomeFiles(mingleConfig));
             dbHelper.pass(pipeline);
-            completedPipelines.add(pipeline);
         }
-        assertThat(stageDao.getTotalStageCountForChart(mingleConfig.name().toString(), mingleConfig.first().name().toString())).isEqualTo(3);
+        assertThat(stageDao.getTotalStageCountForChart(mingleConfig.name().toString(), mingleConfig.getFirst().name().toString())).isEqualTo(3);
 
         pipeline = dbHelper.schedulePipelineWithAllStages(mingleConfig, ModificationsMother.modifySomeFiles(mingleConfig));
         dbHelper.cancelStage(pipeline.getFirstStage());
 
-        assertThat(stageDao.getTotalStageCountForChart(mingleConfig.name().toString(), mingleConfig.first().name().toString())).isEqualTo(3);
+        assertThat(stageDao.getTotalStageCountForChart(mingleConfig.name().toString(), mingleConfig.getFirst().name().toString())).isEqualTo(3);
     }
 
     @Test
@@ -277,7 +274,7 @@ public class StageSqlMapDaoIntegrationTest {
         SqlMapClientTemplate mockClient = mock(SqlMapClientTemplate.class);
         stageDao.setSqlMapClientTemplate(mockClient);
 
-        Map<String, Object> toGet = arguments("pipelineName", "maar").and("stageName", "khoon").asMap();
+        Map<String, Object> toGet = Map.of("pipelineName", "maar", "stageName", "khoon");
 
         when(mockClient.queryForObject("getTotalStageCountForChart", toGet)).thenReturn(3);
 
@@ -293,13 +290,13 @@ public class StageSqlMapDaoIntegrationTest {
         SqlMapClientTemplate mockClient = mock(SqlMapClientTemplate.class);
         stageDao.setSqlMapClientTemplate(mockClient);
 
-        Map<String, Object> toGet = arguments("pipelineName", "maar").and("stageName", "khoon").asMap();
+        Map<String, Object> toGet = Map.of("pipelineName", "maar", "stageName", "khoon");
 
         when(mockClient.queryForObject("getTotalStageCountForChart", toGet)).thenReturn(3).thenReturn(4);
 
         assertThat(stageDao.getTotalStageCountForChart("maar", "khoon")).isEqualTo(3);//Should prime the cache
-        Stage stage = new Stage("khoon", new JobInstances(), "foo", null, "manual", new TimeProvider());
-        Pipeline pipeline = new Pipeline("maar", "${COUNT}", BuildCause.createWithEmptyModifications(), new EnvironmentVariables(), stage);
+        Stage stage = new Stage("khoon", new JobInstances(), "foo", null, TYPE_MANUAL, new TimeProvider());
+        Pipeline pipeline = new Pipeline("maar", "${COUNT}", BuildCause.createEmpty(), new EnvironmentVariables(), stage);
         pipeline.setId(1);
         stageDao.save(pipeline, stage);//Should Invalidate the cache
 
@@ -313,12 +310,12 @@ public class StageSqlMapDaoIntegrationTest {
         SqlMapClientTemplate mockClient = mock(SqlMapClientTemplate.class);
         stageDao.setSqlMapClientTemplate(mockClient);
 
-        Map<String, Object> toGet = arguments("pipelineName", "maar").and("stageName", "khoon").asMap();
+        Map<String, Object> toGet = Map.of("pipelineName", "maar", "stageName", "khoon");
 
         when(mockClient.queryForObject("getTotalStageCountForChart", toGet)).thenReturn(3).thenReturn(4);
 
         assertThat(stageDao.getTotalStageCountForChart("maar", "khoon")).isEqualTo(3);//Should prime the cache
-        Stage stage = new Stage("khoon", new JobInstances(), "foo", null, "manual", new TimeProvider());
+        Stage stage = new Stage("khoon", new JobInstances(), "foo", null, TYPE_MANUAL, new TimeProvider());
         stage.setIdentifier(new StageIdentifier("maar/2/khoon/1"));
         updateResultInTransaction(stage, StageResult.Cancelled);//Should Invalidate the cache
 
@@ -343,27 +340,27 @@ public class StageSqlMapDaoIntegrationTest {
         Pipeline thirdPipeline = completedPipelines.get(2);
         Pipeline fourthPipeline = completedPipelines.get(3);
 
-        Stage firstStageOfPipeline = firstPipeline.getStages().get(0);
+        Stage firstStageOfPipeline = firstPipeline.getStages().getFirst();
         StageIdentifier stageIdentifierOfFirstStageOfFirstPipeline = firstStageOfPipeline.getIdentifier();
 
         List<StageAsDMR> stages = stageDao.getPassedStagesAfter(stageIdentifierOfFirstStageOfFirstPipeline, 2, 0);
 
-        StageAsDMR firstStage = stages.get(0);
+        StageAsDMR firstStage = stages.getFirst();
         //ensure populates the relevant fields
         assertThat(firstStage).isEqualTo(stageAsDmr(stageDao.stageById(secondPipeline.getFirstStage().getId())));
 
         //ensure got the correct records
         assertThat(stages.size()).isEqualTo(2);
 
-        assertThat(stages.get(0)).isEqualTo(stageAsDmr(stageDao.stageById(secondPipeline.getFirstStage().getId())));
-        assertThat(stages.get(1)).isEqualTo(stageAsDmr(stageDao.stageById(thirdPipeline.getFirstStage().getId())));
+        assertThat(stages.getFirst()).isEqualTo(stageAsDmr(stageDao.stageById(secondPipeline.getFirstStage().getId())));
+        assertThat(stages.getLast()).isEqualTo(stageAsDmr(stageDao.stageById(thirdPipeline.getFirstStage().getId())));
 
         //ensure gets the next page
         stages = stageDao.getPassedStagesAfter(stageIdentifierOfFirstStageOfFirstPipeline, 2, 2);
 
         assertThat(stages.size()).isEqualTo(1);
         Stage fourthPipelineStage = fourthPipeline.getFirstStage();
-        assertThat(stages.get(0)).isEqualTo(stageAsDmr(stageDao.stageById(fourthPipelineStage.getId())));
+        assertThat(stages.getFirst()).isEqualTo(stageAsDmr(stageDao.stageById(fourthPipelineStage.getId())));
     }
 
     @Test
@@ -377,24 +374,24 @@ public class StageSqlMapDaoIntegrationTest {
         pipelines.add(pipelineWithFirstStageFailed(mingleConfig));
         pipelines.add(pipelineWithFirstStagePassed(mingleConfig));
 
-        Pipeline firstPipeline_passed = pipelines.get(0);
+        Pipeline firstPipeline_passed = pipelines.getFirst();
         Pipeline thirdPipeline_passed = pipelines.get(2);
         Pipeline fifthPipeline_passed = pipelines.get(4);
         Pipeline seventhPipeline_passed = pipelines.get(6);
 
-        StageAsDMR stageOfThirdPipeline = stageAsDmr(stageDao.stageById(thirdPipeline_passed.getStages().get(0).getId()));
-        StageAsDMR stageOfFifthPipeline = stageAsDmr(stageDao.stageById(fifthPipeline_passed.getStages().get(0).getId()));
-        StageAsDMR stageOfSeventhPipeline = stageAsDmr(stageDao.stageById(seventhPipeline_passed.getStages().get(0).getId()));
+        StageAsDMR stageOfThirdPipeline = stageAsDmr(stageDao.stageById(thirdPipeline_passed.getStages().getFirst().getId()));
+        StageAsDMR stageOfFifthPipeline = stageAsDmr(stageDao.stageById(fifthPipeline_passed.getStages().getFirst().getId()));
+        StageAsDMR stageOfSeventhPipeline = stageAsDmr(stageDao.stageById(seventhPipeline_passed.getStages().getFirst().getId()));
 
-        List<StageAsDMR> twoPassedAfterFirstPipeline = stageDao.getPassedStagesAfter(firstPipeline_passed.getStages().get(0).getIdentifier(), 2, 0);
+        List<StageAsDMR> twoPassedAfterFirstPipeline = stageDao.getPassedStagesAfter(firstPipeline_passed.getStages().getFirst().getIdentifier(), 2, 0);
         assertThat(twoPassedAfterFirstPipeline.size()).isEqualTo(2);
         assertThat(twoPassedAfterFirstPipeline).isEqualTo(List.of(stageOfThirdPipeline, stageOfFifthPipeline));
 
-        List<StageAsDMR> highLimitOfPipelineWhichPassedAfterFirstPipeline = stageDao.getPassedStagesAfter(firstPipeline_passed.getStages().get(0).getIdentifier(), 5, 0);
+        List<StageAsDMR> highLimitOfPipelineWhichPassedAfterFirstPipeline = stageDao.getPassedStagesAfter(firstPipeline_passed.getStages().getFirst().getIdentifier(), 5, 0);
         assertThat(highLimitOfPipelineWhichPassedAfterFirstPipeline.size()).isEqualTo(3);
         assertThat(highLimitOfPipelineWhichPassedAfterFirstPipeline).isEqualTo(List.of(stageOfThirdPipeline, stageOfFifthPipeline, stageOfSeventhPipeline));
 
-        List<StageAsDMR> pipelineAfterLatestRun = stageDao.getPassedStagesAfter(seventhPipeline_passed.getStages().get(0).getIdentifier(), 1, 0);
+        List<StageAsDMR> pipelineAfterLatestRun = stageDao.getPassedStagesAfter(seventhPipeline_passed.getStages().getFirst().getIdentifier(), 1, 0);
         assertThat(pipelineAfterLatestRun.size()).isEqualTo(0);
     }
 
@@ -402,9 +399,9 @@ public class StageSqlMapDaoIntegrationTest {
     public void getAllRunsOfStageForPipelineInstance_shouldCacheAllTheStages() {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
 
-        Stage first = StageMother.passedStageInstance("pipeline", "stage", 1, "job", new Date());
-        Stage second = StageMother.passedStageInstance("pipeline", "stage", 2, "job", new Date());
-        Stage third = StageMother.passedStageInstance("pipeline", "stage", 3, "job", new Date());
+        Stage first = StageMother.passedStageInstance("pipeline", "stage", 1, "job", Instant.now());
+        Stage second = StageMother.passedStageInstance("pipeline", "stage", 2, "job", Instant.now());
+        Stage third = StageMother.passedStageInstance("pipeline", "stage", 3, "job", Instant.now());
         List<Stage> expected = List.of(third, second, first);
 
         stageDao.setSqlMapClientTemplate(mockTemplate);
@@ -413,7 +410,7 @@ public class StageSqlMapDaoIntegrationTest {
         Stages actual = stageDao.getAllRunsOfStageForPipelineInstance("pipeline", 1, "stage");
         assertThat(actual).isEqualTo(expected);
         assertThat(expected == actual).isFalse();
-        assertThat(expected.get(0) == actual.get(0)).isFalse();
+        assertThat(expected.getFirst() == actual.getFirst()).isFalse();
         stageDao.getAllRunsOfStageForPipelineInstance("pipeline", 1, "stage");
         verify(mockTemplate, times(1)).queryForList(eq("getAllRunsOfStageForPipelineInstance"), any());
     }
@@ -422,9 +419,9 @@ public class StageSqlMapDaoIntegrationTest {
     public void getAllRunsOfStageForPipelineInstance_shouldClearCacheOnJobStateChange() {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
 
-        Stage first = StageMother.passedStageInstance("pipeline", "stage", 1, "job", new Date());
-        Stage second = StageMother.passedStageInstance("pipeline", "stage", 2, "job", new Date());
-        Stage third = StageMother.passedStageInstance("pipeline", "stage", 3, "job", new Date());
+        Stage first = StageMother.passedStageInstance("pipeline", "stage", 1, "job", Instant.now());
+        Stage second = StageMother.passedStageInstance("pipeline", "stage", 2, "job", Instant.now());
+        Stage third = StageMother.passedStageInstance("pipeline", "stage", 3, "job", Instant.now());
         List<Stage> expected = List.of(third, second, first);
 
         stageDao.setSqlMapClientTemplate(mockTemplate);
@@ -443,8 +440,8 @@ public class StageSqlMapDaoIntegrationTest {
     public void getAllRunsOfStageForPipelineInstance_shouldRemoveFromCacheOnStageSave() {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
 
-        Stage newStage = StageMother.passedStageInstance("pipeline", "stage", 2, "job", new Date());
-        Stage first = StageMother.passedStageInstance("pipeline", "stage", 1, "job", new Date());
+        Stage newStage = StageMother.passedStageInstance("pipeline", "stage", 2, "job", Instant.now());
+        Stage first = StageMother.passedStageInstance("pipeline", "stage", 1, "job", Instant.now());
         List<Stage> expected = List.of(first);
         List<Stage> expectedSecondTime = List.of(first, newStage);
 
@@ -469,8 +466,8 @@ public class StageSqlMapDaoIntegrationTest {
     public void getAllRunsOfStageForPipelineInstance_shouldRemoveFromCacheOnStageStatusChange() {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
 
-        Stage newStage = StageMother.passedStageInstance("pipeline", "stage", 2, "job", new Date());
-        Stage first = StageMother.passedStageInstance("pipeline", "stage", 1, "job", new Date());
+        Stage newStage = StageMother.passedStageInstance("pipeline", "stage", 2, "job", Instant.now());
+        Stage first = StageMother.passedStageInstance("pipeline", "stage", 1, "job", Instant.now());
         List<Stage> expected = List.of(first);
         List<Stage> expectedSecondTime = List.of(first, newStage);
 
@@ -495,7 +492,7 @@ public class StageSqlMapDaoIntegrationTest {
     public void findStageWithIdentifier_shouldCacheTheStage() {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
 
-        Stage stage = StageMother.passedStageInstance("pipeline", "stage", "job", new Date());
+        Stage stage = StageMother.passedStageInstance("pipeline", "stage", "job", Instant.now());
 
         stageDao.setSqlMapClientTemplate(mockTemplate);
         when(mockTemplate.queryForObject(eq("findStageWithJobsByIdentifier"), any())).thenReturn(stage);
@@ -510,7 +507,7 @@ public class StageSqlMapDaoIntegrationTest {
     public void findStageWithIdentifier_shouldClearCacheWhenJobStateChanges() {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
 
-        Stage stage = StageMother.passedStageInstance("pipeline", "stage", "job", new Date());
+        Stage stage = StageMother.passedStageInstance("pipeline", "stage", "job", Instant.now());
 
         stageDao.setSqlMapClientTemplate(mockTemplate);
         when(mockTemplate.queryForObject(eq("findStageWithJobsByIdentifier"), any())).thenReturn(stage);
@@ -539,9 +536,9 @@ public class StageSqlMapDaoIntegrationTest {
     public void findStageWithIdentifier_shouldRemoveFromTheCacheAllStagesWithTheNameOfTheSameCounterOnStageStatusChange() {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
 
-        Stage first = StageMother.passedStageInstance("pipeline", "stage", "job", new Date());
+        Stage first = StageMother.passedStageInstance("pipeline", "stage", "job", Instant.now());
         first.setCounter(1);
-        Stage second = StageMother.passedStageInstance("pipeline", "stage", "job", new Date());
+        Stage second = StageMother.passedStageInstance("pipeline", "stage", "job", Instant.now());
         second.setCounter(2);
 
         stageDao.setSqlMapClientTemplate(mockTemplate);
@@ -561,9 +558,9 @@ public class StageSqlMapDaoIntegrationTest {
     public void findStageWithIdentifier_shouldRemoveFromTheCacheOnSave() {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
 
-        Stage first = StageMother.passedStageInstance("pipeline", "stage", "job", new Date());
+        Stage first = StageMother.passedStageInstance("pipeline", "stage", "job", Instant.now());
         first.setCounter(1);
-        Stage second = StageMother.passedStageInstance("pipeline", "stage", "job", new Date());
+        Stage second = StageMother.passedStageInstance("pipeline", "stage", "job", Instant.now());
         second.setCounter(2);
 
         stageDao.setSqlMapClientTemplate(mockTemplate);
@@ -585,7 +582,7 @@ public class StageSqlMapDaoIntegrationTest {
     public void findStageWithIdentifier_shouldRemoveFromTheCacheOnStageStatusChange() {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
 
-        Stage stage = StageMother.passedStageInstance("pipeline", "stage", "job", new Date());
+        Stage stage = StageMother.passedStageInstance("pipeline", "stage", "job", Instant.now());
 
         stageDao.setSqlMapClientTemplate(mockTemplate);
         when(mockTemplate.queryForObject(eq("findStageWithJobsByIdentifier"), any())).thenReturn(stage);
@@ -602,7 +599,7 @@ public class StageSqlMapDaoIntegrationTest {
     public void findStageHistoryPage_shouldCacheStageHistoryPage() {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
 
-        Stage stage = StageMother.passedStageInstance("dev", "java", "pipeline-name");
+        Stage stage = StageMother.passedStageInstance("pipeline-name", "dev", "java");
         stage.setApprovedBy("admin");
 
         stageDao.setSqlMapClientTemplate(mockTemplate);
@@ -615,12 +612,12 @@ public class StageSqlMapDaoIntegrationTest {
         StageHistoryPage stageHistoryPageInNextQuery = stageDao.findStageHistoryPage(stage, 10);
 
         assertThat(stageHistoryPage.getStages()).isEqualTo(stageList);
-        assertThat(stageHistoryPage.getPagination()).isEqualTo(Pagination.pageFor(10, 20, 10));
+        assertThat(stageHistoryPage.getPagination()).isEqualTo(Pagination.pageByItemNumber(10, 20, 10));
         assertThat(stageHistoryPageInNextQuery.getStages()).isEqualTo(stageList);
-        assertThat(stageHistoryPageInNextQuery.getPagination()).isEqualTo(Pagination.pageFor(10, 20, 10));
+        assertThat(stageHistoryPageInNextQuery.getPagination()).isEqualTo(Pagination.pageByItemNumber(10, 20, 10));
 
-        stageHistoryPage.getStages().get(0).setState(StageState.Failing);
-        assertThat(stageHistoryPageInNextQuery.getStages().get(0).getState()).isEqualTo(StageState.Passed);
+        stageHistoryPage.getStages().getFirst().setState(StageState.Failing);
+        assertThat(stageHistoryPageInNextQuery.getStages().getFirst().getState()).isEqualTo(StageState.Passed);
 
         verify(mockTemplate, times(1)).queryForList(eq("findStageHistoryPage"), any());
     }
@@ -635,9 +632,9 @@ public class StageSqlMapDaoIntegrationTest {
         fail(second);
         Pipeline third = pipelineWithFirstStageRunning(mingleConfig);
 
-        Stage actual = stageDao.mostRecentPassed(CaseInsensitiveString.str(mingleConfig.name()), STAGE_DEV);
+        Stage actual = stageDao.mostRecentPassed(str(mingleConfig.name()), STAGE_DEV);
         assertThat(actual.getId()).isEqualTo(pipelineAndFirstStageOf(expected).stage.getId());
-        assertThat(actual.getApprovedBy()).isEqualTo(DEFAULT_APPROVED_BY);
+        assertThat(actual.getApprovedBy()).isEqualTo(APPROVER_AUTOMATICALLY_TRIGGERED);
     }
 
     private void setupRescheduledBuild(Pipeline expected) {
@@ -645,14 +642,15 @@ public class StageSqlMapDaoIntegrationTest {
     }
 
     private void setupDiscontinuedBuild(Pipeline pipeline) {
-        JobInstance instance = pipeline.getFirstStage().getJobInstances().first();
+        JobInstance instance = pipeline.getFirstStage().getJobInstances().getFirst();
         instance.discontinue();
         jobInstanceDao.updateStateAndResult(instance);
     }
 
+    @SuppressWarnings("SameParameterValue")
     private void setupRescheduledBuild(Pipeline pipeline, JobResult jobResult) {
-        Stage stage = pipeline.getStages().first();
-        JobInstance rescheduled = stage.getJobInstances().first().clone();
+        Stage stage = pipeline.getStages().getFirst();
+        JobInstance rescheduled = stage.getJobInstances().getFirst().clone();
         rescheduled.changeState(JobState.Rescheduled);
         rescheduled.setResult(jobResult);
         jobInstanceDao.save(stage.getId(), rescheduled);
@@ -661,8 +659,8 @@ public class StageSqlMapDaoIntegrationTest {
     @Test
     public void shouldGetMostRecentStageWithBuilds() {
         pipelineWithOnePassedAndOneCurrentlyRunning(mingleConfig);
-        Stage completed = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(mingleConfig.name()), mingleConfig.get(0));
-        verifyBuildInstancesWithoutCaringAboutTransitions(STAGE_DEV, completed);
+        List<JobInstance> completed = stageDao.mostRecentJobsForStage(str(mingleConfig.name()), str(mingleConfig.getFirst().name()));
+        verifyJobInstancesWithoutCaringAboutTransitions(STAGE_DEV, completed);
     }
 
     @Test
@@ -671,8 +669,8 @@ public class StageSqlMapDaoIntegrationTest {
         stageDao.setSqlMapClientTemplate(mockTemplate);
         when(mockTemplate.queryForObject(eq("getMostRecentId"), any())).thenReturn(20L);
 
-        stageDao.mostRecentId(CaseInsensitiveString.str(mingleConfig.name()), CaseInsensitiveString.str(mingleConfig.get(0).name()));
-        Long id = stageDao.mostRecentId(CaseInsensitiveString.str(mingleConfig.name()), CaseInsensitiveString.str(mingleConfig.get(0).name()));
+        stageDao.mostRecentId(str(mingleConfig.name()), str(mingleConfig.getFirst().name()));
+        long id = stageDao.mostRecentId(str(mingleConfig.name()), str(mingleConfig.getFirst().name()));
 
         assertThat(id).isEqualTo(20L);
         verify(mockTemplate, times(1)).queryForObject(eq("getMostRecentId"), any());
@@ -684,13 +682,13 @@ public class StageSqlMapDaoIntegrationTest {
         stageDao.setSqlMapClientTemplate(mockTemplate);
         when(mockTemplate.queryForObject(eq("getMostRecentId"), any())).thenReturn(20L);
 
-        String pipelineName = CaseInsensitiveString.str(mingleConfig.name());
-        String stageName = CaseInsensitiveString.str(mingleConfig.get(0).name());
+        String pipelineName = str(mingleConfig.name());
+        String stageName = str(mingleConfig.getFirst().name());
         String key = stageDao.cacheKeyForMostRecentId(pipelineName, stageName);
 
         // should query and cache value
         stageDao.mostRecentId(pipelineName, stageName);
-        Long id = stageDao.mostRecentId(pipelineName, stageName);
+        long id = stageDao.mostRecentId(pipelineName, stageName);
         assertThat(id).isEqualTo(20L);
 
         // should clear the cache
@@ -710,7 +708,7 @@ public class StageSqlMapDaoIntegrationTest {
     @Test
     public void shouldNotAllowCachedCopyToBeMutated() {
         Pipeline[] pipelines = pipelineWithOnePassedAndOneCurrentlyRunning(mingleConfig);
-        long id = pipelines[0].getStages().get(0).getId();
+        long id = pipelines[0].getStages().getFirst().getId();
         Stage loaded = stageDao.stageById(id);
         loaded.setName("quux-baz-bar-foo");
         assertThat(loaded.getName()).isEqualTo("quux-baz-bar-foo");
@@ -720,7 +718,7 @@ public class StageSqlMapDaoIntegrationTest {
     @Test
     public void shouldClear_StageById_Cache_OnStageStatusChange() {
         Pipeline[] pipelines = pipelineWithOnePassedAndOneCurrentlyRunning(mingleConfig);
-        Stage stage = pipelines[1].getStages().get(0);
+        Stage stage = pipelines[1].getStages().getFirst();
         long id = stage.getId();
 
         Stage loadedBeforeChange = stageDao.stageById(id);
@@ -733,7 +731,7 @@ public class StageSqlMapDaoIntegrationTest {
     @Test
     public void shouldServeStageByIdLookupFromCache() {
         Pipeline[] pipelines = pipelineWithOnePassedAndOneCurrentlyRunning(mingleConfig);
-        Stage stage = pipelines[1].getStages().get(0);
+        Stage stage = pipelines[1].getStages().getFirst();
 
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
         stageDao.setSqlMapClientTemplate(mockTemplate);
@@ -799,8 +797,10 @@ public class StageSqlMapDaoIntegrationTest {
 
         for (JobInstance job : stage.getJobInstances()) {
             assertThat(job.getIdentifier()).isEqualTo(new JobIdentifier(pipeline, stage, job));
-            assertThat(job.getTransitions().size()).isGreaterThan(0);
-            assertThat(job.getTransitions().first().getCurrentState()).isEqualTo(JobState.Scheduled);
+            assertThat(job.getTransitions()).isNotEmpty()
+                .first()
+                .extracting(JobStateTransition::getCurrentState)
+                .isEqualTo(JobState.Scheduled);
         }
     }
 
@@ -815,51 +815,49 @@ public class StageSqlMapDaoIntegrationTest {
 
     @Test
     public void shouldReturnNullStageWhenStageNotExist() {
-        assertThat(stageDao.findStageWithIdentifier(new StageIdentifier("no-pipeline", null, "1", "no-stage", "1"))).isInstanceOf(NullStage.class);
+        assertThat(stageDao.findStageWithIdentifier(new StageIdentifier("no-pipeline", 1, "1", "no-stage", "1"))).isInstanceOf(NullStage.class);
     }
 
     @Test
-    public void shouldReturnNoStageConfigWhenNoBuildsExist() {
-        Stage completed = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(mingleConfig.name()), mingleConfig.get(0));
-        assertThat(completed.getId()).isEqualTo(-1L);
+    public void shouldThrowMostRecentWhenStageDoesntExist() {
+        assertThatThrownBy(() -> stageDao.mostRecentJobsForStage(str(mingleConfig.name()), str(mingleConfig.getFirst().name())))
+            .isInstanceOf(NullPointerException.class)
+            .hasMessageContaining("Most recent ID not found for pipeline mingle and stage dev");
     }
 
     @Test
-    public void shouldGetMostRecentlyCompletedAndIncompleteWhenThereAreMulipleCompletedBuildInstances() {
+    public void shouldGetMostRecentlyCompletedAndIncompleteWhenThereAreMultipleCompletedJobInstances() {
         dbHelper.pass(dbHelper.schedulePipeline(mingleConfig, new TimeProvider()));
         dbHelper.pass(dbHelper.schedulePipeline(mingleConfig, new TimeProvider()));
         Pipeline running = pipelineWithFirstStageRunning(mingleConfig);
 
-        Stage completed = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(mingleConfig.name()), mingleConfig.get(0));
-        verifyBuildInstancesWithoutCaringAboutTransitions(STAGE_DEV, completed);
+        List<JobInstance> completed = stageDao.mostRecentJobsForStage(mingleConfig.name().toString(), mingleConfig.getFirstStageConfig().name().toString());
+        verifyJobInstancesWithoutCaringAboutTransitions(STAGE_DEV, completed);
     }
 
-    private void verifyBuildInstancesWithoutCaringAboutTransitions(String stageName, Stage instance) {
-        assertThat(instance.getName()).isEqualTo(stageName);
-        assertThat(instance.getId() > 0).isTrue();
-        JobInstances instances = instance.getJobInstances();
+    @SuppressWarnings("SameParameterValue")
+    private void verifyJobInstancesWithoutCaringAboutTransitions(String stageName, List<JobInstance> instances) {
         assertThat(instances.size()).isEqualTo(2);
-        JobInstance nixJob = instances.get(0);
+        JobInstance nixJob = instances.getFirst();
         assertThat(nixJob.getName()).isEqualTo("NixBuild");
-        JobInstance winJob = instances.get(1);
+        JobInstance winJob = instances.getLast();
         assertThat(winJob.getName()).isEqualTo("WinBuild");
         assertThat(nixJob.getState()).isEqualTo(JobState.Completed);
     }
 
-
-    private JobInstance scheduleBuildInstances(Stage scheduledInstance) {
-        JobInstances scheduledBuilds = scheduledInstance.getJobInstances();
-        JobInstance bi = scheduledBuilds.first();
+    private JobInstance scheduleJobInstances(Stage scheduledInstance) {
+        JobInstances scheduled = scheduledInstance.getJobInstances();
+        JobInstance bi = scheduled.getFirst();
         bi.schedule();
         jobInstanceDao.updateStateAndResult(bi);
-        bi = scheduledBuilds.get(1);
+        bi = scheduled.get(1);
         bi.completing(JobResult.Passed);
         bi.completed(new Date());
         jobInstanceDao.updateStateAndResult(bi);
         return bi;
     }
 
-    private JobInstances assignBuildInstances(Stage scheduledStage, Stage completedStage) {
+    private JobInstances assignJobInstances(Stage scheduledStage, Stage completedStage) {
         JobInstances completed = completedStage.getJobInstances();
         for (JobInstance instance : scheduledStage.getJobInstances()) {
             String oldAgentUuid = completed.getByName(instance.getName()).getAgentUuid();
@@ -885,22 +883,19 @@ public class StageSqlMapDaoIntegrationTest {
 
     @Test
     public void shouldGetTheCreatedAndCompletedTimeOfACompletedStage() {
-        Clock clock = mock(Clock.class);
-        Date date = new Date();
-        when(clock.currentTimeMillis()).thenReturn(date.getTime());
-        when(clock.currentTime()).thenReturn(date);
+        Clock clock = new TestingClock();
         Pipeline pipeline = dbHelper.schedulePipeline(custom("pipeline", "stage", new JobConfigs(new JobConfig("job")), new MaterialConfigs(MaterialConfigsMother.hgMaterialConfig())), clock);
         Stage actualStage = stageDao.stageById(pipelineAndFirstStageOf(pipeline).stage.getId());
         assertThat(actualStage.completedDate()).isNull();
-        assertThat(actualStage.getLastTransitionedTime().getTime()).isEqualTo(actualStage.getJobInstances().first().getTransition(JobState.Scheduled).getStateChangeTime().getTime());
+        assertThat(actualStage.getLastTransitionedTime().getTime()).isEqualTo(actualStage.getJobInstances().getFirst().getTransition(JobState.Scheduled).getStateChangeTime().getTime());
 
         dbHelper.pass(pipeline);
 
         actualStage = stageDao.stageById(pipelineAndFirstStageOf(pipeline).stage.getId());
 
-        assertThat(actualStage.scheduledDate()).isEqualTo(date);
-        assertThat(actualStage.getJobInstances().first().getTransition(JobState.Scheduled).getStateChangeTime()).isEqualTo(date);
-        assertThat(actualStage.completedDate()).isEqualTo(actualStage.getJobInstances().last().getTransition(JobState.Completed).getStateChangeTime());
+        assertThat(actualStage.scheduledDate()).isEqualTo(clock.currentUtilDate());
+        assertThat(actualStage.getJobInstances().getFirst().getTransition(JobState.Scheduled).getStateChangeTime()).isEqualTo(clock.currentUtilDate());
+        assertThat(actualStage.completedDate()).isEqualTo(actualStage.getJobInstances().getLast().getTransition(JobState.Completed).getStateChangeTime());
     }
 
     @Test
@@ -908,17 +903,9 @@ public class StageSqlMapDaoIntegrationTest {
         Pipeline completed = dbHelper.schedulePipeline(mingleConfig, new TimeProvider());
         dbHelper.pass(completed);
         Pipeline scheduled = dbHelper.schedulePipeline(mingleConfig, new TimeProvider());
-        assignBuildInstances(pipelineAndFirstStageOf(scheduled).stage, pipelineAndFirstStageOf(completed).stage);
-        Long duration = stageDao.getDurationOfLastSuccessfulOnAgent(CaseInsensitiveString.str(mingleConfig.name()), STAGE_DEV, scheduled.getFirstStage().getJobInstances().get(0));
-        assertThat(duration).isGreaterThan(0L);
-    }
-
-    @Test
-    public void shouldGetCount() {
-        Pipeline[] pipelines = pipelineWithOnePassedAndOneCurrentlyRunning(mingleConfig);
-        Pipeline completed = pipelines[0];
-
-        assertThat(stageDao.getCount(completed.getName(), STAGE_DEV)).isEqualTo(2);
+        assignJobInstances(pipelineAndFirstStageOf(scheduled).stage, pipelineAndFirstStageOf(completed).stage);
+        Duration duration = stageDao.getDurationOfLastSuccessfulOnAgent(scheduled.getFirstStage().getJobInstances().getFirst());
+        assertThat(duration).isPositive();
     }
 
     @Test
@@ -929,8 +916,8 @@ public class StageSqlMapDaoIntegrationTest {
 
         Stages stages = stageDao.getStagesByPipelineId(completed.getId());
         assertThat(stages.size()).isEqualTo(1);
-        assertThat(stages.first().getPipelineId()).isEqualTo(completed.getId());
-        assertThat(stages.first().getJobInstances().size()).isEqualTo(1);
+        assertThat(stages.getFirst().getPipelineId()).isEqualTo(completed.getId());
+        assertThat(stages.getFirst().getJobInstances().size()).isEqualTo(1);
     }
 
     @Test
@@ -942,8 +929,8 @@ public class StageSqlMapDaoIntegrationTest {
 
         Stages stages = stageDao.getStagesByPipelineId(completed.getId());
         assertThat(stages.size()).isEqualTo(1);
-        assertThat(stages.first().getPipelineId()).isEqualTo(completed.getId());
-        assertThat(stages.first().getJobInstances().size()).isEqualTo(2);
+        assertThat(stages.getFirst().getPipelineId()).isEqualTo(completed.getId());
+        assertThat(stages.getFirst().getJobInstances().size()).isEqualTo(2);
     }
 
     @Test
@@ -970,7 +957,7 @@ public class StageSqlMapDaoIntegrationTest {
         assertThat(savedStage.hasRerunJobs()).isFalse();
         assertThat(stageDao.stageById(savedStage.getId()).hasRerunJobs()).isFalse();
 
-        Stage rerunStage = instanceFactory.createStageForRerunOfJobs(stage, List.of(stage.getJobInstances().get(0).getName()), new DefaultSchedulingContext("foo"), mingleConfig.getFirstStageConfig(), new TimeProvider(), "md5");
+        Stage rerunStage = instanceFactory.createStageForRerunOfJobs(stage, List.of(stage.getJobInstances().getFirst().getName()), new DefaultSchedulingContext("foo"), mingleConfig.getFirstStageConfig(), new TimeProvider(), "md5");
         savedStage = stageDao.save(pipeline, rerunStage);
         saveJobsFor(savedStage, pipeline);
         assertThat(rerunStage.hasRerunJobs()).isTrue();
@@ -992,7 +979,7 @@ public class StageSqlMapDaoIntegrationTest {
     public void shouldMarkPreviousRunAsNotLatestWhenSavingALaterOne() {
         Pipeline pipeline = dbHelper.schedulePipeline(mingleConfig, new TimeProvider());
         dbHelper.pass(pipeline);
-        Stage firstRunOfStage = pipeline.getStages().get(0);
+        Stage firstRunOfStage = pipeline.getStages().getFirst();
         assertThat(firstRunOfStage.isLatestRun()).isTrue();
         assertThat(stageDao.findStageWithIdentifier(firstRunOfStage.getIdentifier()).isLatestRun()).isTrue();
         Stage stage = instanceFactory.createStageInstance(mingleConfig.getFirstStageConfig(), new DefaultSchedulingContext("anyone"), md5, new TimeProvider());
@@ -1006,19 +993,19 @@ public class StageSqlMapDaoIntegrationTest {
 
     private Stage rerunFirstStage(Pipeline pipeline) {
         Stage firstStage = pipeline.getFirstStage();
-        Stage newInstance = instanceFactory.createStageInstance(mingleConfig.findBy(new CaseInsensitiveString(firstStage.getName())), new DefaultSchedulingContext("anyone"), md5, new TimeProvider());
+        Stage newInstance = instanceFactory.createStageInstance(mingleConfig.findBy(cis(firstStage.getName())), new DefaultSchedulingContext("anyone"), md5, new TimeProvider());
         return stageDao.saveWithJobs(pipeline, newInstance);
     }
 
     private void ignoreFirstBuildInFirstStage(Pipeline completed) {
-        JobInstance ignored = completed.getStages().first().getJobInstances().first();
+        JobInstance ignored = completed.getStages().getFirst().getJobInstances().getFirst();
         jobInstanceDao.ignore(ignored);
     }
 
     @Test
     public void shouldReturnTrueIfAnyStageIsActive() {
         dbHelper.schedulePipeline(mingleConfig, new TimeProvider());
-        assertThat(stageDao.isStageActive(CaseInsensitiveString.str(mingleConfig.name()), CaseInsensitiveString.str(mingleConfig.getFirstStageConfig().name()))).isTrue();
+        assertThat(stageDao.isStageActive(str(mingleConfig.name()), str(mingleConfig.getFirstStageConfig().name()))).isTrue();
     }
 
     @Test
@@ -1028,9 +1015,9 @@ public class StageSqlMapDaoIntegrationTest {
 
         when(mockTemplate.queryForObject(eq("isStageActive"), any())).thenReturn(1);
 
-        boolean stageActive = stageDao.isStageActive(CaseInsensitiveString.str(mingleConfig.name()), CaseInsensitiveString.str(mingleConfig.getFirstStageConfig().name()));
+        boolean stageActive = stageDao.isStageActive(str(mingleConfig.name()), str(mingleConfig.getFirstStageConfig().name()));
         assertThat(stageActive).isTrue();
-        stageActive = stageDao.isStageActive(CaseInsensitiveString.str(mingleConfig.name()), CaseInsensitiveString.str(mingleConfig.getFirstStageConfig().name()));
+        stageActive = stageDao.isStageActive(str(mingleConfig.name()), str(mingleConfig.getFirstStageConfig().name()));
         assertThat(stageActive).isTrue();
 
         verify(mockTemplate, times(1)).queryForObject(eq("isStageActive"), any());
@@ -1043,13 +1030,13 @@ public class StageSqlMapDaoIntegrationTest {
 
         when(mockTemplate.queryForObject(eq("isStageActive"), any())).thenReturn(1).thenReturn(0);
 
-        boolean stageActive = stageDao.isStageActive(CaseInsensitiveString.str(mingleConfig.name()), CaseInsensitiveString.str(mingleConfig.getFirstStageConfig().name()));
+        boolean stageActive = stageDao.isStageActive(str(mingleConfig.name()), str(mingleConfig.getFirstStageConfig().name()));
         assertThat(stageActive).isTrue();
 
-        Stage stage = StageMother.completedFailedStageInstance(CaseInsensitiveString.str(mingleConfig.name()), CaseInsensitiveString.str(mingleConfig.getFirstStageConfig().name()), "job");
+        Stage stage = StageMother.completedFailedStageInstance(str(mingleConfig.name()), str(mingleConfig.getFirstStageConfig().name()), "job");
         stageDao.stageStatusChanged(stage);//The cached 'true' should now be removed
 
-        assertThat(stageDao.isStageActive(CaseInsensitiveString.str(mingleConfig.name()), CaseInsensitiveString.str(mingleConfig.getFirstStageConfig().name()))).isFalse();
+        assertThat(stageDao.isStageActive(str(mingleConfig.name()), str(mingleConfig.getFirstStageConfig().name()))).isFalse();
         verify(mockTemplate, times(2)).queryForObject(eq("isStageActive"), any());
     }
 
@@ -1059,7 +1046,7 @@ public class StageSqlMapDaoIntegrationTest {
         Pipeline passed = dbHelper.schedulePipeline(mingleConfig, new TimeProvider());
         dbHelper.pass(passed);
         setupRescheduledBuild(passed);
-        assertThat(stageDao.isStageActive(CaseInsensitiveString.str(mingleConfig.name()), CaseInsensitiveString.str(mingleConfig.getFirstStageConfig().name()))).isFalse();
+        assertThat(stageDao.isStageActive(str(mingleConfig.name()), str(mingleConfig.getFirstStageConfig().name()))).isFalse();
     }
 
     @Test
@@ -1067,7 +1054,7 @@ public class StageSqlMapDaoIntegrationTest {
         Pipeline passed = dbHelper.schedulePipeline(mingleConfig, new TimeProvider());
         dbHelper.pass(passed);
         setupDiscontinuedBuild(passed);
-        assertThat(stageDao.isStageActive(CaseInsensitiveString.str(mingleConfig.name()), CaseInsensitiveString.str(mingleConfig.getFirstStageConfig().name()))).isFalse();
+        assertThat(stageDao.isStageActive(str(mingleConfig.name()), str(mingleConfig.getFirstStageConfig().name()))).isFalse();
     }
 
     @Test
@@ -1100,14 +1087,14 @@ public class StageSqlMapDaoIntegrationTest {
     @Test
     public void shouldReturnMaxCount() {
         Pipeline pipeline = dbHelper.schedulePipeline(mingleConfig, new TimeProvider());
-        assertThat(stageDao.getMaxStageCounter(pipeline.getId(), CaseInsensitiveString.str(mingleConfig.first().name()))).isEqualTo(1);
+        assertThat(stageDao.getMaxStageCounter(pipeline.getId(), str(mingleConfig.getFirst().name()))).isEqualTo(1);
     }
 
     @Test
     public void shouldReturnMaxStageCounterByPipelineCounter() {
         Pipeline pipeline = dbHelper.schedulePipeline(mingleConfig, new TimeProvider());
         PipelineIdentifier pipelineIdentifier = new PipelineIdentifier(pipeline.getName(), pipeline.getCounter());
-        assertThat(stageDao.findLatestStageCounter(pipelineIdentifier, CaseInsensitiveString.str(mingleConfig.first().name()))).isEqualTo(1);
+        assertThat(stageDao.findLatestStageCounter(pipelineIdentifier, str(mingleConfig.getFirst().name()))).isEqualTo(1);
     }
 
     @Test
@@ -1116,7 +1103,7 @@ public class StageSqlMapDaoIntegrationTest {
         run4Pipelines("mingle");
 
         List<FeedEntry> completedStages = new ArrayList<>(stageDao.findCompletedStagesFor("cruise", FeedModifier.Latest, -1, 5));
-        StageFeedEntry latestFeedEntry = (StageFeedEntry) completedStages.get(0);
+        StageFeedEntry latestFeedEntry = (StageFeedEntry) completedStages.getFirst();
 
         assertThat(completedStages.size()).isEqualTo(4);
         assertFeed(completedStages.get(0), cruiseStages[3].stage);
@@ -1148,11 +1135,11 @@ public class StageSqlMapDaoIntegrationTest {
 
     @Test
     public void shouldLoadApproverAndUnderstandIfBuildWasForced() {
-        mingleConfig.get(0).updateApproval(Approval.manualApproval());
+        mingleConfig.getFirst().updateApproval(Approval.manualApproval());
         Pipeline cancelled = dbHelper.schedulePipeline(mingleConfig, ModificationsMother.modifySomeFiles(mingleConfig), "loser", new TimeProvider());
         dbHelper.cancelStage(pipelineAndFirstStageOf(cancelled).stage);
 
-        mingleConfig.get(0).updateApproval(Approval.automaticApproval());
+        mingleConfig.getFirst().updateApproval(Approval.automaticApproval());
         Pipeline passed = dbHelper.schedulePipeline(mingleConfig, ModificationsMother.modifySomeFiles(mingleConfig), "boozer", new TimeProvider());
         dbHelper.passStage(pipelineAndFirstStageOf(passed).stage);
 
@@ -1161,8 +1148,8 @@ public class StageSqlMapDaoIntegrationTest {
 
         List<StageFeedEntry> completedStages = stageDao.findCompletedStagesFor(mingleConfig.name().toString(), FeedModifier.Before, transitionId(pipelineAndFirstStageOf(failed).stage), 2);
 
-        assertThat(completedStages.get(0).isManuallyTriggered()).isFalse();
-        assertThat(completedStages.get(0).getApprovedBy()).isEqualTo("boozer");
+        assertThat(completedStages.getFirst().isManuallyTriggered()).isFalse();
+        assertThat(completedStages.getFirst().getApprovedBy()).isEqualTo("boozer");
 
         assertThat(completedStages.get(1).isManuallyTriggered()).isTrue();
         assertThat(completedStages.get(1).getApprovedBy()).isEqualTo("loser");
@@ -1177,21 +1164,21 @@ public class StageSqlMapDaoIntegrationTest {
         List<StageFeedEntry> completedStages = stageDao.findCompletedStagesFor("cruise", FeedModifier.Before, transitionId(cruiseStages[3].stage), 1);
 
         assertThat(completedStages.size()).isEqualTo(1);
-        assertFeed(completedStages.get(0), cruiseStages[2].stage);
+        assertFeed(completedStages.getFirst(), cruiseStages[2].stage);
 
         //Page size 2
         completedStages = stageDao.findCompletedStagesFor("cruise", FeedModifier.Before, transitionId(cruiseStages[3].stage), 2);
 
         assertThat(completedStages.size()).isEqualTo(2);
-        assertFeed(completedStages.get(0), cruiseStages[2].stage);
-        assertFeed(completedStages.get(1), cruiseStages[1].stage);
+        assertFeed(completedStages.getFirst(), cruiseStages[2].stage);
+        assertFeed(completedStages.getLast(), cruiseStages[1].stage);
 
         //Page size 3
         completedStages = stageDao.findCompletedStagesFor("cruise", FeedModifier.Before, transitionId(cruiseStages[2].stage), 3);
 
         assertThat(completedStages.size()).isEqualTo(2);
-        assertFeed(completedStages.get(0), cruiseStages[1].stage);
-        assertFeed(completedStages.get(1), cruiseStages[0].stage);
+        assertFeed(completedStages.getFirst(), cruiseStages[1].stage);
+        assertFeed(completedStages.getLast(), cruiseStages[0].stage);
     }
 
     @Test
@@ -1212,124 +1199,8 @@ public class StageSqlMapDaoIntegrationTest {
         List<FeedEntry> completedStages = new ArrayList<>(stageDao.findAllCompletedStages(FeedModifier.Before, transitionId(stages[3].stage), 2));
 
         assertThat(completedStages.size()).isEqualTo(2);
-        assertFeed(completedStages.get(0), stages[2].stage);
-        assertFeed(completedStages.get(1), stages[1].stage);
-    }
-
-    @Test
-    public void shouldFindStagesBetween() {
-        PipelineConfig config = PipelineMother.createPipelineConfig("pipeline", new MaterialConfigs(MaterialConfigsMother.hgMaterialConfig()), "firstStage", "secondStage");
-        Pipeline pipeline0 = dbHelper.newPipelineWithAllStagesPassed(config);
-        dbHelper.updateNaturalOrder(pipeline0.getId(), 4.0);
-
-        //First run Failed, Rerun Passed
-        Pipeline pipeline1 = dbHelper.newPipelineWithFirstStagePassed(config);
-        Stage stage = dbHelper.scheduleStage(pipeline1, config.get(1));
-        dbHelper.failStage(stage);
-        stage = dbHelper.scheduleStage(pipeline1, config.get(1));
-        dbHelper.passStage(stage);
-        dbHelper.updateNaturalOrder(pipeline1.getId(), 5.0);
-
-        Pipeline pipeline2 = dbHelper.newPipelineWithFirstStagePassed(config);
-        stage = dbHelper.scheduleStage(pipeline2, config.get(1));
-        dbHelper.failStage(stage);
-        dbHelper.updateNaturalOrder(pipeline2.getId(), 6.0);
-
-        Pipeline pipeline3 = dbHelper.newPipelineWithFirstStagePassed(config);
-        dbHelper.updateNaturalOrder(pipeline3.getId(), 7.0);
-
-        Pipeline pipeline4 = dbHelper.newPipelineWithFirstStagePassed(config);
-        stage = dbHelper.scheduleStage(pipeline4, config.get(1));
-        dbHelper.cancelStage(stage);
-        dbHelper.updateNaturalOrder(pipeline4.getId(), 8.0);
-
-        Pipeline pipeline5 = dbHelper.newPipelineWithFirstStagePassed(config);
-        dbHelper.scheduleStage(pipeline5, config.get(1));
-        dbHelper.updateNaturalOrder(pipeline5.getId(), 9.0);
-
-        //First run passed, rerun failed.
-        Pipeline pipeline6 = dbHelper.newPipelineWithAllStagesPassed(config);
-        stage = dbHelper.scheduleStage(pipeline6, config.get(1));
-        dbHelper.failStage(stage);
-        dbHelper.updateNaturalOrder(pipeline6.getId(), 10.0);
-
-        Pipeline pipeline7 = dbHelper.newPipelineWithFirstStagePassed(config);
-        stage = dbHelper.scheduleStage(pipeline7, config.get(1));
-        dbHelper.failStage(stage);
-        dbHelper.updateNaturalOrder(pipeline7.getId(), 11.0);
-
-        pipeline7 = pipelineDao.loadPipeline(pipeline7.getId());
-        pipeline6 = pipelineDao.loadPipeline(pipeline6.getId());
-        pipeline4 = pipelineDao.loadPipeline(pipeline4.getId());
-        pipeline2 = pipelineDao.loadPipeline(pipeline2.getId());
-
-        List<StageIdentifier> list = stageDao.findFailedStagesBetween("pipeline", "secondStage", 5.0, 11.0);
-
-        assertThat(list.size()).isEqualTo(3);
-        StageIdentifier identifier = list.get(0);
-        assertThat(identifier).isEqualTo(new StageIdentifier("pipeline", 8, "secondStage", "1"));
-        assertThat(identifier).isEqualTo(pipeline7.findStage("secondStage").getIdentifier());
-        assertThat(list.get(1)).isEqualTo(pipeline6.findStage("secondStage").getIdentifier());
-        assertThat(list.get(2)).isEqualTo(pipeline2.findStage("secondStage").getIdentifier());
-
-        list = stageDao.findFailedStagesBetween("pipeline", "secondStage", 5.0, 10.0);
-        assertThat(list.size()).isEqualTo(2);
-        assertThat(list.get(0)).isEqualTo(pipeline6.findStage("secondStage").getIdentifier());
-        assertThat(list.get(1)).isEqualTo(pipeline2.findStage("secondStage").getIdentifier());
-
-        list = stageDao.findFailedStagesBetween("pipeline", "secondStage", 5.0, 9.0);
-        assertThat(list.size()).isEqualTo(1);
-        assertThat(list.get(0)).isEqualTo(pipeline2.findStage("secondStage").getIdentifier());
-
-        list = stageDao.findFailedStagesBetween("pipeline", "secondStage", 5.0, 4.0);
-        assertThat(list.size()).isEqualTo(0);
-    }
-
-    @Test
-    public void shouldFindRerunStagesWhenFindStagesBetween() {
-        Pipeline pipeline = dbHelper.newPipelineWithFirstStageFailed(mingleConfig);
-        dbHelper.updateNaturalOrder(pipeline.getId(), 5.0);
-        Stage rerunedStage = rerunFirstStage(pipeline);
-        dbHelper.failStage(rerunedStage);
-
-        List<StageIdentifier> list = stageDao.findFailedStagesBetween(PIPELINE_NAME, STAGE_DEV, 3.0, 5.0);
-        assertThat(list.size()).isEqualTo(1);
-        assertThat(list.get(0)).isEqualTo(rerunedStage.getIdentifier());
-    }
-
-    @Test
-    public void shouldFindStagesBetweenAtTheBeginingOfAPipeline() {
-        PipelineConfig config = PipelineMother.createPipelineConfig("pipeline", new MaterialConfigs(MaterialConfigsMother.hgMaterialConfig()), "firstStage", "secondStage");
-
-        Pipeline pipeline1 = dbHelper.newPipelineWithFirstStagePassed(config);
-        dbHelper.updateNaturalOrder(pipeline1.getId(), 1.0);
-
-        Pipeline pipeline2 = dbHelper.newPipelineWithFirstStagePassed(config);
-        Stage stage = dbHelper.scheduleStage(pipeline2, config.get(1));
-        dbHelper.failStage(stage);
-        dbHelper.updateNaturalOrder(pipeline2.getId(), 2.0);
-
-        Pipeline pipeline3 = dbHelper.newPipelineWithFirstStagePassed(config);
-        dbHelper.updateNaturalOrder(pipeline3.getId(), 1.5);
-
-        Pipeline pipeline4 = dbHelper.newPipelineWithFirstStagePassed(config);
-        stage = dbHelper.scheduleStage(pipeline4, config.get(1));
-        dbHelper.cancelStage(stage);
-        dbHelper.updateNaturalOrder(pipeline4.getId(), 0.5);
-
-        Pipeline pipeline7 = dbHelper.newPipelineWithFirstStagePassed(config);
-        stage = dbHelper.scheduleStage(pipeline7, config.get(1));
-        dbHelper.failStage(stage);
-        dbHelper.updateNaturalOrder(pipeline7.getId(), 11.0);
-
-        pipeline7 = pipelineDao.loadPipeline(pipeline7.getId());
-        pipeline4 = pipelineDao.loadPipeline(pipeline4.getId());
-        pipeline2 = pipelineDao.loadPipeline(pipeline2.getId());
-
-        List<StageIdentifier> list = stageDao.findFailedStagesBetween("pipeline", "secondStage", 0.0, 11.0);
-        assertThat(list.size()).isEqualTo(2);
-        assertThat(list.get(0)).isEqualTo(pipeline7.findStage("secondStage").getIdentifier());
-        assertThat(list.get(1)).isEqualTo(pipeline2.findStage("secondStage").getIdentifier());
+        assertFeed(completedStages.getFirst(), stages[2].stage);
+        assertFeed(completedStages.getLast(), stages[1].stage);
     }
 
     @Test
@@ -1342,7 +1213,7 @@ public class StageSqlMapDaoIntegrationTest {
         Stages stages = stageDao.findAllStagesFor("pipeline", 1);
         assertThat(stages.size()).isEqualTo(4);
         Stages pipelineStages = pipeline.getStages();
-        assertThat(stages).isEqualTo(List.of(stage, pipelineStages.get(0), pipelineStages.get(1), pipelineStages.get(2)));
+        assertThat(stages).isEqualTo(List.of(stage, pipelineStages.getFirst(), pipelineStages.get(1), pipelineStages.get(2)));
     }
 
     @Test
@@ -1350,17 +1221,17 @@ public class StageSqlMapDaoIntegrationTest {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
         stageDao.setSqlMapClientTemplate(mockTemplate);
 
-        Stage stage1 = StageMother.passedStageInstance("first", "job", "pipeline");
-        Stage stage2 = StageMother.passedStageInstance("second", "job", "pipeline");
+        Stage stage1 = StageMother.passedStageInstance("pipeline", "first", "job");
+        Stage stage2 = StageMother.passedStageInstance("pipeline", "second", "job");
         List<Stage> stages = List.of(stage1, stage2);
-        doReturn(stages).when(mockTemplate).queryForList("getStagesByPipelineNameAndCounter", arguments("pipelineName", "pipeline").and("pipelineCounter", 1).asMap());
+        doReturn(stages).when(mockTemplate).queryForList("getStagesByPipelineNameAndCounter", Map.of("pipelineName", "pipeline", "pipelineCounter", 1));
 
         Stages actual = stageDao.findAllStagesFor("pipeline", 1);
         assertThat(actual).isEqualTo(new Stages(stages));
         actual = stageDao.findAllStagesFor("pipeline", 1); //Should return from cache
         assertThat(actual).isEqualTo(new Stages(stages));
 
-        verify(mockTemplate, times(1)).queryForList("getStagesByPipelineNameAndCounter", arguments("pipelineName", "pipeline").and("pipelineCounter", 1).asMap());
+        verify(mockTemplate, times(1)).queryForList("getStagesByPipelineNameAndCounter", Map.of("pipelineName", "pipeline", "pipelineCounter", 1));
     }
 
     @Test
@@ -1368,10 +1239,10 @@ public class StageSqlMapDaoIntegrationTest {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
         stageDao.setSqlMapClientTemplate(mockTemplate);
 
-        Stage stage1 = StageMother.passedStageInstance("first", "job", "pipeline");
-        Stage stage2 = StageMother.passedStageInstance("second", "job", "pipeline");
+        Stage stage1 = StageMother.passedStageInstance("pipeline", "first", "job");
+        Stage stage2 = StageMother.passedStageInstance("pipeline", "second", "job");
         List<Stage> stages = List.of(stage1, stage2);
-        doReturn(stages).when(mockTemplate).queryForList("getStagesByPipelineNameAndCounter", arguments("pipelineName", "pipeline").and("pipelineCounter", 1).asMap());
+        doReturn(stages).when(mockTemplate).queryForList("getStagesByPipelineNameAndCounter", Map.of("pipelineName", "pipeline", "pipelineCounter", 1));
 
         Stages actual = stageDao.findAllStagesFor("pipeline", 1);
         assertThat(actual).isEqualTo(new Stages(stages));
@@ -1381,7 +1252,7 @@ public class StageSqlMapDaoIntegrationTest {
         actual = stageDao.findAllStagesFor("pipeline", 1);
         assertThat(actual).isEqualTo(new Stages(stages));
 
-        verify(mockTemplate, times(2)).queryForList("getStagesByPipelineNameAndCounter", arguments("pipelineName", "pipeline").and("pipelineCounter", 1).asMap());
+        verify(mockTemplate, times(2)).queryForList("getStagesByPipelineNameAndCounter", Map.of("pipelineName", "pipeline", "pipelineCounter", 1));
     }
 
     @Test
@@ -1389,10 +1260,10 @@ public class StageSqlMapDaoIntegrationTest {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
         stageDao.setSqlMapClientTemplate(mockTemplate);
 
-        Stage stage1 = StageMother.passedStageInstance("first", "job", "pipeline");
-        Stage stage2 = StageMother.passedStageInstance("second", "job", "pipeline");
+        Stage stage1 = StageMother.passedStageInstance("pipeline", "first", "job");
+        Stage stage2 = StageMother.passedStageInstance("pipeline", "second", "job");
         List<Stage> stages = List.of(stage1, stage2);
-        doReturn(stages).when(mockTemplate).queryForList("getStagesByPipelineNameAndCounter", arguments("pipelineName", "pipeline").and("pipelineCounter", 1).asMap());
+        doReturn(stages).when(mockTemplate).queryForList("getStagesByPipelineNameAndCounter", Map.of("pipelineName", "pipeline", "pipelineCounter", 1));
 
         Stages actual = stageDao.findAllStagesFor("pipeline", 1);
         assertThat(actual).isEqualTo(new Stages(stages));
@@ -1402,7 +1273,7 @@ public class StageSqlMapDaoIntegrationTest {
         actual = stageDao.findAllStagesFor("pipeline", 1);
         assertThat(actual).isEqualTo(new Stages(stages));
 
-        verify(mockTemplate, times(1)).queryForList("getStagesByPipelineNameAndCounter", arguments("pipelineName", "pipeline").and("pipelineCounter", 1).asMap());
+        verify(mockTemplate, times(1)).queryForList("getStagesByPipelineNameAndCounter", Map.of("pipelineName", "pipeline", "pipelineCounter", 1));
     }
 
     @Test
@@ -1422,7 +1293,7 @@ public class StageSqlMapDaoIntegrationTest {
         }
         stages = stageDao.oldestStagesHavingArtifacts();
         assertThat(stages.size()).isEqualTo(1);
-        stageDao.markArtifactsDeletedFor(stages.get(0));
+        stageDao.markArtifactsDeletedFor(stages.getFirst());
         assertThat(stageDao.oldestStagesHavingArtifacts().size()).isEqualTo(0);
     }
 
@@ -1453,7 +1324,7 @@ public class StageSqlMapDaoIntegrationTest {
     public void findStageHistoryPage_shouldReturnStageHistoryEntryWithConfigVersion() {
         SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
 
-        Stage stage = StageMother.passedStageInstance("dev", "java", "pipeline-name");
+        Stage stage = StageMother.passedStageInstance("pipeline-name", "dev", "java");
         stage.setApprovedBy("admin");
         stage.setConfigVersion("md5-test");
 
@@ -1465,7 +1336,7 @@ public class StageSqlMapDaoIntegrationTest {
 
         StageHistoryPage stageHistoryPage = stageDao.findStageHistoryPage(stage, 10);
 
-        assertThat(stageHistoryPage.getStages().get(0).getConfigVersion()).isEqualTo("md5-test");
+        assertThat(stageHistoryPage.getStages().getFirst().getConfigVersion()).isEqualTo("md5-test");
     }
 
     @Test
@@ -1480,7 +1351,7 @@ public class StageSqlMapDaoIntegrationTest {
             scheduleUtil.runAndPass(p1, "h1");
         }
         StageHistoryPage historyPage = stageDao.findStageHistoryPage(pipelineName, stageName, () -> Pagination.pageByNumber(2, 2, 10));
-        StageHistoryEntry topOfSecondPage = historyPage.getStages().get(0);
+        StageHistoryEntry topOfSecondPage = historyPage.getStages().getFirst();
         StageHistoryEntry bottomOfFirstPage = stageDao.findImmediateChronologicallyForwardStageHistoryEntry(topOfSecondPage);
         assertThat(bottomOfFirstPage.getId()).isEqualTo(topOfSecondPage.getId() + 1);
         assertThat(bottomOfFirstPage.getIdentifier().getPipelineName()).isEqualTo(pipelineName);
@@ -1500,7 +1371,7 @@ public class StageSqlMapDaoIntegrationTest {
             scheduleUtil.runAndPass(p1, "h1");
         }
         StageHistoryPage historyPage = stageDao.findStageHistoryPage(pipelineName, stageName, () -> Pagination.pageByNumber(1, 1, 10));
-        StageHistoryEntry topOfSecondPage = historyPage.getStages().get(0);
+        StageHistoryEntry topOfSecondPage = historyPage.getStages().getFirst();
         StageHistoryEntry bottomOfFirstPage = stageDao.findImmediateChronologicallyForwardStageHistoryEntry(topOfSecondPage);
         assertThat(bottomOfFirstPage).isNull();
     }
@@ -1521,7 +1392,7 @@ public class StageSqlMapDaoIntegrationTest {
             scheduleUtil.runAndPass(p2, "h1");
         }
         StageHistoryPage historyPage = stageDao.findStageHistoryPage(pipelineName, stageName, () -> Pagination.pageByNumber(2, 2, 10));
-        StageHistoryEntry topOfSecondPage = historyPage.getStages().get(0);
+        StageHistoryEntry topOfSecondPage = historyPage.getStages().getFirst();
         StageHistoryEntry bottomOfFirstPage = stageDao.findImmediateChronologicallyForwardStageHistoryEntry(topOfSecondPage);
         assertThat(bottomOfFirstPage.getId()).isEqualTo(topOfSecondPage.getId() + 2);
         assertThat(bottomOfFirstPage.getIdentifier().getPipelineName()).isEqualTo(pipelineName);
@@ -1597,13 +1468,13 @@ public class StageSqlMapDaoIntegrationTest {
             keysThatWereAdded.add(element.getObjectKey());
         }
 
-        Assertions.assertThat(keysThatWereRemoved).contains(
+        assertThat(keysThatWereRemoved).contains(
             stageDao.cacheKeyForStageHistories(pipelineName, stageName),
             stageDao.cacheKeyForStageCount(pipelineName, stageName),
             stageDao.cacheKeyForStageOffset(stage)
         );
 
-        Assertions.assertThat(keysThatWereAdded).contains(
+        assertThat(keysThatWereAdded).contains(
             stageDao.cacheKeyForStageHistories(pipelineName, stageName),
             stageDao.cacheKeyForStageCount(pipelineName, stageName),
             stageDao.cacheKeyForStageOffset(stage)
@@ -1678,8 +1549,8 @@ public class StageSqlMapDaoIntegrationTest {
         StageInstanceModels stageHistory = stageDao.findDetailedStageHistoryViaCursor(pipelineName, STAGE_DEV, FeedModifier.Before, run3.getFirstStage().getId(), 3);
 
         assertThat(stageHistory.size()).isEqualTo(2);
-        assertThat(stageHistory.get(0).getId()).isEqualTo(run5.getFirstStage().getId());
-        assertThat(stageHistory.get(1).getId()).isEqualTo(run4.getFirstStage().getId());
+        assertThat(stageHistory.getFirst().getId()).isEqualTo(run5.getFirstStage().getId());
+        assertThat(stageHistory.getLast().getId()).isEqualTo(run4.getFirstStage().getId());
     }
 
     @Test
@@ -1734,11 +1605,11 @@ public class StageSqlMapDaoIntegrationTest {
         run4Pipelines("mingle");
 
         List<StageFeedEntry> completedStages = stageDao.findStageFeedBy("cruise", 1, FeedModifier.Latest, 2);
-        StageFeedEntry latestFeedEntry = completedStages.get(0);
+        StageFeedEntry latestFeedEntry = completedStages.getFirst();
 
         assertThat(completedStages.size()).isEqualTo(2);
-        assertFeed(completedStages.get(0), cruiseStages[3].stage);
-        assertFeed(completedStages.get(1), cruiseStages[2].stage);
+        assertFeed(completedStages.getFirst(), cruiseStages[3].stage);
+        assertFeed(completedStages.getLast(), cruiseStages[2].stage);
 
         assertThat(latestFeedEntry.getResult()).isEqualTo(StageResult.Failed.name());
         assertThat(latestFeedEntry.getPipelineId()).isEqualTo(cruiseStages[3].stage.getPipelineId());
@@ -1752,8 +1623,8 @@ public class StageSqlMapDaoIntegrationTest {
         List<StageFeedEntry> completedStages = stageDao.findStageFeedBy("cruise", 3, FeedModifier.After, 4);
 
         assertThat(completedStages.size()).isEqualTo(2);
-        assertFeed(completedStages.get(0), cruiseStages[3].stage);
-        assertFeed(completedStages.get(1), cruiseStages[2].stage);
+        assertFeed(completedStages.getFirst(), cruiseStages[3].stage);
+        assertFeed(completedStages.getLast(), cruiseStages[2].stage);
     }
 
     @Test
@@ -1764,7 +1635,7 @@ public class StageSqlMapDaoIntegrationTest {
         List<StageFeedEntry> completedStages = stageDao.findStageFeedBy("cruise", 3, FeedModifier.Before, 4);
 
         assertThat(completedStages.size()).isEqualTo(1);
-        assertFeed(completedStages.get(0), cruiseStages[0].stage);
+        assertFeed(completedStages.getFirst(), cruiseStages[0].stage);
     }
 
     @Test
@@ -1801,7 +1672,7 @@ public class StageSqlMapDaoIntegrationTest {
     }
 
     private JobStateTransition transition(Stage cancelledStage) {
-        return cancelledStage.getJobInstances().get(0).getTransition(JobState.Completed);
+        return cancelledStage.getJobInstances().getFirst().getTransition(JobState.Completed);
     }
 
     private void assertForeignKey(long stageId, long stageForeignKey) {
@@ -1812,7 +1683,7 @@ public class StageSqlMapDaoIntegrationTest {
     private PipelineAndStage pipelineAndFirstStageOf(Pipeline pipeline) {
         Stages stages = pipeline.getStages();
         assertThat(stages.size()).isEqualTo(1);
-        return new PipelineAndStage(pipeline, stages.get(0));
+        return new PipelineAndStage(pipeline, stages.getFirst());
     }
 
     private void pass(Pipeline pipeline) {
@@ -1858,13 +1729,13 @@ public class StageSqlMapDaoIntegrationTest {
 
         Pipeline running = dbHelper.schedulePipeline(pipelineConfig, new TimeProvider());
         assertThat(dbHelper.updateNaturalOrder(running.getId(), 2.0)).isEqualTo(1);
-        scheduleBuildInstances(pipelineAndFirstStageOf(running).stage);
+        scheduleJobInstances(pipelineAndFirstStageOf(running).stage);
         return new Pipeline[]{completed, running};
     }
 
     private Pipeline pipelineWithFirstStageRunning(PipelineConfig pipeline) {
         Pipeline running = dbHelper.schedulePipeline(pipeline, new TimeProvider());
-        scheduleBuildInstances(pipelineAndFirstStageOf(running).stage);
+        scheduleJobInstances(pipelineAndFirstStageOf(running).stage);
         return running;
     }
 

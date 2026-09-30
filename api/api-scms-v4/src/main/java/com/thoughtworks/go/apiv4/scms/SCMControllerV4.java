@@ -20,7 +20,7 @@ import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.CrudController;
 import com.thoughtworks.go.api.base.OutputWriter;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.apiv4.scms.representers.SCMRepresenter;
 import com.thoughtworks.go.apiv4.scms.representers.SCMsRepresenter;
@@ -34,10 +34,11 @@ import com.thoughtworks.go.server.service.EntityHashingService;
 import com.thoughtworks.go.server.service.GoConfigService;
 import com.thoughtworks.go.server.service.materials.PluggableScmService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import com.thoughtworks.go.util.Pair;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import spark.Request;
@@ -57,15 +58,15 @@ import static spark.Spark.*;
 public class SCMControllerV4 extends ApiController implements SparkSpringController, CrudController<SCM> {
 
     public static final String MATERIAL_NAME = "material_name";
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final PluggableScmService pluggableScmService;
     private final EntityHashingService entityHashingService;
     private final GoConfigService goConfigService;
 
     @Autowired
-    public SCMControllerV4(ApiAuthenticationHelper apiAuthenticationHelper, PluggableScmService pluggableScmService, EntityHashingService entityHashingService, GoConfigService goConfigService) {
+    public SCMControllerV4(ApiAuthorizationHelper apiAuthorizationHelper, PluggableScmService pluggableScmService, EntityHashingService entityHashingService, GoConfigService goConfigService) {
         super(ApiVersion.v4);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.pluggableScmService = pluggableScmService;
         this.entityHashingService = entityHashingService;
         this.goConfigService = goConfigService;
@@ -77,15 +78,15 @@ public class SCMControllerV4 extends ApiController implements SparkSpringControl
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
             before("/*", mimeType, this::verifyContentType);
 
-            before("", this.mimeType, this.apiAuthenticationHelper::checkAdminUserOrGroupAdminUserAnd403);
-            before("/*", this.mimeType, this.apiAuthenticationHelper::checkAdminUserOrGroupAdminUserAnd403);
+            before("", this.mimeType, this.apiAuthorizationHelper::checkAnyPipelineGroupAdminUserAnd403);
+            before("/*", this.mimeType, this.apiAuthorizationHelper::checkAnyPipelineGroupAdminUserAnd403);
 
             get("", mimeType, this::index);
             post("", mimeType, this::create);
@@ -228,7 +229,7 @@ public class SCMControllerV4 extends ApiController implements SparkSpringControl
     }
 
     private boolean isRenameAttempt(String profileIdFromRequestParam, String profileIdFromRequestBody) {
-        return !StringUtils.equals(profileIdFromRequestBody, profileIdFromRequestParam);
+        return !Strings.CS.equals(profileIdFromRequestBody, profileIdFromRequestParam);
     }
 
     private void haltIfEntityIsDefinedRemotely(SCM existingSCM) {

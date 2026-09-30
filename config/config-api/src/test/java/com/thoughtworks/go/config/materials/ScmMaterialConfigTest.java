@@ -46,7 +46,7 @@ class ScmMaterialConfigTest {
         material.setFilter(new Filter(new IgnoredFiles("*.*")));
         material.setConfigAttributes(Map.of(ScmMaterialConfig.FILTER, ""));
         assertThat(material.filter()).isEqualTo(new Filter());
-        assertThat(material.getFilterAsString()).isEqualTo("");
+        assertThat(material.getFilterAsString()).isEmpty();
     }
 
     @Test
@@ -92,7 +92,7 @@ class ScmMaterialConfigTest {
             material.setFolder("f1");
             material.validateNotSubdirectoryOf("f1/f2");
             assertThat(material.errors().isEmpty()).isFalse();
-            assertThat(material.errors().on(FOLDER)).isEqualTo("Invalid destination directory. Every material needs a different destination directory and the directories should not be nested.");
+            assertThat(material.errors().firstErrorOn(FOLDER)).isEqualTo("Invalid destination directory. Every material needs a different destination directory and the directories should not be nested.");
         }
 
         @Test
@@ -108,14 +108,14 @@ class ScmMaterialConfigTest {
             material.setFolder("f1/../../f3");
 
             material.validateConcreteMaterial(null);
-            assertThat(material.errors().on(FOLDER)).isEqualTo("Dest folder 'f1/../../f3' is not valid. It must be a sub-directory of the working folder.");
+            assertThat(material.errors().firstErrorOn(FOLDER)).isEqualTo("Dest folder 'f1/../../f3' is not valid. It must be a sub-directory of the working folder.");
         }
 
         @Test
         void shouldFailValidationIfDestinationDirectoryIsNestedAfterNormalization() {
             material.setFolder("f1/f2/../../f3");
             material.validateNotSubdirectoryOf("f3/f4");
-            assertThat(material.errors().on(FOLDER)).isEqualTo("Invalid destination directory. Every material needs a different destination directory and the directories should not be nested.");
+            assertThat(material.errors().firstErrorOn(FOLDER)).isEqualTo("Invalid destination directory. Every material needs a different destination directory and the directories should not be nested.");
         }
 
         @Test
@@ -129,6 +129,49 @@ class ScmMaterialConfigTest {
             material.validateNotSubdirectoryOf(material2.toAbsolutePath().toString());
 
             assertThat(material.errors().getAllOn(FOLDER)).isEmpty();
+        }
+    }
+
+    private static class DummyMaterialConfig extends ScmMaterialConfig {
+        public DummyMaterialConfig() {
+            super("DummyMaterial");
+        }
+
+        @Override
+        public boolean isCheckExternals() {
+            return false;
+        }
+
+        @Override
+        public String getUrl() {
+            return null;
+        }
+
+        @Override
+        public void setUrl(String url) {
+        }
+
+        @Override
+        public String getUriForDisplay() {
+            return null;
+        }
+
+        @Override
+        public void validateConcreteScmMaterial() {
+        }
+
+        @Override
+        protected void appendCriteria(Map<String, Object> parameters) {
+        }
+
+        @Override
+        public String getTypeForDisplay() {
+            return null;
+        }
+
+        @Override
+        public String getLongDescription() {
+            return null;
         }
     }
 }

@@ -16,7 +16,7 @@
 package com.thoughtworks.go.apiv1.agentjobhistory
 
 import com.thoughtworks.go.api.SecurityTestTrait
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper
 import com.thoughtworks.go.apiv1.agentjobhistory.representers.AgentJobHistoryRepresenter
 import com.thoughtworks.go.domain.JobInstances
 import com.thoughtworks.go.domain.JobResult
@@ -51,7 +51,7 @@ class AgentJobHistoryControllerV1Test implements SecurityServiceTrait, Controlle
 
   @Override
   AgentJobHistoryControllerV1 createControllerInstance() {
-    new AgentJobHistoryControllerV1(new ApiAuthenticationHelper(securityService, goConfigService), jobInstanceService, agentService)
+    new AgentJobHistoryControllerV1(new ApiAuthorizationHelper(securityService, goConfigService), jobInstanceService, agentService)
   }
 
   @Nested
@@ -70,7 +70,7 @@ class AgentJobHistoryControllerV1Test implements SecurityServiceTrait, Controlle
       def offset = 0
       def sortOrder = SortOrder.DESC
 
-      def pagination = Pagination.pageStartingAt(offset, totalCompletedJobs, pageSize)
+      def pagination = Pagination.pageByOffset(offset, totalCompletedJobs, pageSize)
       def jobInstance = JobInstanceMother.completed("blah", JobResult.Passed)
 
       when(agentService.findAgent(uuid)).thenReturn(AgentInstanceMother.idleWith(uuid))
@@ -95,7 +95,7 @@ class AgentJobHistoryControllerV1Test implements SecurityServiceTrait, Controlle
         @Test
         void 'should allow `offset` with value `0`'() {
 
-          def pagination = Pagination.pageStartingAt(0, 42, 10)
+          def pagination = Pagination.pageByOffset(0, 42, 10)
           def jobInstance = JobInstanceMother.completed("blah", JobResult.Passed)
           def jobInstancesModel = new JobInstancesModel(new JobInstances(jobInstance), pagination)
 
@@ -121,7 +121,7 @@ class AgentJobHistoryControllerV1Test implements SecurityServiceTrait, Controlle
 
         @Test
         void 'should allow positive offset'() {
-          def pagination = Pagination.pageStartingAt(1, 42, 10)
+          def pagination = Pagination.pageByOffset(1, 42, 10)
           def jobInstance = JobInstanceMother.completed("blah", JobResult.Passed)
           def jobInstancesModel = new JobInstancesModel(new JobInstances(jobInstance), pagination)
 
@@ -161,7 +161,7 @@ class AgentJobHistoryControllerV1Test implements SecurityServiceTrait, Controlle
 
         @Test
         void 'should allow page_size of 10'() {
-          def pagination = Pagination.pageStartingAt(0, 42, 10)
+          def pagination = Pagination.pageByOffset(0, 42, 10)
           def jobInstance = JobInstanceMother.completed("blah", JobResult.Passed)
           def jobInstancesModel = new JobInstancesModel(new JobInstances(jobInstance), pagination)
 
@@ -179,7 +179,7 @@ class AgentJobHistoryControllerV1Test implements SecurityServiceTrait, Controlle
 
         @Test
         void 'should allow page_size of 100'() {
-          def pagination = Pagination.pageStartingAt(0, 42, 100)
+          def pagination = Pagination.pageByOffset(0, 42, 100)
           def jobInstance = JobInstanceMother.completed("blah", JobResult.Passed)
           def jobInstancesModel = new JobInstancesModel(new JobInstances(jobInstance), pagination)
 
@@ -210,7 +210,7 @@ class AgentJobHistoryControllerV1Test implements SecurityServiceTrait, Controlle
 
         @Test
         void 'should allow good `sort_column` name'() {
-          def pagination = Pagination.pageStartingAt(0, 42, 10)
+          def pagination = Pagination.pageByOffset(0, 42, 10)
           def jobInstance = JobInstanceMother.completed("blah", JobResult.Passed)
           def jobInstancesModel = new JobInstancesModel(new JobInstances(jobInstance), pagination)
 
@@ -231,7 +231,7 @@ class AgentJobHistoryControllerV1Test implements SecurityServiceTrait, Controlle
       class SortOrder {
         @Test
         void 'should allow ASC `sort_order`'() {
-          def pagination = Pagination.pageStartingAt(0, 42, 10)
+          def pagination = Pagination.pageByOffset(0, 42, 10)
           def jobInstance = JobInstanceMother.completed("blah", JobResult.Passed)
           def jobInstancesModel = new JobInstancesModel(new JobInstances(jobInstance), pagination)
 
@@ -249,7 +249,7 @@ class AgentJobHistoryControllerV1Test implements SecurityServiceTrait, Controlle
 
         @Test
         void 'should allow DESC `sort_order`'() {
-          def pagination = Pagination.pageStartingAt(0, 42, 10)
+          def pagination = Pagination.pageByOffset(0, 42, 10)
           def jobInstance = JobInstanceMother.completed("blah", JobResult.Passed)
           def jobInstancesModel = new JobInstancesModel(new JobInstances(jobInstance), pagination)
 
@@ -279,6 +279,8 @@ class AgentJobHistoryControllerV1Test implements SecurityServiceTrait, Controlle
 
     @Nested
     class Security implements SecurityTestTrait, AdminUserSecurity {
+      @Delegate SecurityServiceTrait s = AgentJobHistoryControllerV1Test.this
+      @Delegate ControllerTrait<AgentJobHistoryControllerV1> c = AgentJobHistoryControllerV1Test.this
 
       @Override
       String getControllerMethodUnderTest() {

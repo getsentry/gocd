@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.service;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.CruiseConfig;
 import com.thoughtworks.go.config.PipelineConfig;
 import com.thoughtworks.go.domain.Pipeline;
@@ -32,8 +31,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 
 /**
  * Understands how/whether to lock/unlock a pipeline instance
@@ -42,8 +43,8 @@ import java.util.List;
 public class PipelineLockService implements ConfigChangedListener {
     private static final Logger LOGGER = LoggerFactory.getLogger(PipelineLockService.class);
     private final GoConfigService goConfigService;
-    private PipelineStateDao pipelineStateDao;
-    private List<PipelineLockStatusChangeListener> listeners = new ArrayList<>();
+    private final PipelineStateDao pipelineStateDao;
+    private final List<PipelineLockStatusChangeListener> listeners = new CopyOnWriteArrayList<>();
 
     @Autowired
     public PipelineLockService(GoConfigService goConfigService, PipelineStateDao pipelineStateDao) {
@@ -61,7 +62,7 @@ public class PipelineLockService implements ConfigChangedListener {
             @Override
             public void onEntityConfigChange(PipelineConfig pipelineConfig) {
                 for (String lockedPipeline : pipelineStateDao.lockedPipelines()) {
-                    if (pipelineConfig.name().equals(new CaseInsensitiveString(lockedPipeline)) && !pipelineConfig.isLockable()) {
+                    if (pipelineConfig.name().equals(cis(lockedPipeline)) && !pipelineConfig.isLockable()) {
                         unlock(lockedPipeline);
                         break;
                     }
@@ -73,7 +74,7 @@ public class PipelineLockService implements ConfigChangedListener {
     public void lockIfNeeded(Pipeline pipeline) {
         if (goConfigService.isLockable(pipeline.getName())) {
             pipelineStateDao.lockPipeline(pipeline, status -> {
-                if(status == TransactionSynchronization.STATUS_COMMITTED) {
+                if (status == TransactionSynchronization.STATUS_COMMITTED) {
                     notifyListeners(PipelineLockStatusChangeListener.Event.lock(pipeline.getName()));
                 }
             });
@@ -113,7 +114,7 @@ public class PipelineLockService implements ConfigChangedListener {
     @Override
     public void onConfigChange(CruiseConfig newCruiseConfig) {
         for (String lockedPipeline : pipelineStateDao.lockedPipelines()) {
-            if (!newCruiseConfig.hasPipelineNamed(new CaseInsensitiveString(lockedPipeline)) || !newCruiseConfig.isPipelineLockable(lockedPipeline)) {
+            if (!newCruiseConfig.hasPipelineNamed(cis(lockedPipeline)) || !newCruiseConfig.isPipelineLockable(lockedPipeline)) {
                 unlock(lockedPipeline);
             }
         }

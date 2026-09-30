@@ -16,13 +16,12 @@
 
 package com.thoughtworks.go.domain.builder;
 
-import com.thoughtworks.go.util.StringUtil;
 import com.thoughtworks.go.util.command.CommandLine;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
 import com.thoughtworks.go.util.command.ExecScript;
 import com.thoughtworks.go.util.command.InMemoryConsumer;
 import org.apache.commons.lang3.ArrayUtils;
-import org.assertj.core.api.SoftAssertions;
+import org.apache.commons.lang3.StringUtils;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -31,6 +30,8 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 public abstract class AbstractCommandBuilderScriptRunnerTest {
 
@@ -52,7 +53,7 @@ public abstract class AbstractCommandBuilderScriptRunnerTest {
             "dir1", // Regular dir without spaces
             "dir 2", // Regular dir with space
             "\"dir3\""); // Regular dir without spaces pre-quoted
-        for (Path dir : paths.stream().map(p -> tempWorkDir.resolve(StringUtil.unQuote(p))).toList()) {
+        for (Path dir : paths.stream().map(p -> tempWorkDir.resolve(StringUtils.unwrap(p, '"'))).toList()) {
             Files.createDirectory(dir);
         }
         return paths;
@@ -76,10 +77,10 @@ public abstract class AbstractCommandBuilderScriptRunnerTest {
         commandFor(executableLocation, ArrayUtils.addAll(executableFlags, executableArgs))
             .runScript(script, output, new EnvironmentVariableContext(), null);
 
-        SoftAssertions.assertSoftly(softly -> {
+        assertSoftly(softly -> {
             softly.assertThat(output.toString())
                 .contains(Arrays.stream(executableArgs)
-                    .map(CommandBuilderWithArgsListScriptRunnerTest::trimWrappingQuotesAndWhiteSpace)
+                    .map(arg -> StringUtils.unwrap(arg.trim(), '"'))
                     .collect(Collectors.toList()))
                 .doesNotContainIgnoringCase("not found")
                 .doesNotContainIgnoringCase("no such file");
@@ -97,7 +98,4 @@ public abstract class AbstractCommandBuilderScriptRunnerTest {
         return executable;
     }
 
-    static String trimWrappingQuotesAndWhiteSpace(String arg) {
-        return arg.trim().replaceAll("(^\"*)|(\"*$)", "");
-    }
 }

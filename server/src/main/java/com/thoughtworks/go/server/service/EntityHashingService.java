@@ -25,15 +25,13 @@ import com.thoughtworks.go.config.remote.ConfigReposConfig;
 import com.thoughtworks.go.domain.NotificationFilter;
 import com.thoughtworks.go.domain.PipelineGroups;
 import com.thoughtworks.go.domain.packagerepository.PackageDefinition;
-import com.thoughtworks.go.domain.packagerepository.PackageRepositories;
 import com.thoughtworks.go.domain.packagerepository.PackageRepository;
-import com.thoughtworks.go.domain.packagerepository.Packages;
 import com.thoughtworks.go.domain.scm.SCM;
 import com.thoughtworks.go.domain.scm.SCMs;
 import com.thoughtworks.go.listener.ConfigChangedListener;
 import com.thoughtworks.go.listener.EntityConfigChangedListener;
 import com.thoughtworks.go.plugin.domain.common.CombinedPluginInfo;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.domain.PluginSettings;
 import com.thoughtworks.go.server.initializers.Initializer;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -213,10 +211,6 @@ public class EntityHashingService implements ConfigChangedListener, Initializer 
     }
 
     @Override
-    public void startDaemon() {
-    }
-
-    @Override
     public void onConfigChange(CruiseConfig newCruiseConfig) {
         goCache.remove(ETAG_CACHE_KEY);
     }
@@ -232,8 +226,8 @@ public class EntityHashingService implements ConfigChangedListener, Initializer 
     }
 
     public String hashForEntity(EnvironmentConfig config) {
-        if (config instanceof MergeEnvironmentConfig) {
-            return hashForEntity((MergeEnvironmentConfig) config);
+        if (config instanceof MergeEnvironmentConfig environmentConfigs) {
+            return hashForEntity(environmentConfigs);
         }
 
         String cacheKey = cacheKey(config, config.name());
@@ -258,10 +252,6 @@ public class EntityHashingService implements ConfigChangedListener, Initializer 
     public String hashForEntity(PackageRepository config) {
         String cacheKey = cacheKey(config, config.getId());
         return getConfigEntityDigestFromCache(cacheKey, config);
-    }
-
-    public String hashForEntity(PackageRepositories packageRepositories) {
-        return compound(packageRepositories, this::hashForEntity);
     }
 
     public String hashForEntity(SCM config) {
@@ -306,10 +296,6 @@ public class EntityHashingService implements ConfigChangedListener, Initializer 
         return getConfigEntityDigestFromCache(cacheKey, config);
     }
 
-    public String hashForEntity(SecurityAuthConfigs authConfigs) {
-        return compound(authConfigs, this::hashForEntity);
-    }
-
     public String hashForEntity(Role config) {
         String cacheKey = cacheKey(config, config.getName());
         return getConfigEntityDigestFromCache(cacheKey, config);
@@ -327,10 +313,6 @@ public class EntityHashingService implements ConfigChangedListener, Initializer 
     public String hashForEntity(PackageDefinition config) {
         String cacheKey = cacheKey(config, config.getId());
         return getConfigEntityDigestFromCache(cacheKey, config);
-    }
-
-    public String hashForEntity(Packages config) {
-        return compound(config, this::hashForEntity);
     }
 
     public String hashForEntity(PluginSettings pluginSettings) {
@@ -433,9 +415,7 @@ public class EntityHashingService implements ConfigChangedListener, Initializer 
      * @return a single digest representing the contents of the collection
      */
     private <T> String compound(Collection<T> entities, Function<T, String> hashFn) {
-        return hashes.digest(entities.stream().
-                map(hashFn).
-                toArray(String[]::new));
+        return hashes.digest(entities.stream().map(hashFn).toArray(String[]::new));
     }
 
     private String cacheKey(Object domainObject, CaseInsensitiveString name) {

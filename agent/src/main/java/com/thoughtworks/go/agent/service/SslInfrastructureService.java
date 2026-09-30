@@ -16,13 +16,11 @@
 package com.thoughtworks.go.agent.service;
 
 import com.thoughtworks.go.agent.URLService;
-import com.thoughtworks.go.agent.common.ssl.GoAgentServerHttpClient;
+import com.thoughtworks.go.agent.common.GoAgentServerHttpClient;
 import com.thoughtworks.go.config.AgentAutoRegistrationProperties;
 import com.thoughtworks.go.config.AgentRegistry;
 import com.thoughtworks.go.server.service.AgentRuntimeInfo;
 import com.thoughtworks.go.util.SystemUtil;
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.io.input.NullInputStream;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.client.methods.RequestBuilder;
@@ -67,7 +65,7 @@ public class SslInfrastructureService {
         httpClient.reset();
     }
 
-    public void registerIfNecessary(AgentAutoRegistrationProperties agentAutoRegistrationProperties) throws Exception {
+    public void registerIfNecessary(AgentAutoRegistrationProperties agentAutoRegistrationProperties) throws IOException {
         if (isRegistered()) {
             return;
         }
@@ -91,7 +89,7 @@ public class SslInfrastructureService {
         return agentRegistry.tokenPresent();
     }
 
-    protected void register(AgentAutoRegistrationProperties agentAutoRegistrationProperties) throws Exception {
+    protected void register(AgentAutoRegistrationProperties agentAutoRegistrationProperties) throws IOException {
         String hostName = SystemUtil.getLocalhostNameOrRandomNameIfNotFound();
         boolean registered = false;
         while (!registered) {
@@ -103,7 +101,7 @@ public class SslInfrastructureService {
                 throw e;
             }
 
-            if ((!registered)) {
+            if (!registered) {
                 try {
                     LOGGER.debug("[Agent Registration] Retrieved agent key from the GoCD server is not valid.");
                     Thread.sleep(REGISTER_RETRY_INTERVAL);
@@ -147,31 +145,29 @@ public class SslInfrastructureService {
 
             try (CloseableHttpResponse response = httpClient.execute(postMethod)) {
                 switch (getStatusCode(response)) {
-                    case SC_ACCEPTED:
-                        LOGGER.debug("The server has accepted the registration request.");
-                        break;
-                    case SC_FORBIDDEN:
-                        LOGGER.debug("Server denied registration request due to invalid token. Deleting existing token from disk.");
-                        agentRegistry.deleteToken();
-                        break;
                     case SC_OK:
-                        LOGGER.info("This agent is now approved by the server.");
+                        LOGGER.info("[Agent Registration] This agent is now approved by the server.");
                         return true;
+                    case SC_ACCEPTED:
+                        LOGGER.debug("[Agent Registration] The server has accepted the registration request.");
+                        return false;
+                    case SC_FORBIDDEN:
+                        LOGGER.debug("[Agent Registration] Server denied registration request due to invalid token. Deleting existing token from disk.");
+                        agentRegistry.deleteToken();
+                        return false;
                     case SC_UNPROCESSABLE_ENTITY:
-                        LOGGER.error("Error occurred during agent registration process: {}", responseBody(response));
-                        break;
+                        LOGGER.error("[Agent Registration] Error occurred during agent registration process: {}", responseBody(response));
+                        return false;
                     default:
-                        LOGGER.warn("The server sent a response that we could not understand. The HTTP status was {}. The response body was:\n{}", response.getStatusLine(), responseBody(response));
+                        LOGGER.warn("[Agent Registration] The server sent a response that we could not understand. The HTTP status was {}. The response body was:\n{}", response.getStatusLine(), responseBody(response));
+                        return false;
                 }
-            } finally {
-                postMethod.releaseConnection();
             }
-            return false;
         }
 
         private String responseBody(CloseableHttpResponse response) throws IOException {
-            try (InputStream is = response.getEntity() == null ? new NullInputStream(0) : response.getEntity().getContent()) {
-                return IOUtils.toString(is, StandardCharsets.UTF_8);
+            try (InputStream is = response.getEntity() == null ? InputStream.nullInputStream() : response.getEntity().getContent()) {
+                return new String(is.readAllBytes(), StandardCharsets.UTF_8);
             }
         }
 

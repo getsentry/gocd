@@ -25,14 +25,14 @@ import com.thoughtworks.go.config.remote.RepoConfigOrigin;
 
 public class InternalPipelineGroupsRepresenter {
     public static void toJSON(OutputWriter outputWriter, PipelineGroupsViewModel pipelineGroupsViewModel) {
-        outputWriter.
-                addChildList("groups", groupsWriter -> pipelineGroupsViewModel.getPipelineGroups().forEach(group -> groupsWriter.addChild(groupWriter -> groupWriter.add("name", group.getGroup())
-                                .addChildList("pipelines",
-                                        outputListWriter -> group.forEach(pipelineConfig -> outputListWriter.addChild(pipelineWriter -> {
-                                                pipelineWriter.add("name", pipelineConfig.name());
-                                                writeOrigin(pipelineWriter, pipelineConfig.getOrigin());
-                                                renderEnvironment(pipelineWriter, pipelineConfig, pipelineGroupsViewModel);
-                                            }))))));
+        outputWriter
+            .addChildList("groups", groupsWriter -> pipelineGroupsViewModel.getPipelineGroups().forEach(group -> groupsWriter.addChild(groupWriter -> groupWriter.add("name", group.getGroup())
+                .addChildList("pipelines",
+                    outputListWriter -> group.forEach(pipelineConfig -> outputListWriter.addChild(pipelineWriter -> {
+                        pipelineWriter.add("name", pipelineConfig.name());
+                        writeOrigin(pipelineWriter, pipelineConfig.getOrigin());
+                        renderEnvironment(pipelineWriter, pipelineConfig, pipelineGroupsViewModel);
+                    }))))));
     }
 
     private static void renderEnvironment(OutputWriter pipelineWriter, PipelineConfig pipelineConfig, PipelineGroupsViewModel environments) {
@@ -47,10 +47,10 @@ public class InternalPipelineGroupsRepresenter {
     private static void writeOrigin(OutputWriter jsonWriter, ConfigOrigin origin) {
         if (origin instanceof FileConfigOrigin) {
             jsonWriter.addChild("origin", originWriter -> originWriter.add("type", "gocd"));
-        } else if (origin instanceof RepoConfigOrigin) {
+        } else if (origin instanceof RepoConfigOrigin repoConfigOrigin) {
             jsonWriter.addChild("origin", originWriter -> {
                 originWriter.add("type", "config_repo");
-                originWriter.add("id", ((RepoConfigOrigin) origin).getConfigRepo().getId());
+                originWriter.add("id", repoConfigOrigin.getConfigRepo().getId());
             });
         }
     }

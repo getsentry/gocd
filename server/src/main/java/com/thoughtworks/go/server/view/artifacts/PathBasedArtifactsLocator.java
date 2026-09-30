@@ -16,12 +16,13 @@
 package com.thoughtworks.go.server.view.artifacts;
 
 import com.thoughtworks.go.domain.LocatableEntity;
-import com.thoughtworks.go.server.cache.ArtifactCache;
+import com.thoughtworks.go.server.caching.ArtifactCache;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 
 public class PathBasedArtifactsLocator implements ArtifactLocator {
-    private File artifactsRoot;
+    private final File artifactsRoot;
 
     public PathBasedArtifactsLocator(File artifactsRoot) {
         this.artifactsRoot = artifactsRoot;
@@ -42,7 +43,7 @@ public class PathBasedArtifactsLocator implements ArtifactLocator {
     }
 
     @Override
-    public File directoryFor(LocatableEntity locatableEntity) {
+    public @NotNull File directoryFor(LocatableEntity locatableEntity) {
         return jobFolder(locatableEntity);
     }
 

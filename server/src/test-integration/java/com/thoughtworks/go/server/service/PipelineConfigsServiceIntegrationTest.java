@@ -28,7 +28,7 @@ import com.thoughtworks.go.plugin.infra.plugininfo.GoPluginDescriptor;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
 import com.thoughtworks.go.util.GoConfigFileHelper;
-import org.apache.commons.io.IOUtils;
+import com.thoughtworks.go.util.TestFileUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,7 +41,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ExtendWith(SpringExtension.class)
@@ -51,7 +51,6 @@ import static org.assertj.core.api.Assertions.assertThat;
         "classpath:/testPropertyConfigurer.xml",
         "classpath:/spring-all-servlet.xml",
 })
-
 public class PipelineConfigsServiceIntegrationTest {
     @Autowired
     private PipelineConfigsService pipelineConfigsService;
@@ -63,13 +62,12 @@ public class PipelineConfigsServiceIntegrationTest {
     private RoleConfigService roleConfigService;
     @Autowired
     private GoConfigDao goConfigDao;
-    private String xml;
     private GoConfigFileHelper configHelper;
 
     @BeforeEach
     public void setUp() throws Exception {
         configHelper = new GoConfigFileHelper();
-        xml = goConfigMigration.upgradeIfNecessary(IOUtils.toString(getClass().getResource("/data/config_with_pluggable_artifacts_store.xml"), UTF_8));
+        String xml = goConfigMigration.upgradeIfNecessary(TestFileUtil.resourceToString("/data/config_with_pluggable_artifacts_store.xml"));
         setupMetadataForPlugin();
 
         configHelper.usingCruiseConfigDao(goConfigDao);
@@ -80,34 +78,35 @@ public class PipelineConfigsServiceIntegrationTest {
 
     @AfterEach
     public void tearDown() {
+        configHelper.onTearDown();
         ArtifactMetadataStore.instance().clear();
     }
 
     @Test
     public void shouldEncryptPluginPropertiesOfPublishTask() throws Exception {
         pipelineConfigsService.updateXml("first",
-                groupSnippetWithSecurePropertiesBeforeEncryption(), goConfigService.configFileMd5(),
+                groupSnippetWithSecurePropertiesBeforeEncryption(), configHelper.currentConfig().getMd5(),
                 new Username("user"), new HttpLocalizedOperationResult());
 
 
-        PipelineConfig ancestor = goConfigDao.loadConfigHolder().configForEdit.pipelineConfigByName(new CaseInsensitiveString("ancestor"));
-        Configuration ancestorPluggablePublishAftifactConfigAfterEncryption = ancestor
-                .getExternalArtifactConfigs().get(0).getConfiguration();
-        assertThat(ancestorPluggablePublishAftifactConfigAfterEncryption.getProperty("Image").getValue()).isEqualTo("SECRET");
-        assertThat(ancestorPluggablePublishAftifactConfigAfterEncryption.getProperty("Image").getEncryptedValue()).startsWith("AES:");
-        assertThat(ancestorPluggablePublishAftifactConfigAfterEncryption.getProperty("Image").getConfigValue()).isNull();
+        PipelineConfig ancestor = goConfigDao.loadConfigHolder().configForEdit.pipelineConfigByName(cis("ancestor"));
+        Configuration ancestorPluggablePublishArtifactConfigAfterEncryption = ancestor
+                .getExternalArtifactConfigs().getFirst().getConfiguration();
+        assertThat(ancestorPluggablePublishArtifactConfigAfterEncryption.getProperty("Image").getValue()).isEqualTo("SECRET");
+        assertThat(ancestorPluggablePublishArtifactConfigAfterEncryption.getProperty("Image").getEncryptedValue()).startsWith("AES:");
+        assertThat(ancestorPluggablePublishArtifactConfigAfterEncryption.getProperty("Image").getConfigValue()).isNull();
     }
 
     @Test
     public void shouldEncryptPluginPropertiesOfFetchTask() throws Exception {
         pipelineConfigsService.updateXml("first",
-                groupSnippetWithSecurePropertiesBeforeEncryption(), goConfigService.configFileMd5(),
+                groupSnippetWithSecurePropertiesBeforeEncryption(), configHelper.currentConfig().getMd5(),
                 new Username("user"), new HttpLocalizedOperationResult());
 
 
-        PipelineConfig child = goConfigDao.loadConfigHolder().configForEdit.pipelineConfigByName(new CaseInsensitiveString("child"));
+        PipelineConfig child = goConfigDao.loadConfigHolder().configForEdit.pipelineConfigByName(cis("child"));
         Configuration childFetchConfigAfterEncryption = ((FetchPluggableArtifactTask) child
-                .get(0).getJobs().get(0).tasks().get(0)).getConfiguration();
+                .getFirst().getJobs().getFirst().tasks().getFirst()).getConfiguration();
 
         assertThat(childFetchConfigAfterEncryption.getProperty("FetchProperty").getValue()).isEqualTo("SECRET");
         assertThat(childFetchConfigAfterEncryption.getProperty("FetchProperty").getEncryptedValue()).startsWith("AES:");
@@ -133,9 +132,9 @@ public class PipelineConfigsServiceIntegrationTest {
         List<PipelineConfigs> groupsForUser = pipelineConfigsService.getGroupsForUser(user.getUsername().toString());
         PipelineConfigs groupFromServer = groupsForUser.get(1);
 
-        ViewConfig viewConfig = new ViewConfig(new AdminRole(new CaseInsensitiveString(roleName)));
-        OperationConfig operationConfig = new OperationConfig(new AdminRole(new CaseInsensitiveString(roleName)));
-        AdminsConfig adminsConfig = new AdminsConfig(new AdminRole(new CaseInsensitiveString(roleName)));
+        ViewConfig viewConfig = new ViewConfig(new AdminRole(cis(roleName)));
+        OperationConfig operationConfig = new OperationConfig(new AdminRole(cis(roleName)));
+        AdminsConfig adminsConfig = new AdminsConfig(new AdminRole(cis(roleName)));
         Authorization authorization = new Authorization(viewConfig, operationConfig, adminsConfig);
         BasicPipelineConfigs toUpdate = new BasicPipelineConfigs(groupName, authorization);
 
@@ -163,9 +162,9 @@ public class PipelineConfigsServiceIntegrationTest {
         List<PipelineConfigs> groupsForUser = pipelineConfigsService.getGroupsForUser(user.getUsername().toString());
         PipelineConfigs groupFromServer = groupsForUser.get(1);
 
-        ViewConfig viewConfig = new ViewConfig(new AdminRole(new CaseInsensitiveString(roleName)));
-        OperationConfig operationConfig = new OperationConfig(new AdminRole(new CaseInsensitiveString(roleName)));
-        AdminsConfig adminsConfig = new AdminsConfig(new AdminRole(new CaseInsensitiveString(roleName)));
+        ViewConfig viewConfig = new ViewConfig(new AdminRole(cis(roleName)));
+        OperationConfig operationConfig = new OperationConfig(new AdminRole(cis(roleName)));
+        AdminsConfig adminsConfig = new AdminsConfig(new AdminRole(cis(roleName)));
         Authorization authorization = new Authorization(viewConfig, operationConfig, adminsConfig);
         BasicPipelineConfigs toUpdate = new BasicPipelineConfigs(groupName, authorization);
 
@@ -176,9 +175,9 @@ public class PipelineConfigsServiceIntegrationTest {
 
         String expectedError = "Role \"non-existing-role\" does not exist.";
 
-        assertThat(updated.getAuthorization().getViewConfig().errors().getAllOn("roles").get(0)).isEqualTo(expectedError);
-        assertThat(updated.getAuthorization().getOperationConfig().errors().getAllOn("roles").get(0)).isEqualTo(expectedError);
-        assertThat(updated.getAuthorization().getAdminsConfig().errors().getAllOn("roles").get(0)).isEqualTo(expectedError);
+        assertThat(updated.getAuthorization().getViewConfig().errors().getAllOn("roles").getFirst()).isEqualTo(expectedError);
+        assertThat(updated.getAuthorization().getOperationConfig().errors().getAllOn("roles").getFirst()).isEqualTo(expectedError);
+        assertThat(updated.getAuthorization().getAdminsConfig().errors().getAllOn("roles").getFirst()).isEqualTo(expectedError);
     }
 
     private void setupMetadataForPlugin() {
@@ -199,7 +198,7 @@ public class PipelineConfigsServiceIntegrationTest {
     }
 
     private String groupSnippetWithSecurePropertiesBeforeEncryption() throws IOException {
-        return IOUtils.toString(getClass().getResource("/data/pipeline_group_snippet_with_pluggable_artifacts.xml"), UTF_8);
+        return TestFileUtil.resourceToString("/data/pipeline_group_snippet_with_pluggable_artifacts.xml");
     }
 
 }

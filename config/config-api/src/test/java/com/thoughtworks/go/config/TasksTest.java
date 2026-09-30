@@ -23,22 +23,13 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.*;
 
 public class TasksTest {
-
-    @Test
-    public void shouldReturnEmptyTasks() {
-        AntTask antTask1 = new AntTask();
-        FetchTask fetchArtifact = new FetchTask();
-        Tasks tasks = new Tasks(antTask1, fetchArtifact);
-        Tasks finds = tasks.findByType(NantTask.class);
-        assertThat(finds.size()).isEqualTo(0);
-    }
-
     @Test
     public void shouldSetConfigAttributesForBuiltinTask() {
         Map<String, Object> attributes = new HashMap<>();
@@ -52,7 +43,7 @@ public class TasksTest {
         spy.setConfigAttributes(attributes, taskFactory);
 
         assertThat(spy.size()).isEqualTo(1);
-        assertThat(spy.get(0)).isEqualTo(antTask("build.xml", "test", "foo"));
+        assertThat(spy.getFirst()).isEqualTo(antTask("build.xml", "test", "foo"));
     }
 
     @Test
@@ -115,9 +106,9 @@ public class TasksTest {
         ExecTask execTask = new ExecTask("foo", new Arguments(new Argument("arg")));
         Tasks tasks = new Tasks(antTask, execTask);
         String pipelineName = "p1";
-        PipelineConfig pipelineConfig = GoConfigMother.configWithPipelines(pipelineName).pipelineConfigByName(new CaseInsensitiveString(pipelineName));
-        StageConfig stageConfig = pipelineConfig.getStages().get(0);
-        JobConfig jobConfig = stageConfig.getJobs().get(0);
+        PipelineConfig pipelineConfig = GoConfigMother.configWithPipelines(pipelineName).pipelineConfigByName(cis(pipelineName));
+        StageConfig stageConfig = pipelineConfig.getStages().getFirst();
+        JobConfig jobConfig = stageConfig.getJobs().getFirst();
         jobConfig.setTasks(tasks);
 
         PipelineConfigSaveValidationContext context = PipelineConfigSaveValidationContext.forChain(true, "group", pipelineConfig, stageConfig, jobConfig);

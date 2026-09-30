@@ -23,9 +23,10 @@ import com.thoughtworks.go.domain.materials.ValidationBean;
 import com.thoughtworks.go.util.SafeSaxBuilder;
 import com.thoughtworks.go.util.SvnLogXmlParser;
 import com.thoughtworks.go.util.command.*;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.jdom2.Document;
 import org.jdom2.Element;
+import org.jetbrains.annotations.TestOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,16 +43,16 @@ import java.util.Set;
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
 import static com.thoughtworks.go.util.ExceptionUtils.bombIf;
 import static com.thoughtworks.go.util.command.CommandLine.createCommandLine;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 public class SvnCommand extends SCMCommand implements Subversion {
-    private UrlArgument repositoryUrl;
-    private StringArgument userName;
-    private PasswordArgument password;
-    private boolean checkExternals;
-
     private static final Logger LOG = LoggerFactory.getLogger(SvnCommand.class);
-    public static final String SVN_DATE_FORMAT_OUT = "yyyy-MM-dd'T'HH:mm:ss.SSS";
     private static final String ERR_SVN_NOT_FOUND = "Failed to find 'svn' on your PATH. Please ensure 'svn' is executable by the Go Server and on the Go Agents where this material will be used.";
+
+    private final UrlArgument repositoryUrl;
+    private final StringArgument userName;
+    private final PasswordArgument password;
+    private final boolean checkExternals;
 
 
     private final SvnLogXmlParser svnLogXmlParser;
@@ -101,7 +102,7 @@ public class SvnCommand extends SCMCommand implements Subversion {
         try {
             svnExternalList = new SvnExternalParser().parse(svnExternalConsoleOut, repoUrl, repoRoot);
         } catch (RuntimeException e) {
-            throw (RuntimeException) result.smudgedException(e);
+            throw result.redactFrom(e);
         }
         return svnExternalList;
     }
@@ -125,7 +126,7 @@ public class SvnCommand extends SCMCommand implements Subversion {
         try {
             return parseSvnLog(output);
         } catch (Exception e) {
-            throw bomb(result.smudgedException(e));
+            throw bomb(result.redactFrom(e));
         }
     }
 
@@ -141,7 +142,7 @@ public class SvnCommand extends SCMCommand implements Subversion {
             modifications = Modifications.filterOutRevision(modifications, subversionRevision);
             return modifications;
         } catch (Exception e) {
-            LOG.error("Error parsing svn log output", result.smudgedException(e));
+            LOG.error("Error parsing svn log output", result.redactFrom(e));
             throw bomb(e);
         }
     }
@@ -238,12 +239,10 @@ public class SvnCommand extends SCMCommand implements Subversion {
         return runOrBomb(svnCmd);
     }
 
-    private int executeCommand(CommandLine svnCmd, ConsoleOutputStreamConsumer outputStreamConsumer) {
-        int returnValue = run(svnCmd, outputStreamConsumer);
-        if (returnValue != 0) {
+    private void executeCommand(CommandLine svnCmd, ConsoleOutputStreamConsumer outputStreamConsumer) {
+        if (run(svnCmd, outputStreamConsumer) != 0) {
             throw new RuntimeException("Failed to run " + svnCmd.toStringForDisplay());
         }
-        return returnValue;
     }
 
     private CommandLine svn(boolean needAuth) {
@@ -259,9 +258,9 @@ public class SvnCommand extends SCMCommand implements Subversion {
     }
 
     private void addCredentials(CommandLine line, StringArgument svnUserName, PasswordArgument svnPassword) {
-        if (!StringUtils.isBlank(svnUserName.originalArgument())) {
+        if (!isBlank(svnUserName.originalArgument())) {
             line.withArgs("--username", svnUserName.originalArgument());
-            if (!StringUtils.isBlank(svnPassword.originalArgument())) {
+            if (!isBlank(svnPassword.originalArgument())) {
                 line.withArg("--password");
                 line.withArg(svnPassword);
             }
@@ -282,6 +281,7 @@ public class SvnCommand extends SCMCommand implements Subversion {
         executeCommand(line, output);
     }
 
+    @TestOnly
     public void propset(File workingDir, String propName, String propValue) {
         CommandLine line = svn(true).withArgs("propset", "--non-interactive", propName, propValue, ".");
         line.setWorkingDir(workingDir);
@@ -306,7 +306,7 @@ public class SvnCommand extends SCMCommand implements Subversion {
         return urlToUUIDMap;
     }
 
-    static class SvnInfo {
+    public static class SvnInfo {
         private String path = "";
         private String encodedUrl = "";
         private String root = "";
@@ -327,7 +327,7 @@ public class SvnCommand extends SCMCommand implements Subversion {
 
             Element repositoryElement = entryElement.getChild("repository");
             String root = repositoryElement.getChildTextTrim("root");
-            String encodedPath = StringUtils.replace(encodedUrl, root, "");
+            String encodedPath = Strings.CS.replace(encodedUrl, root, "");
 
             this.path = URLDecoder.decode(encodedPath, StandardCharsets.UTF_8);
             this.root = root;

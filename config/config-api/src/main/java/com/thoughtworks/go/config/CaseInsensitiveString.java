@@ -25,15 +25,17 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static org.apache.commons.lang3.Strings.CI;
+
 @ConfigAttributeValue(fieldName = "name", createForNull = false)
 public class CaseInsensitiveString implements Comparable<CaseInsensitiveString>, Serializable {
 
     private final String name;
-    private final String lowerCaseName; //used only for comparison
+    private final int hashCode;
 
     public CaseInsensitiveString(String name) {
         this.name = name;
-        this.lowerCaseName = name == null ? null : name.toLowerCase();
+        this.hashCode = Objects.hashCode(toCanonicalRepresentation());
     }
 
     @Override
@@ -41,51 +43,63 @@ public class CaseInsensitiveString implements Comparable<CaseInsensitiveString>,
         return name;
     }
 
-    public String toLower() {
-        return lowerCaseName;
-    }
-
-    public boolean startsWith(String string) {
-       return lowerCaseName.startsWith(string.toLowerCase());
-    }
-
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         CaseInsensitiveString that = (CaseInsensitiveString) o;
-        return Objects.equals(lowerCaseName, that.lowerCaseName);
+        return CI.equals(name, that.name);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(lowerCaseName);
+        return hashCode;
     }
 
-    public boolean isBlank() {
+    public boolean isEmpty() {
         return StringUtils.isEmpty(name);
     }
 
     @Override
     protected Object clone() {
-        return new CaseInsensitiveString(name);
+        return cis(name);
     }
 
     @Override
     public int compareTo(CaseInsensitiveString other) {
-        return toLower().compareTo(other.toLower());
+        return CI.compare(name, other.name);
     }
 
-    public static boolean isBlank(CaseInsensitiveString string) {
-        return string == null || string.isBlank();
+    public String toLower() {
+        return toCanonicalRepresentation();
+    }
+
+    private String toCanonicalRepresentation() {
+        return name == null ? null : name.toLowerCase();
     }
 
     public String toUpper() {
-        return name.toUpperCase();
+        return name == null ? null : name.toUpperCase();
+    }
+
+    public boolean startsWith(String prefix) {
+        return CI.startsWith(name, prefix);
+    }
+
+    public static CaseInsensitiveString cis(String string) {
+        return new CaseInsensitiveString(string);
     }
 
     public static String str(CaseInsensitiveString str) {
         return str == null ? null : str.toString();
+    }
+
+    public static boolean isEmpty(CaseInsensitiveString string) {
+        return string == null || string.isEmpty();
     }
 
     public static List<CaseInsensitiveString> list(List<String> strings) {

@@ -18,19 +18,27 @@ package com.thoughtworks.go.domain.label;
 import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.domain.InsecureEnvironmentVariables;
 import org.apache.commons.lang3.RegExUtils;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 
 import java.io.Serializable;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static org.apache.commons.lang3.StringUtils.*;
+
 public class PipelineLabel implements Serializable {
-    protected String label;
-    private InsecureEnvironmentVariables envVars;
     public static final String COUNT = "COUNT";
     public static final String ENV_VAR_PREFIX = "env:";
     public static final String COUNT_TEMPLATE = String.format("${%s}", COUNT);
+
+    public static final Pattern PIPELINE_LABEL_TEMPLATE_PATTERN_FOR_MIGRATION = Pattern.compile("(\\$\\{[^}]*\\})");
+    public static final Pattern PATTERN = Pattern.compile("\\$\\{(?<name>[^}\\[]+)(?:\\[:(?<truncation>\\d+)])?}");
+
+    private String label;
+    private final InsecureEnvironmentVariables envVars;
 
     public PipelineLabel(String labelTemplate, InsecureEnvironmentVariables insecureEnvironmentVariables) {
         this.label = labelTemplate;
@@ -46,12 +54,9 @@ public class PipelineLabel implements Serializable {
         return label;
     }
 
-    public static final Pattern PIPELINE_LABEL_TEMPLATE_PATTERN_FOR_MIGRATION = Pattern.compile("(\\$\\{[^}]*\\})");
-    public static final Pattern PATTERN = Pattern.compile("\\$\\{(?<name>[^}\\[]+)(?:\\[:(?<truncation>\\d+)])?}");
 
     public void updateLabel(Map<CaseInsensitiveString, String> namedRevisions, int pipelineCounter) {
-        this.label = interpolateLabel(namedRevisions, pipelineCounter);
-        this.label = StringUtils.substring(label, 0, 255);
+        setLabel(substring(interpolateLabel(namedRevisions, pipelineCounter), 0, 255));
     }
 
     private String interpolateLabel(Map<CaseInsensitiveString, String> materialRevisions, int pipelineCounter) {
@@ -88,9 +93,9 @@ public class PipelineLabel implements Serializable {
     }
 
     private String resolveMaterialRevision(Map<CaseInsensitiveString, String> knownRevisions, String name, String truncation) {
-        final String revision = knownRevisions.get(new CaseInsensitiveString(name));
+        final String revision = knownRevisions.get(cis(name));
 
-        if (StringUtils.isNotBlank(truncation)) {
+        if (isNotBlank(truncation)) {
             int truncationLength = Integer.parseInt(truncation);
 
             if (null != revision && revision.length() > truncationLength) {
@@ -112,16 +117,16 @@ public class PipelineLabel implements Serializable {
 
         PipelineLabel label1 = (PipelineLabel) o;
 
-        return label != null ? label.equals(label1.label) : label1.label == null;
+        return Objects.equals(label, label1.label);
     }
 
     @Override
     public int hashCode() {
-        return (label != null ? label.hashCode() : 0);
+        return label != null ? label.hashCode() : 0;
     }
 
     public static PipelineLabel create(String labelTemplate, InsecureEnvironmentVariables envVars) {
-        if (StringUtils.isBlank(labelTemplate)) {
+        if (isBlank(labelTemplate)) {
             return defaultLabel();
         } else {
             return new PipelineLabel(labelTemplate, envVars);
@@ -138,7 +143,7 @@ public class PipelineLabel implements Serializable {
 
         while (matcher.find()) {
             String group = matcher.group(1);
-            if (!StringUtils.startsWith(group, "${env:")) {
+            if (!Strings.CS.startsWith(group, "${env:")) {
                 String replacementText = RegExUtils.replaceFirst(group, "(?<!\\[):", "_");
                 labelTemplate = labelTemplate.replace(group, replacementText);
             }

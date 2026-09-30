@@ -81,11 +81,6 @@ public class DependencyMaterialUpdateNotifier implements StageStatusListener, Co
     }
 
     @Override
-    public void startDaemon() {
-
-    }
-
-    @Override
     public void onMaterialUpdate(Material material) {
         if (material instanceof DependencyMaterial) {
             if (retryQueue.remove(material)) {
@@ -133,7 +128,9 @@ public class DependencyMaterialUpdateNotifier implements StageStatusListener, Co
     }
 
     private void updateMaterial(Material material) {
-        if (skipUpdate) return;
+        if (skipUpdate) {
+            return;
+        }
 
         try {
             if (!materialUpdateService.updateMaterial(material)) {
@@ -161,8 +158,8 @@ public class DependencyMaterialUpdateNotifier implements StageStatusListener, Co
 
         Collection<Material> newMaterials = CollectionUtils.subtract(materialsAfterConfigChange, materialsBeforeConfigChange);
 
-        for (Object material : newMaterials) {
-            updateMaterial((Material) material);
+        for (Material material : newMaterials) {
+            updateMaterial(material);
         }
     }
 

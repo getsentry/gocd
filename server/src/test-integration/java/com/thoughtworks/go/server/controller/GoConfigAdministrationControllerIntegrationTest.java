@@ -16,14 +16,12 @@
 package com.thoughtworks.go.server.controller;
 
 import com.thoughtworks.go.ClearSingleton;
-import com.thoughtworks.go.config.ConfigCache;
 import com.thoughtworks.go.config.GoConfigDao;
 import com.thoughtworks.go.config.GoFileConfigDataSource;
 import com.thoughtworks.go.config.MagicalGoConfigXmlWriter;
 import com.thoughtworks.go.config.registry.ConfigElementImplementationRegistry;
 import com.thoughtworks.go.server.controller.actions.XmlAction;
 import com.thoughtworks.go.server.newsecurity.SessionUtilsHelper;
-import com.thoughtworks.go.util.ConfigElementImplementationRegistryMother;
 import com.thoughtworks.go.util.GoConfigFileHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,9 +34,7 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.io.ByteArrayOutputStream;
 
-import static com.thoughtworks.go.config.exceptions.ConfigFileHasChangedException.CONFIG_CHANGED_PLEASE_REFRESH;
-import static javax.servlet.http.HttpServletResponse.SC_CONFLICT;
-import static javax.servlet.http.HttpServletResponse.SC_OK;
+import static java.net.HttpURLConnection.HTTP_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ExtendWith(ClearSingleton.class)
@@ -54,7 +50,7 @@ public class GoConfigAdministrationControllerIntegrationTest {
     @Autowired private GoConfigDao goConfigDao;
     @Autowired private GoFileConfigDataSource dataSource;
     @Autowired private ConfigElementImplementationRegistry registry;
-    private static final GoConfigFileHelper configHelper = new GoConfigFileHelper();
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
     private MockHttpServletResponse response;
 
     @BeforeEach
@@ -77,26 +73,16 @@ public class GoConfigAdministrationControllerIntegrationTest {
     public void shouldGetConfigAsXml() throws Exception {
         configHelper.addPipeline("pipeline", "stage", "build1", "build2");
 
-        controller.getCurrentConfigXml(null, response);
+        controller.getCurrentConfigXml(response);
         ByteArrayOutputStream os = new ByteArrayOutputStream();
-        new MagicalGoConfigXmlWriter(new ConfigCache(), registry).write(goConfigDao.loadForEditing(), os, true);
-        assertValidContentAndStatus(SC_OK, "text/xml", os.toString());
-        assertThat(response.getHeader(XmlAction.X_CRUISE_CONFIG_MD5)).isEqualTo(goConfigDao.md5OfConfigFile());
-    }
-
-    @Test
-    public void shouldConflictWhenGivenMd5IsDifferent() throws Exception {
-        configHelper.addPipeline("pipeline", "stage", "build1", "build2");
-
-        controller.getCurrentConfigXml("crapy_md5", response);
-        ByteArrayOutputStream os = new ByteArrayOutputStream();
-        new MagicalGoConfigXmlWriter(new ConfigCache(), ConfigElementImplementationRegistryMother.withNoPlugins()).write(goConfigDao.loadForEditing(), os, true);
-        assertValidContentAndStatus(SC_CONFLICT, "text/plain; charset=utf-8", CONFIG_CHANGED_PLEASE_REFRESH);
-        assertThat(response.getHeader(XmlAction.X_CRUISE_CONFIG_MD5)).isEqualTo(goConfigDao.md5OfConfigFile());
+        new MagicalGoConfigXmlWriter(registry).write(goConfigDao.loadForEditing(), os, true);
+        assertValidContentAndStatus(HTTP_OK, "text/xml; charset=utf-8", os.toString());
+        assertThat(response.getHeader(XmlAction.HEADER_RESPONSE_CRUISE_CONFIG_MD5)).isEqualTo(configHelper.currentConfig().getMd5());
     }
 
     private void assertValidContentAndStatus(int status, String contentType, String content) throws Exception {
-        RestfulActionTestHelper.assertValidContentAndStatus(response, status, contentType, content);
+        assertThat(response.getStatus()).isEqualTo(status);
+        assertThat(response.getContentType()).isEqualTo(contentType);
+        assertThat(response.getContentAsString()).isEqualTo(content);
     }
-
 }

@@ -19,9 +19,10 @@ import com.thoughtworks.go.domain.ConsoleConsumer;
 import com.thoughtworks.go.domain.JobIdentifier;
 import com.thoughtworks.go.domain.StageIdentifier;
 import com.thoughtworks.go.domain.exception.IllegalArtifactLocationException;
-import com.thoughtworks.go.server.cache.ZipArtifactCache;
+import com.thoughtworks.go.remote.StandardHeaders;
+import com.thoughtworks.go.server.caching.ZipArtifactCache;
 import com.thoughtworks.go.server.dao.JobInstanceDao;
-import com.thoughtworks.go.server.security.HeaderConstraint;
+import com.thoughtworks.go.server.security.ConfirmationConstraint;
 import com.thoughtworks.go.server.service.ArtifactsService;
 import com.thoughtworks.go.server.service.ConsoleActivityMonitor;
 import com.thoughtworks.go.server.service.ConsoleService;
@@ -30,9 +31,7 @@ import com.thoughtworks.go.server.util.ErrorHandler;
 import com.thoughtworks.go.server.view.artifacts.ArtifactsView;
 import com.thoughtworks.go.server.view.artifacts.LocalArtifactsView;
 import com.thoughtworks.go.server.web.*;
-import com.thoughtworks.go.util.ArtifactLogUtil;
 import com.thoughtworks.go.util.SystemEnvironment;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,9 +52,10 @@ import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
 
-import static com.thoughtworks.go.util.ArtifactLogUtil.isConsoleOutput;
-import static com.thoughtworks.go.util.GoConstants.*;
-import static javax.servlet.http.HttpServletResponse.SC_NOT_FOUND;
+import static com.thoughtworks.go.util.ArtifactUtil.*;
+import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static org.apache.commons.lang3.StringUtils.isEmpty;
 
 @Controller
 public class ArtifactsController {
@@ -68,7 +68,7 @@ public class ArtifactsController {
     private final ArtifactsService artifactsService;
     private final RestfulService restfulService;
     private final ConsoleService consoleService;
-    private final HeaderConstraint headerConstraint;
+    private final ConfirmationConstraint confirmationConstraint;
 
     @Autowired
     ArtifactsController(ArtifactsService artifactsService, RestfulService restfulService, ZipArtifactCache zipArtifactCache, JobInstanceDao jobInstanceDao,
@@ -79,13 +79,13 @@ public class ArtifactsController {
         this.consoleActivityMonitor = consoleActivityMonitor;
         this.consoleService = consoleService;
         this.zipFolderViewFactory = new ZipArtifactFolderViewFactory(zipArtifactCache);
-        this.headerConstraint = new HeaderConstraint(systemEnvironment);
+        this.confirmationConstraint = new ConfirmationConstraint();
         this.consoleLogCharset = systemEnvironment.consoleLogCharset();
     }
 
 
     /* RESTful URLs */
-    @RequestMapping(value = "/repository/restful/artifact/GET/*", method = RequestMethod.GET)
+    @RequestMapping(value = "/spring-internal/artifact/GET/*", method = RequestMethod.GET)
     public ModelAndView getArtifactNonFolder(@RequestParam("pipelineName") String pipelineName,
                                              @RequestParam("pipelineCounter") String pipelineCounter,
                                              @RequestParam("stageName") String stageName,
@@ -93,11 +93,11 @@ public class ArtifactsController {
                                              @RequestParam("buildName") String buildName,
                                              @RequestParam("filePath") String filePath,
                                              @RequestParam(value = "sha1", required = false) String sha
-    ) throws Exception {
+    ) throws IllegalArtifactLocationException, IOException {
         return getArtifact(filePath, (identifier, artifactFolder) -> FileModelAndView.fileNotFound(filePath), pipelineName, pipelineCounter, stageName, stageCounter, buildName, sha);
     }
 
-    @RequestMapping(value = "/repository/restful/artifact/GET/json", method = RequestMethod.GET)
+    @RequestMapping(value = "/spring-internal/artifact/GET/json", method = RequestMethod.GET)
     public ModelAndView getArtifactAsJson(@RequestParam("pipelineName") String pipelineName,
                                           @RequestParam("pipelineCounter") String pipelineCounter,
                                           @RequestParam("stageName") String stageName,
@@ -105,11 +105,11 @@ public class ArtifactsController {
                                           @RequestParam("buildName") String buildName,
                                           @RequestParam("filePath") String filePath,
                                           @RequestParam(value = "sha1", required = false) String sha
-    ) throws Exception {
+    ) throws IllegalArtifactLocationException, IOException {
         return getArtifact(filePath, new JsonArtifactFolderViewFactory(), pipelineName, pipelineCounter, stageName, stageCounter, buildName, sha);
     }
 
-    @RequestMapping(value = "/repository/restful/artifact/GET/zip", method = RequestMethod.GET)
+    @RequestMapping(value = "/spring-internal/artifact/GET/zip", method = RequestMethod.GET)
     public ModelAndView getArtifactAsZip(@RequestParam("pipelineName") String pipelineName,
                                          @RequestParam("pipelineCounter") String pipelineCounter,
                                          @RequestParam("stageName") String stageName,
@@ -117,11 +117,11 @@ public class ArtifactsController {
                                          @RequestParam("buildName") String buildName,
                                          @RequestParam("filePath") String filePath,
                                          @RequestParam(value = "sha1", required = false) String sha
-    ) throws Exception {
+    ) throws IllegalArtifactLocationException, IOException {
         return getArtifact(filePath.equals(".zip") ? "./.zip" : filePath, zipFolderViewFactory, pipelineName, pipelineCounter, stageName, stageCounter, buildName, sha);
     }
 
-    @RequestMapping(value = "/repository/restful/artifact/POST/*", method = RequestMethod.POST)
+    @RequestMapping(value = "/spring-internal/artifact/POST/*", method = RequestMethod.POST)
     public ModelAndView postArtifact(@RequestParam("pipelineName") String pipelineName,
                                      @RequestParam("pipelineCounter") String pipelineCounter,
                                      @RequestParam("stageName") String stageName,
@@ -130,10 +130,10 @@ public class ArtifactsController {
                                      @RequestParam(value = "buildId", required = false) Long buildId,
                                      @RequestParam("filePath") String filePath,
                                      @RequestParam(value = "attempt", required = false) Integer attempt,
-                                     MultipartHttpServletRequest request) throws Exception {
+                                     MultipartHttpServletRequest request) throws IOException {
         JobIdentifier jobIdentifier;
-        if (!headerConstraint.isSatisfied(request)) {
-            return ResponseCodeView.create(HttpServletResponse.SC_BAD_REQUEST, "Missing required header 'Confirm'");
+        if (!confirmationConstraint.isSatisfied(request)) {
+            return ResponseCodeView.create(HTTP_BAD_REQUEST, String.format("Missing required header '%s'", StandardHeaders.REQUEST_CONFIRM_MODIFICATION));
         }
         if (!isValidStageCounter(stageCounter)) {
             return buildNotFound(pipelineName, pipelineCounter, stageName, stageCounter, buildName);
@@ -179,7 +179,7 @@ public class ArtifactsController {
     private boolean updateChecksumFile(MultipartHttpServletRequest request, JobIdentifier jobIdentifier, String filePath) throws IOException, IllegalArtifactLocationException {
         MultipartFile checksumMultipartFile = getChecksumFile(request);
         if (checksumMultipartFile != null) {
-            String checksumFilePath = String.format("%s/%s/%s", artifactsService.findArtifactRoot(jobIdentifier), ArtifactLogUtil.CRUISE_OUTPUT_FOLDER, ArtifactLogUtil.MD5_CHECKSUM_FILENAME);
+            String checksumFilePath = String.format("%s/%s/%s", artifactsService.findArtifactRoot(jobIdentifier), CRUISE_OUTPUT_FOLDER, MD5_CHECKSUM_FILENAME);
             File checksumFile = artifactsService.getArtifactLocation(checksumFilePath);
             synchronized (checksumFilePath.intern()) {
                 return artifactsService.saveOrAppendFile(checksumFile, checksumMultipartFile.getInputStream());
@@ -196,7 +196,7 @@ public class ArtifactsController {
         }
     }
 
-    @RequestMapping(value = "/repository/restful/artifact/PUT/*", method = RequestMethod.PUT)
+    @RequestMapping(value = "/spring-internal/artifact/PUT/*", method = RequestMethod.PUT)
     public ModelAndView putArtifact(@RequestParam("pipelineName") String pipelineName,
                                     @RequestParam("pipelineCounter") String pipelineCounter,
                                     @RequestParam("stageName") String stageName,
@@ -206,7 +206,7 @@ public class ArtifactsController {
                                     @RequestParam("filePath") String filePath,
                                     @RequestParam(value = "agentId", required = false) String agentId,
                                     HttpServletRequest request
-    ) throws Exception {
+    ) throws IOException, IllegalArtifactLocationException {
         if (filePath.contains("..")) {
             return FileModelAndView.forbiddenUrl(filePath);
         }
@@ -231,16 +231,14 @@ public class ArtifactsController {
 
     /* Other URLs */
 
-    @RequestMapping(value = "/**/consoleout.json", method = RequestMethod.GET)
-    public ModelAndView consoleout(@RequestParam("pipelineName") String pipelineName,
-                                   @RequestParam("pipelineCounter") String pipelineCounter,
-                                   @RequestParam("stageName") String stageName,
-                                   @RequestParam("buildName") String buildName,
-                                   @RequestParam(value = "stageCounter", required = false) String stageCounter,
-                                   @RequestParam(value = "startLineNumber", required = false) Long start
+    @RequestMapping(value = "/spring-internal/consoleout.json", method = RequestMethod.GET)
+    public ModelAndView consoleOutput(@RequestParam("pipelineName") String pipelineName,
+                                      @RequestParam("pipelineCounter") String pipelineCounter,
+                                      @RequestParam("stageName") String stageName,
+                                      @RequestParam("buildName") String buildName,
+                                      @RequestParam(value = "stageCounter", required = false) String stageCounter,
+                                      @RequestParam(value = "startLineNumber", required = false) Long start
     ) {
-        start = start == null ? 0L : start;
-
         if (!isValidStageCounter(stageCounter)) {
             return buildNotFound(pipelineName, pipelineCounter, stageName, stageCounter, buildName);
         }
@@ -250,7 +248,7 @@ public class ArtifactsController {
             if (jobInstanceDao.isJobCompleted(identifier) && !consoleService.doesLogExist(identifier)) {
                 return logsNotFound(identifier);
             }
-            ConsoleConsumer streamer = consoleService.getStreamer(start, identifier);
+            ConsoleConsumer streamer = consoleService.getStreamer(start == null ? 0 : start, identifier);
             return new ModelAndView(new ConsoleOutView(streamer, consoleLogCharset));
         } catch (Exception e) {
             return buildNotFound(pipelineName, pipelineCounter, stageName, stageCounter, buildName);
@@ -261,11 +259,11 @@ public class ArtifactsController {
     public ModelAndView handleError(HttpServletRequest request, HttpServletResponse response, Exception e) {
         LOGGER.error("Error loading artifacts: ", e);
         Map<String, String> model = new HashMap<>();
-        model.put(ERROR_FOR_PAGE, "Artifact does not exist.");
-        return new ModelAndView("exceptions_page", model);
+        model.put(ExceptionsPage.ERROR_MESSAGE_KEY, "Artifact does not exist.");
+        return new ModelAndView(ExceptionsPage.VIEW_NAME, model);
     }
 
-    ModelAndView getArtifact(String filePath, ArtifactFolderViewFactory folderViewFactory, String pipelineName, String counterOrLabel, String stageName, String stageCounter, String buildName, String sha) throws Exception {
+    ModelAndView getArtifact(String filePath, ArtifactFolderViewFactory folderViewFactory, String pipelineName, String counterOrLabel, String stageName, String stageCounter, String buildName, String sha) throws IllegalArtifactLocationException, IOException {
         LOGGER.info("[Artifact Download] Trying to resolve '{}' for '{}/{}/{}/{}/{}'", filePath, pipelineName, counterOrLabel, stageName, stageCounter, buildName);
 
         if (!isValidStageCounter(stageCounter)) {
@@ -289,29 +287,29 @@ public class ArtifactsController {
         view = new LocalArtifactsView(folderViewFactory, artifactsService, translatedId, consoleService);
 
         ModelAndView createdView = view.createView(filePath, sha);
-        LOGGER.info("[Artifact Download] Successfully resolved '{}' for '{}/{}/{}/{}/{}'. It took: {}ms", filePath, pipelineName, counterOrLabel, stageName, stageCounter, buildName, System.currentTimeMillis() - before);
+        LOGGER.info("[Artifact Download] Successfully resolved '{}' for '{}/{}/{}/{}/{}'. It took: {} ms", filePath, pipelineName, counterOrLabel, stageName, stageCounter, buildName, System.currentTimeMillis() - before);
         return createdView;
     }
 
     private boolean shouldUnzipStream(MultipartFile multipartFile) {
-        return multipartFile.getName().equals(ZIP_MULTIPART_FILENAME);
+        return multipartFile.getName().equals(StandardHeaders.Multipart.ZIP_FILENAME);
     }
 
     private MultipartFile multipartFile(MultipartHttpServletRequest request) {
-        MultipartFile multipartFile = request.getFile(REGULAR_MULTIPART_FILENAME);
+        MultipartFile multipartFile = request.getFile(StandardHeaders.Multipart.REGULAR_FILENAME);
         if (multipartFile == null) {
-            multipartFile = request.getFile(ZIP_MULTIPART_FILENAME);
+            multipartFile = request.getFile(StandardHeaders.Multipart.ZIP_FILENAME);
         }
         return multipartFile;
     }
 
     private MultipartFile getChecksumFile(MultipartHttpServletRequest request) {
-        return request.getFile(CHECKSUM_MULTIPART_FILENAME);
+        return request.getFile(StandardHeaders.Multipart.CHECKSUM_FILENAME);
     }
 
-    private ModelAndView putConsoleOutput(final JobIdentifier jobIdentifier, final InputStream inputStream) throws Exception {
+    private ModelAndView putConsoleOutput(final JobIdentifier jobIdentifier, final InputStream inputStream) throws IllegalArtifactLocationException {
         File consoleLogFile = consoleService.consoleLogFile(jobIdentifier);
-        boolean updated = consoleService.updateConsoleLog(consoleLogFile, inputStream);
+        boolean updated = consoleService.appendToConsoleLogIoSafe(consoleLogFile, inputStream);
         if (updated) {
             consoleActivityMonitor.consoleUpdatedFor(jobIdentifier);
             return FileModelAndView.fileAppended(consoleLogFile.getPath());
@@ -321,7 +319,7 @@ public class ArtifactsController {
     }
 
     private ModelAndView putArtifact(JobIdentifier jobIdentifier, String filePath,
-                                     InputStream inputStream) throws Exception {
+                                     InputStream inputStream) throws IllegalArtifactLocationException {
         File artifact = artifactsService.findArtifact(jobIdentifier, filePath);
         if (artifactsService.saveOrAppendFile(artifact, inputStream)) {
             return FileModelAndView.fileAppended(filePath);
@@ -333,18 +331,18 @@ public class ArtifactsController {
     private ModelAndView buildNotFound(String pipelineName, String counterOrLabel, String stageName,
                                        String stageCounter,
                                        String buildName) {
-        return ResponseCodeView.create(SC_NOT_FOUND, String.format("Job %s/%s/%s/%s/%s not found.", pipelineName,
+        return ResponseCodeView.create(HTTP_NOT_FOUND, String.format("Job %s/%s/%s/%s/%s not found.", pipelineName,
                 counterOrLabel, stageName, stageCounter, buildName));
     }
 
     private ModelAndView logsNotFound(JobIdentifier identifier) {
         String notFound = String.format("Console log for %s is unavailable as it may have been purged by Go or deleted externally.", identifier.toFullString());
-        return ResponseCodeView.create(SC_NOT_FOUND, notFound);
+        return ResponseCodeView.create(HTTP_NOT_FOUND, notFound);
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     private boolean isValidStageCounter(String stageCounter) {
-        if (StringUtils.isEmpty(stageCounter) || StageIdentifier.LATEST.equalsIgnoreCase(stageCounter)) {
+        if (isEmpty(stageCounter) || StageIdentifier.LATEST.equalsIgnoreCase(stageCounter)) {
             return true;
         }
 

@@ -53,15 +53,10 @@ import com.thoughtworks.go.serverhealth.HealthStateScope;
 import com.thoughtworks.go.serverhealth.HealthStateType;
 import com.thoughtworks.go.serverhealth.ServerHealthService;
 import com.thoughtworks.go.serverhealth.ServerHealthState;
-import com.thoughtworks.go.service.ConfigRepository;
-import com.thoughtworks.go.util.GoConfigFileHelper;
-import com.thoughtworks.go.util.ReflectionUtil;
-import com.thoughtworks.go.util.SystemEnvironment;
-import com.thoughtworks.go.util.TempDirUtils;
+import com.thoughtworks.go.util.*;
 import com.thoughtworks.go.util.command.CommandLine;
 import com.thoughtworks.go.util.command.ConsoleResult;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,6 +70,7 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -84,19 +80,19 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.ConfigFileFixture.DEFAULT_XML_WITH_2_AGENTS;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.git;
-import static com.thoughtworks.go.util.GoConstants.CONFIG_SCHEMA_VERSION;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.*;
 
 @ExtendWith(ResetCipher.class)
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(locations = {
-        "classpath:/applicationContext-global.xml",
-        "classpath:/applicationContext-dataLocalAccess.xml",
-        "classpath:/testPropertyConfigurer.xml",
-        "classpath:/spring-all-servlet.xml",
+    "classpath:/applicationContext-global.xml",
+    "classpath:/applicationContext-dataLocalAccess.xml",
+    "classpath:/testPropertyConfigurer.xml",
+    "classpath:/spring-all-servlet.xml",
 })
 public class CachedGoConfigIntegrationTest {
     @Autowired
@@ -105,7 +101,6 @@ public class CachedGoConfigIntegrationTest {
     private GoConfigRepoConfigDataSource repoConfigDataSource;
     @Autowired
     private CachedGoConfig cachedGoConfig;
-    private GoConfigFileHelper configHelper;
     @Autowired
     private ServerHealthService serverHealthService;
     @Autowired
@@ -128,12 +123,11 @@ public class CachedGoConfigIntegrationTest {
     private GoConfigMigration goConfigMigration;
     @Autowired
     private ConfigElementImplementationRegistry registry;
-    @Autowired
-    private ConfigCache configCache;
 
     @TempDir
     Path temporaryFolder;
 
+    private GoConfigFileHelper configHelper;
     private Modification latestModification;
     private ConfigRepoConfig configRepo;
     private File externalConfigRepo;
@@ -148,10 +142,10 @@ public class CachedGoConfigIntegrationTest {
         latestModification = setupExternalConfigRepo(externalConfigRepo);
         configHelper.addConfigRepo(createConfigRepoWithDefaultRules(git(externalConfigRepo.getAbsolutePath()), XmlPartialConfigProvider.providerName, "gocd-id"));
         goConfigService.forceNotifyListeners();
-        configRepo = configWatchList.getCurrentConfigRepos().get(0);
+        configRepo = configWatchList.getCurrentConfigRepos().getFirst();
         cachedGoPartials.clear();
         configHelper.addEnvironments("some_environment");
-        magicalGoConfigXmlLoader = new MagicalGoConfigXmlLoader(configCache, registry);
+        magicalGoConfigXmlLoader = new MagicalGoConfigXmlLoader(registry);
     }
 
     @AfterEach
@@ -182,13 +176,13 @@ public class CachedGoConfigIntegrationTest {
         // So parsing fails and proper message is shown:
         List<ServerHealthState> messageForInvalidMerge = serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(downstreamConfigRepo));
         assertThat(messageForInvalidMerge.isEmpty()).isFalse();
-        assertThat(messageForInvalidMerge.get(0).getDescription()).contains("tries to fetch artifact from pipeline &quot;pipe1&quot;");
+        assertThat(messageForInvalidMerge.getFirst().getDescription()).contains("tries to fetch artifact from pipeline &quot;pipe1&quot;");
         // and current config is still old
-        assertThat(goConfigService.hasPipelineNamed(new CaseInsensitiveString("downstream"))).isFalse();
+        assertThat(goConfigService.hasPipelineNamed(cis("downstream"))).isFalse();
         assertThat(cachedGoPartials.lastKnownPartials().size()).isEqualTo(1);
         assertThat(cachedGoPartials.lastValidPartials().size()).isEqualTo(0);
         //here downstream partial is waiting to be merged
-        assertThat(cachedGoPartials.lastKnownPartials().get(0).getGroups().get(0).hasPipeline(new CaseInsensitiveString("downstream"))).isTrue();
+        assertThat(cachedGoPartials.lastKnownPartials().getFirst().getGroups().getFirst().hasPipeline(cis("downstream"))).isTrue();
 
         // Finally upstream config repository is parsed
         repoConfigDataSource.onCheckoutComplete(configRepo.getRepo(), externalConfigRepo, latestModification);
@@ -196,8 +190,8 @@ public class CachedGoConfigIntegrationTest {
         // now server should be healthy and contain all pipelines
         assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(configRepo)).isEmpty()).isTrue();
         assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(downstreamConfigRepo)).isEmpty()).isTrue();
-        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(new CaseInsensitiveString("pipe1"))).isTrue();
-        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(new CaseInsensitiveString("downstream"))).isTrue();
+        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(cis("pipe1"))).isTrue();
+        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(cis("downstream"))).isTrue();
     }
 
     @Test
@@ -223,13 +217,13 @@ public class CachedGoConfigIntegrationTest {
         List<ServerHealthState> messageForInvalidMerge = serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(secondDownstreamConfigRepo));
 
         assertThat(messageForInvalidMerge.isEmpty()).isFalse();
-        assertThat(messageForInvalidMerge.get(0).getDescription()).contains("tries to fetch artifact from pipeline &quot;downstream&quot;");
+        assertThat(messageForInvalidMerge.getFirst().getDescription()).contains("tries to fetch artifact from pipeline &quot;downstream&quot;");
         // and current config is still old
-        assertThat(goConfigService.hasPipelineNamed(new CaseInsensitiveString("downstream2"))).isFalse();
+        assertThat(goConfigService.hasPipelineNamed(cis("downstream2"))).isFalse();
         assertThat(cachedGoPartials.lastKnownPartials().size()).isEqualTo(1);
         assertThat(cachedGoPartials.lastValidPartials().size()).isEqualTo(0);
         //here downstream2 partial is waiting to be merged
-        assertThat(cachedGoPartials.lastKnownPartials().get(0).getGroups().get(0).hasPipeline(new CaseInsensitiveString("downstream2"))).isTrue();
+        assertThat(cachedGoPartials.lastKnownPartials().getFirst().getGroups().getFirst().hasPipeline(cis("downstream2"))).isTrue();
 
         // Then middle upstream config repository is parsed
         repoConfigDataSource.onCheckoutComplete(firstDownstreamConfigRepo.getRepo(), firstDownstreamExternalConfigRepo, firstDownstreamLatestModification);
@@ -237,10 +231,10 @@ public class CachedGoConfigIntegrationTest {
         // and errors are still shown
         messageForInvalidMerge = serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(firstDownstreamConfigRepo));
         assertThat(messageForInvalidMerge.isEmpty()).isFalse();
-        assertThat(messageForInvalidMerge.get(0).getDescription()).contains("Pipeline 'pipe1' does not exist. It is used from pipeline 'downstream'");
+        assertThat(messageForInvalidMerge.getFirst().getDescription()).contains("Pipeline 'pipe1' does not exist. It is used from pipeline 'downstream'");
         // and current config is still old
-        assertThat(goConfigService.hasPipelineNamed(new CaseInsensitiveString("downstream"))).isFalse();
-        assertThat(goConfigService.hasPipelineNamed(new CaseInsensitiveString("downstream2"))).isFalse();
+        assertThat(goConfigService.hasPipelineNamed(cis("downstream"))).isFalse();
+        assertThat(goConfigService.hasPipelineNamed(cis("downstream2"))).isFalse();
         assertThat(cachedGoPartials.lastKnownPartials().size()).isEqualTo(2);
         assertThat(cachedGoPartials.lastValidPartials().size()).isEqualTo(0);
 
@@ -251,26 +245,9 @@ public class CachedGoConfigIntegrationTest {
 
         assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(firstDownstreamConfigRepo)).isEmpty()).isTrue();
         assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(secondDownstreamConfigRepo)).isEmpty()).isTrue();
-        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(new CaseInsensitiveString("pipe1"))).isTrue();
-        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(new CaseInsensitiveString("downstream"))).isTrue();
-        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(new CaseInsensitiveString("downstream2"))).isTrue();
-    }
-
-    @Test
-    public void shouldFailWhenTryingToAddPipelineDefinedRemotely() {
-        assertThat(configWatchList.getCurrentConfigRepos().size()).isEqualTo(1);
-        repoConfigDataSource.onCheckoutComplete(configRepo.getRepo(), externalConfigRepo, latestModification);
-        assertThat(cachedGoConfig.loadMergedForEditing().hasPipelineNamed(new CaseInsensitiveString("pipe1"))).isTrue();
-
-        PipelineConfig dupPipelineConfig = PipelineMother.twoBuildPlansWithResourcesAndSvnMaterialsAtUrl("pipe1", "ut",
-                "www.spring.com");
-        try {
-            goConfigDao.addPipeline(dupPipelineConfig, PipelineConfigs.DEFAULT_GROUP);
-        } catch (RuntimeException ex) {
-            assertThat(ex.getMessage()).contains("You have defined multiple pipelines named 'pipe1'. Pipeline names must be unique. Source(s):");
-            return;
-        }
-        fail("Should have thrown");
+        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(cis("pipe1"))).isTrue();
+        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(cis("downstream"))).isTrue();
+        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(cis("downstream2"))).isTrue();
     }
 
     @Test
@@ -289,67 +266,62 @@ public class CachedGoConfigIntegrationTest {
 
         repoConfigDataSource.onCheckoutComplete(configRepo.getRepo(), externalConfigRepo, latestModification);
         assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(configRepo)).isEmpty()).isTrue();
-        assertThat(repoConfigDataSource.latestPartialConfigForMaterial(configRepo.getRepo()).getGroups().findGroup("first").findBy(new CaseInsensitiveString("pipe1"))).isNotNull();
-        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(new CaseInsensitiveString("pipe1"))).isTrue();
+        assertThat(repoConfigDataSource.latestPartialConfigForMaterial(configRepo.getRepo()).getGroups().findGroup("first").findBy(cis("pipe1"))).isNotNull();
+        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(cis("pipe1"))).isTrue();
     }
 
     @Test
     public void shouldFailWhenTryingToAddPipelineWithTheSameNameAsAnotherPipelineDefinedRemotely_EntitySave() {
         assertThat(configWatchList.getCurrentConfigRepos().size()).isEqualTo(1);
         repoConfigDataSource.onCheckoutComplete(configRepo.getRepo(), externalConfigRepo, latestModification);
-        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(new CaseInsensitiveString("pipe1"))).isTrue();
+        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(cis("pipe1"))).isTrue();
 
         PipelineConfig dupPipelineConfig = PipelineMother.twoBuildPlansWithResourcesAndSvnMaterialsAtUrl("pipe1", "ut",
-                "www.spring.com");
-        try {
-            goConfigDao.updateConfig(new CreatePipelineConfigCommand(goConfigService, dupPipelineConfig, Username.ANONYMOUS, new DefaultLocalizedOperationResult(), "default", externalArtifactsService), Username.ANONYMOUS);
-            fail("Should have thrown");
-        } catch (RuntimeException ex) {
-            PipelineConfig pipe1 = goConfigService.pipelineConfigNamed(new CaseInsensitiveString("pipe1"));
-            String errorMessage = dupPipelineConfig.errors().on(PipelineConfig.NAME);
-            assertThat(errorMessage).contains("You have defined multiple pipelines named 'pipe1'. Pipeline names must be unique. Source(s):");
-            Matcher matcher = Pattern.compile("^.*\\[(.*),\\s(.*)\\].*$").matcher(errorMessage);
-            assertThat(matcher.matches()).isTrue();
-            assertThat(matcher.groupCount()).isEqualTo(2);
-            List<String> expectedSources = List.of(dupPipelineConfig.getOriginDisplayName(), pipe1.getOriginDisplayName());
-            List<String> actualSources = new ArrayList<>();
-            for (int i = 1; i <= matcher.groupCount(); i++) {
-                actualSources.add(matcher.group(i));
-            }
-            assertThat(actualSources.size()).isEqualTo(expectedSources.size());
-            assertThat(actualSources.containsAll(expectedSources)).isTrue();
+            "www.spring.com");
+
+        assertThatThrownBy(() -> goConfigDao.updateConfig(new CreatePipelineConfigCommand(goConfigService, dupPipelineConfig, Username.ANONYMOUS, new DefaultLocalizedOperationResult(), "default", externalArtifactsService), Username.ANONYMOUS))
+            .isInstanceOf(RuntimeException.class);
+
+        PipelineConfig pipe1 = goConfigService.pipelineConfigNamed(cis("pipe1"));
+        String errorMessage = dupPipelineConfig.errors().firstErrorOn(PipelineConfig.NAME);
+        assertThat(errorMessage).contains("You have defined multiple pipelines named 'pipe1'. Pipeline names must be unique. Source(s):");
+        Matcher matcher = Pattern.compile("^.*\\[(.*),\\s(.*)].*$", Pattern.DOTALL).matcher(errorMessage);
+        assertThat(matcher.matches()).isTrue();
+        assertThat(matcher.groupCount()).isEqualTo(2);
+        List<String> expectedSources = List.of(dupPipelineConfig.getOriginDisplayName(), pipe1.getOriginDisplayName());
+        List<String> actualSources = new ArrayList<>();
+        for (int i = 1; i <= matcher.groupCount(); i++) {
+            actualSources.add(matcher.group(i));
         }
+        assertThat(actualSources).containsExactlyInAnyOrderElementsOf(expectedSources);
     }
 
     @Test
     public void shouldFailWhenTryingToAddPipelineWithTheSameNameAsAnotherPipelineDefinedRemotely_FullConfigSave() {
         assertThat(configWatchList.getCurrentConfigRepos().size()).isEqualTo(1);
         repoConfigDataSource.onCheckoutComplete(configRepo.getRepo(), externalConfigRepo, latestModification);
-        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(new CaseInsensitiveString("pipe1"))).isTrue();
+        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(cis("pipe1"))).isTrue();
 
         final PipelineConfig dupPipelineConfig = PipelineMother.twoBuildPlansWithResourcesAndSvnMaterialsAtUrl("pipe1", "ut",
-                "www.spring.com");
-        try {
-            goConfigDao.updateConfig(cruiseConfig -> {
-                cruiseConfig.getGroups().first().add(dupPipelineConfig);
-                return cruiseConfig;
+            "www.spring.com");
+        assertThatThrownBy(() -> goConfigDao.updateConfig(cruiseConfig -> {
+            cruiseConfig.getGroups().getFirst().add(dupPipelineConfig);
+            return cruiseConfig;
+        })).isInstanceOf(RuntimeException.class)
+            .satisfies(ex -> {
+                String errorMessage = ex.getMessage();
+                assertThat(errorMessage).contains("You have defined multiple pipelines named 'pipe1'. Pipeline names must be unique. Source(s):");
+                Matcher matcher = Pattern.compile("^.*\\[(.*),\\s(.*)].*$", Pattern.DOTALL).matcher(errorMessage);
+                assertThat(matcher.matches()).isTrue();
+                assertThat(matcher.groupCount()).isEqualTo(2);
+                PipelineConfig pipe1 = goConfigService.pipelineConfigNamed(cis("pipe1"));
+                List<String> expectedSources = List.of(dupPipelineConfig.getOriginDisplayName(), pipe1.getOriginDisplayName());
+                List<String> actualSources = new ArrayList<>();
+                for (int i = 1; i <= matcher.groupCount(); i++) {
+                    actualSources.add(matcher.group(i));
+                }
+                assertThat(actualSources).containsExactlyInAnyOrderElementsOf(expectedSources);
             });
-            fail("Should have thrown");
-        } catch (RuntimeException ex) {
-            String errorMessage = ex.getMessage();
-            assertThat(errorMessage).contains("You have defined multiple pipelines named 'pipe1'. Pipeline names must be unique. Source(s):");
-            Matcher matcher = Pattern.compile("^.*\\[(.*),\\s(.*)\\].*$", Pattern.DOTALL | Pattern.MULTILINE).matcher(errorMessage);
-            assertThat(matcher.matches()).isTrue();
-            assertThat(matcher.groupCount()).isEqualTo(2);
-            PipelineConfig pipe1 = goConfigService.pipelineConfigNamed(new CaseInsensitiveString("pipe1"));
-            List<String> expectedSources = List.of(dupPipelineConfig.getOriginDisplayName(), pipe1.getOriginDisplayName());
-            List<String> actualSources = new ArrayList<>();
-            for (int i = 1; i <= matcher.groupCount(); i++) {
-                actualSources.add(matcher.group(i));
-            }
-            assertThat(actualSources.size()).isEqualTo(expectedSources.size());
-            assertThat(actualSources.containsAll(expectedSources)).isTrue();
-        }
     }
 
     @Test
@@ -357,7 +329,7 @@ public class CachedGoConfigIntegrationTest {
         assertThat(configWatchList.getCurrentConfigRepos().size()).isEqualTo(1);
 
         repoConfigDataSource.onCheckoutComplete(configRepo.getRepo(), externalConfigRepo, latestModification);
-        assertThat(cachedGoConfig.loadMergedForEditing().hasPipelineNamed(new CaseInsensitiveString("pipe1"))).isTrue();
+        assertThat(cachedGoConfig.loadMergedForEditing().hasPipelineNamed(cis("pipe1"))).isTrue();
     }
 
     private List<ServerHealthState> findMessageFor(final HealthStateType type) {
@@ -373,14 +345,14 @@ public class CachedGoConfigIntegrationTest {
 
         repoConfigDataSource.onCheckoutComplete(configRepo.getRepo(), externalConfigRepo, latestModification);
 
-        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(new CaseInsensitiveString("pipe1"))).as("currentConfigShouldBeMerged").isTrue();
+        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(cis("pipe1"))).as("currentConfigShouldBeMerged").isTrue();
         assertThat(listener.invocationCount).isEqualTo(2);
     }
 
     @Test
     public void shouldNotNotifyListenersWhenMergeFails() throws IOException {
         checkinPartial("config_repo_with_invalid_partial");
-        ConfigRepoConfig configRepo = configWatchList.getCurrentConfigRepos().get(0);
+        ConfigRepoConfig configRepo = configWatchList.getCurrentConfigRepos().getFirst();
 
 
         ConfigChangeListenerStub listener = new ConfigChangeListenerStub();
@@ -389,26 +361,26 @@ public class CachedGoConfigIntegrationTest {
         assertThat(listener.invocationCount).isEqualTo(1);
         repoConfigDataSource.onCheckoutComplete(configRepo.getRepo(), externalConfigRepo, latestModification);
 
-        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(new CaseInsensitiveString("pipeline_with_no_stage"))).as("currentConfigShouldBeMainXmlOnly").isFalse();
+        assertThat(cachedGoConfig.currentConfig().hasPipelineNamed(cis("pipeline_with_no_stage"))).as("currentConfigShouldBeMainXmlOnly").isFalse();
         assertThat(listener.invocationCount).isEqualTo(1);
     }
 
     @Test
     public void shouldSetErrorHealthStateWhenMergeFails() throws IOException {
         checkinPartial("config_repo_with_invalid_partial");
-        ConfigRepoConfig configRepo = configWatchList.getCurrentConfigRepos().get(0);
+        ConfigRepoConfig configRepo = configWatchList.getCurrentConfigRepos().getFirst();
 
         repoConfigDataSource.onCheckoutComplete(configRepo.getRepo(), externalConfigRepo, latestModification);
 
         List<ServerHealthState> messageForInvalidMerge = serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(configRepo));
 
         assertThat(messageForInvalidMerge.isEmpty()).isFalse();
-        assertThat(messageForInvalidMerge.get(0).getDescription().contains("Pipeline 'pipeline_with_no_stage' does not have any stages configured")).isTrue();
+        assertThat(messageForInvalidMerge.getFirst().getDescription().contains("Pipeline 'pipeline_with_no_stage' does not have any stages configured")).isTrue();
     }
 
     @Test
     public void shouldUnSetErrorHealthStateWhenMergePasses() throws IOException {
-        ConfigRepoConfig configRepo = configWatchList.getCurrentConfigRepos().get(0);
+        ConfigRepoConfig configRepo = configWatchList.getCurrentConfigRepos().getFirst();
         checkinPartial("config_repo_with_invalid_partial/bad_partial.gocd.xml");
         repoConfigDataSource.onCheckoutComplete(configRepo.getRepo(), externalConfigRepo, latestModification);
         assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(configRepo)).isEmpty()).isFalse();
@@ -429,17 +401,17 @@ public class CachedGoConfigIntegrationTest {
     @Test
     public void shouldReloadCachedConfigWhenWriting() {
         cachedGoConfig.writeWithLock(updateEnvironmentVariables("var1", "value1"));
-        EnvironmentVariableConfig variable = cachedGoConfig.currentConfig().getEnvironments().get(0).getVariables().getVariable("var1");
+        EnvironmentVariableConfig variable = cachedGoConfig.currentConfig().getEnvironments().getFirst().getVariables().getVariable("var1");
 
-        assertThat(cachedGoConfig.currentConfig().getEnvironments().get(0).getVariables().size()).isEqualTo(1);
+        assertThat(cachedGoConfig.currentConfig().getEnvironments().getFirst().getVariables().size()).isEqualTo(1);
         assertThat(variable).isNotNull();
         assertThat(variable.getValue()).isEqualTo("value1");
 
         cachedGoConfig.writeWithLock(updateEnvironmentVariables("var2", "value2"));
 
-        EnvironmentVariableConfig secondVariable = cachedGoConfig.currentConfig().getEnvironments().get(0).getVariables().getVariable("var2");
+        EnvironmentVariableConfig secondVariable = cachedGoConfig.currentConfig().getEnvironments().getFirst().getVariables().getVariable("var2");
 
-        assertThat(cachedGoConfig.currentConfig().getEnvironments().get(0).getVariables().size()).isEqualTo(2);
+        assertThat(cachedGoConfig.currentConfig().getEnvironments().getFirst().getVariables().size()).isEqualTo(2);
         assertThat(secondVariable).isNotNull();
         assertThat(secondVariable.getValue()).isEqualTo("value2");
     }
@@ -454,176 +426,182 @@ public class CachedGoConfigIntegrationTest {
 
     @Test
     public void shouldInterpolateParamsInTemplate() {
-        String content = ("""
-                <cruise schemaVersion='%d'>
-                <server>
-                <artifacts>
-                <artifactsDir>artifacts</artifactsDir>
-                </artifacts>
-                </server>
-                <pipelines>
-                <pipeline name='dev' template='abc'>
-                    <params>
-                        <param name='command'>ls</param>
-                        <param name='dir'>/tmp</param>
-                    </params>
-                    <materials>
-                      <svn url ="svnurl"/>
-                    </materials>
-                </pipeline>
-                <pipeline name='acceptance' template='abc'>
-                    <params>
-                        <param name='command'>twist</param>
-                        <param name='dir'>./acceptance</param>
-                    </params>
-                    <materials>
-                      <svn url ="svnurl"/>
-                    </materials>
-                </pipeline>
-                </pipelines>
-                <templates>
-                  <pipeline name='abc'>
-                    <stage name='stage1'>
-                      <jobs>
-                        <job name='job1'>
-                            <tasks>
-                                <exec command='/bin/#{command}' args='#{dir}'/>
-                            </tasks>
-                        </job>
-                      </jobs>
-                    </stage>
-                  </pipeline>
-                </templates>
-                </cruise>""").formatted(CONFIG_SCHEMA_VERSION);
+        String content = """
+            <cruise schemaVersion='%d'>
+            <server>
+            <artifacts>
+            <artifactsDir>artifacts</artifactsDir>
+            </artifacts>
+            </server>
+            <pipelines>
+            <pipeline name='dev' template='abc'>
+                <params>
+                    <param name='command'>ls</param>
+                    <param name='dir'>/tmp</param>
+                </params>
+                <materials>
+                  <svn url ="svnurl"/>
+                </materials>
+            </pipeline>
+            <pipeline name='acceptance' template='abc'>
+                <params>
+                    <param name='command'>twist</param>
+                    <param name='dir'>./acceptance</param>
+                </params>
+                <materials>
+                  <svn url ="svnurl"/>
+                </materials>
+            </pipeline>
+            </pipelines>
+            <templates>
+              <pipeline name='abc'>
+                <stage name='stage1'>
+                  <jobs>
+                    <job name='job1'>
+                        <tasks>
+                            <exec command='/bin/#{command}' args='#{dir}'/>
+                        </tasks>
+                    </job>
+                  </jobs>
+                </stage>
+              </pipeline>
+            </templates>
+            </cruise>
+            """.formatted(GoConfigSchema.VERSION);
 
         configHelper.writeXmlToConfigFile(content);
 
         cachedGoConfig.forceReload();
 
         CruiseConfig cruiseConfig = cachedGoConfig.currentConfig();
-        ExecTask devExec = (ExecTask) cruiseConfig.pipelineConfigByName(new CaseInsensitiveString("dev")).getFirstStageConfig().jobConfigByConfigName(new CaseInsensitiveString("job1")).getTasks().first();
+        ExecTask devExec = (ExecTask) cruiseConfig.pipelineConfigByName(cis("dev")).getFirstStageConfig().jobConfigByConfigName(cis("job1")).getTasks().getFirst();
         assertThat(devExec).isEqualTo(new ExecTask("/bin/ls", "/tmp", (String) null));
 
-        ExecTask acceptanceExec = (ExecTask) cruiseConfig.pipelineConfigByName(new CaseInsensitiveString("acceptance")).getFirstStageConfig().jobConfigByConfigName(new CaseInsensitiveString("job1")).getTasks().first();
+        ExecTask acceptanceExec = (ExecTask) cruiseConfig.pipelineConfigByName(cis("acceptance")).getFirstStageConfig().jobConfigByConfigName(cis("job1")).getTasks().getFirst();
         assertThat(acceptanceExec).isEqualTo(new ExecTask("/bin/twist", "./acceptance", (String) null));
 
         cruiseConfig = cachedGoConfig.loadForEditing();
-        devExec = (ExecTask) cruiseConfig.getTemplateByName(new CaseInsensitiveString("abc")).get(0).jobConfigByConfigName(new CaseInsensitiveString("job1")).getTasks().first();
+        devExec = (ExecTask) cruiseConfig.getTemplateByName(cis("abc")).getFirst().jobConfigByConfigName(cis("job1")).getTasks().getFirst();
         assertThat(devExec).isEqualTo(new ExecTask("/bin/#{command}", "#{dir}", (String) null));
 
-        assertThat(cruiseConfig.pipelineConfigByName(new CaseInsensitiveString("dev")).size()).isEqualTo(0);
-        assertThat(cruiseConfig.pipelineConfigByName(new CaseInsensitiveString("acceptance")).size()).isEqualTo(0);
+        assertThat(cruiseConfig.pipelineConfigByName(cis("dev")).size()).isEqualTo(0);
+        assertThat(cruiseConfig.pipelineConfigByName(cis("acceptance")).size()).isEqualTo(0);
     }
 
     @Test
     public void shouldHandleParamQuotingCorrectly() {
-        String content = ("""
-                <cruise schemaVersion='%d'>
-                <server>
-                <artifacts>
-                <artifactsDir>artifacts</artifactsDir>
-                </artifacts>
-                </server>
-                <pipelines>
-                <pipeline name='dev'>
-                    <params>
-                        <param name='command'>ls#{a}</param>
-                        <param name='dir'>/tmp</param>
-                    </params>
-                    <materials>
-                      <svn url ="svnurl"/>
-                    </materials>
-                    <stage name='stage1'>
-                      <jobs>
-                        <job name='job1'>
-                            <tasks>
-                                <exec command='/bin/#{command}##{b}' args='#{dir}'/>
-                            </tasks>
-                        </job>
-                      </jobs>
-                    </stage>
-                </pipeline>
-                </pipelines>
-                </cruise>""").formatted(CONFIG_SCHEMA_VERSION);
+        String content = """
+            <cruise schemaVersion='%d'>
+            <server>
+            <artifacts>
+            <artifactsDir>artifacts</artifactsDir>
+            </artifacts>
+            </server>
+            <pipelines>
+            <pipeline name='dev'>
+                <params>
+                    <param name='command'>ls#{a}</param>
+                    <param name='dir'>/tmp</param>
+                </params>
+                <materials>
+                  <svn url ="svnurl"/>
+                </materials>
+                <stage name='stage1'>
+                  <jobs>
+                    <job name='job1'>
+                        <tasks>
+                            <exec command='/bin/#{command}##{b}' args='#{dir}'/>
+                        </tasks>
+                    </job>
+                  </jobs>
+                </stage>
+            </pipeline>
+            </pipelines>
+            </cruise>
+            """.formatted(GoConfigSchema.VERSION);
 
         configHelper.writeXmlToConfigFile(content);
 
         cachedGoConfig.forceReload();
 
         CruiseConfig cruiseConfig = cachedGoConfig.currentConfig();
-        ExecTask devExec = (ExecTask) cruiseConfig.pipelineConfigByName(new CaseInsensitiveString("dev")).getFirstStageConfig().jobConfigByConfigName(new CaseInsensitiveString("job1")).getTasks().first();
+        ExecTask devExec = (ExecTask) cruiseConfig.pipelineConfigByName(cis("dev")).getFirstStageConfig().jobConfigByConfigName(cis("job1")).getTasks().getFirst();
         assertThat(devExec).isEqualTo(new ExecTask("/bin/ls#{a}#{b}", "/tmp", (String) null));
     }
 
     @Test
     public void shouldAllowParamsInLabelTemplates() {
-        String content = "<cruise schemaVersion='" + CONFIG_SCHEMA_VERSION + "'>\n"
-                + "<server>\n"
-                + "<artifacts>\n"
-                + "<artifactsDir>artifacts</artifactsDir>\n"
-                + "</artifacts>\n"
-                + "</server>\n"
-                + "<pipelines>\n"
-                + "<pipeline name='dev' labeltemplate='cruise-#{VERSION}-${COUNT}'>\n"
-                + "    <params>\n"
-                + "        <param name='VERSION'>1.2</param>\n"
-                + "    </params>\n"
-                + "    <materials>\n"
-                + "      <svn url =\"svnurl\"/>\n"
-                + "    </materials>\n"
-                + "    <stage name='stage1'>\n"
-                + "      <jobs>\n"
-                + "        <job name='job1'>\n"
-                + "            <tasks>\n"
-                + "                <exec command='/bin/ls' args='some'/>\n"
-                + "            </tasks>\n"
-                + "        </job>\n"
-                + "      </jobs>\n"
-                + "    </stage>\n"
-                + "</pipeline>\n"
-                + "</pipelines>\n"
-                + "</cruise>";
+        String content = """
+            <cruise schemaVersion='%d'>
+            <server>
+            <artifacts>
+            <artifactsDir>artifacts</artifactsDir>
+            </artifacts>
+            </server>
+            <pipelines>
+            <pipeline name='dev' labeltemplate='cruise-#{VERSION}-${COUNT}'>
+                <params>
+                    <param name='VERSION'>1.2</param>
+                </params>
+                <materials>
+                  <svn url ="svnurl"/>
+                </materials>
+                <stage name='stage1'>
+                  <jobs>
+                    <job name='job1'>
+                        <tasks>
+                            <exec command='/bin/ls' args='some'/>
+                        </tasks>
+                    </job>
+                  </jobs>
+                </stage>
+            </pipeline>
+            </pipelines>
+            </cruise>
+            """.formatted(GoConfigSchema.VERSION);
 
         configHelper.writeXmlToConfigFile(content);
 
         cachedGoConfig.forceReload();
 
         CruiseConfig cruiseConfig = cachedGoConfig.currentConfig();
-        assertThat(cruiseConfig.pipelineConfigByName(new CaseInsensitiveString("dev")).getLabelTemplate()).isEqualTo("cruise-1.2-${COUNT}");
+        assertThat(cruiseConfig.pipelineConfigByName(cis("dev")).getLabelTemplate()).isEqualTo("cruise-1.2-${COUNT}");
     }
 
     @Test
     public void shouldThrowErrorWhenEnvironmentVariablesAreDuplicate() {
-        String content = "<cruise schemaVersion='" + CONFIG_SCHEMA_VERSION + "'>\n"
-                + "<server>\n"
-                + "<artifacts>\n"
-                + "<artifactsDir>artifacts</artifactsDir>\n"
-                + "</artifacts>\n"
-                + "</server>\n"
-                + "<pipelines>\n"
-                + "<pipeline name='dev'>\n"
-                + "    <params>\n"
-                + "        <param name='product'>GO</param>\n"
-                + "    </params>\n"
-                + "    <environmentvariables>\n"
-                + "        <variable name='#{product}_WORKING_DIR'><value>go_dir</value></variable>\n"
-                + "        <variable name='GO_WORKING_DIR'><value>dir</value></variable>\n"
-                + "    </environmentvariables>\n"
-                + "    <materials>\n"
-                + "      <svn url =\"svnurl\"/>\n"
-                + "    </materials>\n"
-                + "    <stage name='stage1'>\n"
-                + "      <jobs>\n"
-                + "        <job name='job1'>\n"
-                + "            <tasks>\n"
-                + "                <exec command='/bin/ls' args='some'/>\n"
-                + "            </tasks>\n"
-                + "        </job>\n"
-                + "      </jobs>\n"
-                + "    </stage>\n"
-                + "</pipeline>\n"
-                + "</pipelines>\n"
-                + "</cruise>";
+        String content = """
+            <cruise schemaVersion='%d'>
+            <server>
+            <artifacts>
+            <artifactsDir>artifacts</artifactsDir>
+            </artifacts>
+            </server>
+            <pipelines>
+            <pipeline name='dev'>
+                <params>
+                    <param name='product'>GO</param>
+                </params>
+                <environmentvariables>
+                    <variable name='#{product}_WORKING_DIR'><value>go_dir</value></variable>
+                    <variable name='GO_WORKING_DIR'><value>dir</value></variable>
+                </environmentvariables>
+                <materials>
+                  <svn url ="svnurl"/>
+                </materials>
+                <stage name='stage1'>
+                  <jobs>
+                    <job name='job1'>
+                        <tasks>
+                            <exec command='/bin/ls' args='some'/>
+                        </tasks>
+                    </job>
+                  </jobs>
+                </stage>
+            </pipeline>
+            </pipelines>
+            </cruise>
+            """.formatted(GoConfigSchema.VERSION);
 
         configHelper.writeXmlToConfigFile(content);
 
@@ -697,11 +675,11 @@ public class CachedGoConfigIntegrationTest {
         addPipelineWithParams(cruiseConfig);
         configHelper.writeConfigFile(cruiseConfig);
 
-        PipelineConfig config = cachedGoConfig.currentConfig().pipelineConfigByName(new CaseInsensitiveString("mingle"));
+        PipelineConfig config = cachedGoConfig.currentConfig().pipelineConfigByName(cis("mingle"));
         HgMaterialConfig hgMaterialConfig = (HgMaterialConfig) byFolder(config.materialConfigs(), "folder");
         assertThat(hgMaterialConfig.getUrl()).isEqualTo("http://hg-server/repo-name");
 
-        config = cachedGoConfig.loadForEditing().pipelineConfigByName(new CaseInsensitiveString("mingle"));
+        config = cachedGoConfig.loadForEditing().pipelineConfigByName(cis("mingle"));
         hgMaterialConfig = (HgMaterialConfig) byFolder(config.materialConfigs(), "folder");
         assertThat(hgMaterialConfig.getUrl()).isEqualTo("http://#{foo}/#{bar}");
     }
@@ -712,20 +690,20 @@ public class CachedGoConfigIntegrationTest {
         CruiseConfig configToBeWritten = magicalGoConfigXmlLoader.deserializeConfig(configXmlWithPipeline(pipelineName));
         cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(configToBeWritten, cachedGoConfig.currentConfig().getMd5()));
 
-        PipelineConfig reloadedPipelineConfig = cachedGoConfig.currentConfig().pipelineConfigByName(new CaseInsensitiveString(pipelineName));
+        PipelineConfig reloadedPipelineConfig = cachedGoConfig.currentConfig().pipelineConfigByName(cis(pipelineName));
         HgMaterialConfig hgMaterialConfig = (HgMaterialConfig) byFolder(reloadedPipelineConfig.materialConfigs(), "folder");
         assertThat(hgMaterialConfig.getUrl()).isEqualTo("http://hg-server/repo-name");
 
-        reloadedPipelineConfig = cachedGoConfig.loadForEditing().pipelineConfigByName(new CaseInsensitiveString(pipelineName));
+        reloadedPipelineConfig = cachedGoConfig.loadForEditing().pipelineConfigByName(cis(pipelineName));
         hgMaterialConfig = (HgMaterialConfig) byFolder(reloadedPipelineConfig.materialConfigs(), "folder");
         assertThat(hgMaterialConfig.getUrl()).isEqualTo("http://#{foo}/#{bar}");
 
         GoConfigHolder configHolder = cachedGoConfig.loadConfigHolder();
-        reloadedPipelineConfig = configHolder.config.pipelineConfigByName(new CaseInsensitiveString(pipelineName));
+        reloadedPipelineConfig = configHolder.config.pipelineConfigByName(cis(pipelineName));
         hgMaterialConfig = (HgMaterialConfig) byFolder(reloadedPipelineConfig.materialConfigs(), "folder");
         assertThat(hgMaterialConfig.getUrl()).isEqualTo("http://hg-server/repo-name");
 
-        reloadedPipelineConfig = configHolder.configForEdit.pipelineConfigByName(new CaseInsensitiveString(pipelineName));
+        reloadedPipelineConfig = configHolder.configForEdit.pipelineConfigByName(cis(pipelineName));
         hgMaterialConfig = (HgMaterialConfig) byFolder(reloadedPipelineConfig.materialConfigs(), "folder");
         assertThat(hgMaterialConfig.getUrl()).isEqualTo("http://#{foo}/#{bar}");
     }
@@ -736,45 +714,46 @@ public class CachedGoConfigIntegrationTest {
             addPipelineWithParams(cruiseConfig);
             return cruiseConfig;
         });
-        PipelineConfig reloadedPipelineConfig = cachedGoConfig.currentConfig().pipelineConfigByName(new CaseInsensitiveString("mingle"));
+        PipelineConfig reloadedPipelineConfig = cachedGoConfig.currentConfig().pipelineConfigByName(cis("mingle"));
         HgMaterialConfig hgMaterialConfig = (HgMaterialConfig) byFolder(reloadedPipelineConfig.materialConfigs(), "folder");
         assertThat(hgMaterialConfig.getUrl()).isEqualTo("http://hg-server/repo-name");
 
-        reloadedPipelineConfig = cachedGoConfig.loadForEditing().pipelineConfigByName(new CaseInsensitiveString("mingle"));
+        reloadedPipelineConfig = cachedGoConfig.loadForEditing().pipelineConfigByName(cis("mingle"));
         hgMaterialConfig = (HgMaterialConfig) byFolder(reloadedPipelineConfig.materialConfigs(), "folder");
         assertThat(hgMaterialConfig.getUrl()).isEqualTo("http://#{foo}/#{bar}");
     }
 
 
     private String configXmlWithPipeline(String pipelineName) {
-        return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
-                "<cruise xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"cruise-config.xsd\" schemaVersion=\"" + CONFIG_SCHEMA_VERSION + "\">\n" +
-                "  <server serverId=\"dd8d0f5a-7e8d-4948-a1c7-ddcedbac15d0\">\n" +
-                "    <artifacts>\n" +
-                "       <artifactsDir>artifacts</artifactsDir>\n" +
-                "    </artifacts>\n" +
-                "  </server>\n" +
-                "  <pipelines group=\"another\">\n" +
-                "    <pipeline name=\"" + pipelineName + "\">\n" +
-                "      <params>\n" +
-                "        <param name=\"foo\">hg-server</param>\n" +
-                "        <param name=\"bar\">repo-name</param>\n" +
-                "      </params>\n" +
-                "      <materials>\n" +
-                "        <svn url=\"http://some/svn/url\" dest=\"svnDir\" materialName=\"url\" />\n" +
-                "        <hg url=\"http://#{foo}/#{bar}\" dest=\"folder\" />\n" +
-                "      </materials>\n" +
-                "      <stage name=\"dev\">\n" +
-                "        <jobs>\n" +
-                "          <job name=\"ant\">\n" +
-                "            <tasks><ant /></tasks>\n" +
-                "          </job>\n" +
-                "        </jobs>\n" +
-                "      </stage>\n" +
-                "    </pipeline>\n" +
-                "  </pipelines>\n" +
-                "</cruise>\n" +
-                "\n";
+        return """
+            <?xml version="1.0" encoding="utf-8"?>
+            <cruise xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="cruise-config.xsd" schemaVersion="%d">
+              <server serverId="dd8d0f5a-7e8d-4948-a1c7-ddcedbac15d0">
+                <artifacts>
+                   <artifactsDir>artifacts</artifactsDir>
+                </artifacts>
+              </server>
+              <pipelines group="another">
+                <pipeline name="%s">
+                  <params>
+                    <param name="foo">hg-server</param>
+                    <param name="bar">repo-name</param>
+                  </params>
+                  <materials>
+                    <svn url="http://some/svn/url" dest="svnDir" materialName="url" />
+                    <hg url="http://#{foo}/#{bar}" dest="folder" />
+                  </materials>
+                  <stage name="dev">
+                    <jobs>
+                      <job name="ant">
+                        <tasks><ant /></tasks>
+                      </job>
+                    </jobs>
+                  </stage>
+                </pipeline>
+              </pipelines>
+            </cruise>
+            """.formatted(GoConfigSchema.VERSION, pipelineName);
     }
 
     @Test
@@ -851,7 +830,7 @@ public class CachedGoConfigIntegrationTest {
         assertThatThrownBy(() -> cachedGoConfig.writeWithLock(new NoOverwriteUpdateConfigCommand() {
             @Override
             public CruiseConfig update(CruiseConfig cruiseConfig) {
-                cruiseConfig.getPipelineConfigByName(new CaseInsensitiveString(upstream)).getFirstStageConfig().setName(new CaseInsensitiveString("new_name"));
+                cruiseConfig.getPipelineConfigByName(cis(upstream)).getFirstStageConfig().setName(cis("new_name"));
                 return cruiseConfig;
             }
 
@@ -868,9 +847,9 @@ public class CachedGoConfigIntegrationTest {
         String remoteDownstream = "remote-downstream";
         setupExternalConfigRepoWithDependencyMaterialOnPipelineInMainXml(upstream, remoteDownstream);
 
-        PartialConfig partialWithStageRenamed = GoConfigMother.deepClone(cachedGoPartials.lastValidPartials().get(0));
-        PipelineConfig pipelineInRemoteConfigRepo = partialWithStageRenamed.getGroups().get(0).getPipelines().get(0);
-        pipelineInRemoteConfigRepo.materialConfigs().getDependencyMaterial().setStageName(new CaseInsensitiveString("new_name"));
+        PartialConfig partialWithStageRenamed = GoConfigMother.deepClone(cachedGoPartials.lastValidPartials().getFirst());
+        PipelineConfig pipelineInRemoteConfigRepo = partialWithStageRenamed.getGroups().getFirst().getPipelines().getFirst();
+        pipelineInRemoteConfigRepo.materialConfigs().getDependencyMaterial().setStageName(cis("new_name"));
         partialWithStageRenamed.setOrigin(new RepoConfigOrigin(configRepo, "r2"));
 
         partialConfigService.onSuccessPartialConfig(configRepo, partialWithStageRenamed);
@@ -893,7 +872,7 @@ public class CachedGoConfigIntegrationTest {
         ConfigSaveState saveState = cachedGoConfig.writeWithLock(new NoOverwriteUpdateConfigCommand() {
             @Override
             public CruiseConfig update(CruiseConfig cruiseConfig) {
-                cruiseConfig.getPipelineConfigByName(new CaseInsensitiveString(upstream)).getFirstStageConfig().setName(new CaseInsensitiveString("new_name"));
+                cruiseConfig.getPipelineConfigByName(cis(upstream)).getFirstStageConfig().setName(cis("new_name"));
                 return cruiseConfig;
             }
 
@@ -903,14 +882,14 @@ public class CachedGoConfigIntegrationTest {
             }
         });
         assertThat(saveState).isEqualTo(ConfigSaveState.MERGED);
-        assertThat(cachedGoPartials.lastValidPartials().get(0).getGroups().first().get(0).materialConfigs().getDependencyMaterial().getStageName()).isEqualTo(new CaseInsensitiveString("new_name"));
-        assertThat(goConfigService.getConfigForEditing().getPipelineConfigByName(new CaseInsensitiveString(upstream)).getFirstStageConfig().name()).isEqualTo(new CaseInsensitiveString("new_name"));
-        assertThat(goConfigService.getCurrentConfig().getPipelineConfigByName(new CaseInsensitiveString(upstream)).getFirstStageConfig().name()).isEqualTo(new CaseInsensitiveString("new_name"));
+        assertThat(cachedGoPartials.lastValidPartials().getFirst().getGroups().getFirst().getFirst().materialConfigs().getDependencyMaterial().getStageName()).isEqualTo(cis("new_name"));
+        assertThat(goConfigService.getConfigForEditing().getPipelineConfigByName(cis(upstream)).getFirstStageConfig().name()).isEqualTo(cis("new_name"));
+        assertThat(goConfigService.getCurrentConfig().getPipelineConfigByName(cis(upstream)).getFirstStageConfig().name()).isEqualTo(cis("new_name"));
     }
 
     private void setupExternalConfigRepoWithDependencyMaterialOnPipelineInMainXml(String upstream, String remoteDownstreamPipelineName) {
         PipelineConfig upstreamPipelineConfig = GoConfigMother.createPipelineConfigWithMaterialConfig(upstream, git("FOO"));
-        goConfigService.addPipeline(upstreamPipelineConfig, "default");
+        configHelper.addPipeline("default", upstreamPipelineConfig);
         PartialConfig partialConfig = PartialConfigMother.pipelineWithDependencyMaterial(remoteDownstreamPipelineName, upstreamPipelineConfig, new RepoConfigOrigin(configRepo, "r1"));
         partialConfigService.onSuccessPartialConfig(configRepo, partialConfig);
     }
@@ -923,8 +902,8 @@ public class CachedGoConfigIntegrationTest {
         CruiseConfig updatedConfig = GoConfigMother.deepClone(goConfigService.getConfigForEditing());
         updatedConfig.server().setJobTimeout("10");
         String updatedXml = goFileConfigDataSource.configAsXml(updatedConfig, false);
-        FileUtils.writeStringToFile(new File(goConfigDao.fileLocation()), updatedXml, UTF_8);
-        GoConfigValidity validity = goConfigService.fileSaver(false).saveXml(updatedXml, goConfigDao.md5OfConfigFile());
+        Files.writeString(Path.of(goConfigDao.fileLocation()), updatedXml, UTF_8);
+        GoConfigValidity validity = goConfigService.fileSaver(false).saveXml(updatedXml, configHelper.currentConfig().getMd5());
         assertThat(validity.isValid()).isTrue();
         assertThat(cachedGoPartials.lastValidPartials().isEmpty()).isTrue();
         assertThat(cachedGoPartials.lastKnownPartials().contains(invalidPartial)).isTrue();
@@ -962,8 +941,8 @@ public class CachedGoConfigIntegrationTest {
         PartialConfig invalidPartialInRepo1Revision2 = PartialConfigMother.invalidPartial("pipeline_in_repo1", new RepoConfigOrigin(repoConfig1, "repo1_r2"));
         partialConfigService.onSuccessPartialConfig(repoConfig1, invalidPartialInRepo1Revision2);
         assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(repoConfig1)).size()).isEqualTo(1);
-        assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(repoConfig1)).get(0).getMessage()).isEqualTo("Invalid Merged Configuration");
-        assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(repoConfig1)).get(0).getDescription()).isEqualTo("Number of errors: 1+\n1. Invalid stage name ''. This must be alphanumeric and can contain underscores, hyphens and periods (however, it cannot start with a period). The maximum allowed length is 255 characters.\n- For Config Repo: url1 at revision repo1_r2");
+        assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(repoConfig1)).getFirst().getMessage()).isEqualTo("Invalid Merged Configuration");
+        assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(repoConfig1)).getFirst().getDescription()).isEqualTo("Number of errors: 1+\n1. Invalid stage name ''. This must be alphanumeric and can contain underscores, hyphens and periods (however, it cannot start with a period). The maximum allowed length is 255 characters.\n- For Config Repo: url1 at revision repo1_r2");
         assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(repoConfig2)).isEmpty()).isTrue();
 
         int countBeforeDeletion = cachedGoConfig.currentConfig().getConfigRepos().size();
@@ -974,13 +953,13 @@ public class CachedGoConfigIntegrationTest {
         assertThat(configSaveState).isEqualTo(ConfigSaveState.UPDATED);
         assertThat(cachedGoConfig.currentConfig().getConfigRepos().size()).isEqualTo(countBeforeDeletion - 1);
         assertThat(cachedGoConfig.currentConfig().getConfigRepos().contains(repoConfig2)).isTrue();
-        assertThat(cachedGoConfig.currentConfig().getAllPipelineNames().contains(new CaseInsensitiveString("pipeline_in_repo1"))).isFalse();
-        assertThat(cachedGoConfig.currentConfig().getAllPipelineNames().contains(new CaseInsensitiveString("pipeline_in_repo2"))).isTrue();
+        assertThat(cachedGoConfig.currentConfig().getAllPipelineNames().contains(cis("pipeline_in_repo1"))).isFalse();
+        assertThat(cachedGoConfig.currentConfig().getAllPipelineNames().contains(cis("pipeline_in_repo2"))).isTrue();
         assertThat(cachedGoPartials.lastKnownPartials().size()).isEqualTo(1);
-        assertThat(((RepoConfigOrigin) cachedGoPartials.lastKnownPartials().get(0).getOrigin()).getMaterial().getFingerprint().equals(repoConfig2.getRepo().getFingerprint())).isTrue();
+        assertThat(((RepoConfigOrigin) cachedGoPartials.lastKnownPartials().getFirst().getOrigin()).getMaterial().getFingerprint().equals(repoConfig2.getRepo().getFingerprint())).isTrue();
         assertThat(cachedGoPartials.lastKnownPartials().stream().filter(item -> ((RepoConfigOrigin) item.getOrigin()).getMaterial().getFingerprint().equals(repoConfig1.getRepo().getFingerprint())).findFirst().orElse(null)).isNull();
         assertThat(cachedGoPartials.lastValidPartials().size()).isEqualTo(1);
-        assertThat(((RepoConfigOrigin) cachedGoPartials.lastValidPartials().get(0).getOrigin()).getMaterial().getFingerprint().equals(repoConfig2.getRepo().getFingerprint())).isTrue();
+        assertThat(((RepoConfigOrigin) cachedGoPartials.lastValidPartials().getFirst().getOrigin()).getMaterial().getFingerprint().equals(repoConfig2.getRepo().getFingerprint())).isTrue();
         assertThat(cachedGoPartials.lastValidPartials().stream().filter(item -> ((RepoConfigOrigin) item.getOrigin()).getMaterial().getFingerprint().equals(repoConfig1.getRepo().getFingerprint())).findFirst().orElse(null)).isNull();
 
         assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPartialConfigRepo(repoConfig1)).isEmpty()).isTrue();
@@ -992,10 +971,10 @@ public class CachedGoConfigIntegrationTest {
         String gitShaBeforeSave = configRepository.getCurrentRevCommit().getName();
         BasicCruiseConfig config = GoConfigMother.configWithPipelines("pipeline1");
 
-        ConfigSaveState state = cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(config, goConfigService.configFileMd5()));
+        ConfigSaveState state = cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(config, configHelper.currentConfig().getMd5()));
 
         String gitShaAfterSave = configRepository.getCurrentRevCommit().getName();
-        String configXmlFromConfigFolder = FileUtils.readFileToString(new File(goConfigDao.fileLocation()), UTF_8);
+        String configXmlFromConfigFolder = Files.readString(Path.of(goConfigDao.fileLocation()), UTF_8);
 
         assertThat(state).isEqualTo(ConfigSaveState.UPDATED);
         assertThat(cachedGoConfig.loadForEditing()).isEqualTo(config);
@@ -1009,7 +988,7 @@ public class CachedGoConfigIntegrationTest {
     public void writeFullConfigWithLockShouldUpdateReloadStrategyToEnsureReloadIsSkippedInAbsenceOfConfigFileChanges() throws GitAPIException {
         BasicCruiseConfig config = GoConfigMother.configWithPipelines("pipeline1");
 
-        ConfigSaveState state = cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(config, goConfigService.configFileMd5()));
+        ConfigSaveState state = cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(config, configHelper.currentConfig().getMd5()));
 
         String gitShaAfterSave = configRepository.getCurrentRevCommit().getName();
         assertThat(state).isEqualTo(ConfigSaveState.UPDATED);
@@ -1032,10 +1011,10 @@ public class CachedGoConfigIntegrationTest {
 
         config.addEnvironment(UUID.randomUUID().toString());
 
-        ConfigSaveState state = cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(config, goConfigService.configFileMd5()));
+        ConfigSaveState state = cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(config, configHelper.currentConfig().getMd5()));
 
         String gitShaAfterSave = configRepository.getCurrentRevCommit().getName();
-        String configXmlFromConfigFolder = FileUtils.readFileToString(new File(goConfigDao.fileLocation()), UTF_8);
+        String configXmlFromConfigFolder = Files.readString(Path.of(goConfigDao.fileLocation()), UTF_8);
 
         assertThat(state).isEqualTo(ConfigSaveState.UPDATED);
         assertThat(cachedGoConfig.loadForEditing()).isEqualTo(config);
@@ -1060,10 +1039,10 @@ public class CachedGoConfigIntegrationTest {
 
         config.addEnvironment(UUID.randomUUID().toString());
 
-        ConfigSaveState state = cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(config, goConfigService.configFileMd5()));
+        ConfigSaveState state = cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(config, configHelper.currentConfig().getMd5()));
 
         String gitShaAfterSave = configRepository.getCurrentRevCommit().getName();
-        String configXmlFromConfigFolder = FileUtils.readFileToString(new File(goConfigDao.fileLocation()), UTF_8);
+        String configXmlFromConfigFolder = Files.readString(Path.of(goConfigDao.fileLocation()), UTF_8);
 
         assertThat(state).isEqualTo(ConfigSaveState.UPDATED);
         assertThat(cachedGoConfig.loadForEditing()).isEqualTo(config);
@@ -1090,10 +1069,10 @@ public class CachedGoConfigIntegrationTest {
 
         config.addEnvironment(UUID.randomUUID().toString());
 
-        ConfigSaveState state = cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(config, goConfigService.configFileMd5()));
+        ConfigSaveState state = cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(config, configHelper.currentConfig().getMd5()));
 
         String gitShaAfterSave = configRepository.getCurrentRevCommit().getName();
-        String configXmlFromConfigFolder = FileUtils.readFileToString(new File(goConfigDao.fileLocation()), UTF_8);
+        String configXmlFromConfigFolder = Files.readString(Path.of(goConfigDao.fileLocation()), UTF_8);
 
         assertThat(state).isEqualTo(ConfigSaveState.UPDATED);
         assertThat(cachedGoConfig.loadForEditing()).isEqualTo(config);
@@ -1115,17 +1094,17 @@ public class CachedGoConfigIntegrationTest {
         editedConfig.getGroups().remove(editedConfig.findGroup("default"));
 
         try {
-            cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(editedConfig, goConfigService.configFileMd5()));
+            cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(editedConfig, configHelper.currentConfig().getMd5()));
             fail("Expected the test to fail");
         } catch (Exception e) {
             String gitShaAfterSave = configRepository.getCurrentRevCommit().getName();
-            String configXmlFromConfigFolder = FileUtils.readFileToString(new File(goConfigDao.fileLocation()), UTF_8);
+            String configXmlFromConfigFolder = Files.readString(Path.of(goConfigDao.fileLocation()), UTF_8);
             assertThat(cachedGoConfig.loadForEditing()).isEqualTo(originalConfig);
             assertThat(gitShaAfterSave).isEqualTo(gitShaBeforeSave);
             assertThat(cachedGoConfig.loadForEditing().getMd5()).isEqualTo(configRepository.getCurrentRevision().getMd5());
             assertThat(cachedGoConfig.currentConfig().getMd5()).isEqualTo(configRepository.getCurrentRevision().getMd5());
             assertThat(configXmlFromConfigFolder).isEqualTo(configRepository.getCurrentRevision().getContent());
-            RepoConfigOrigin origin = (RepoConfigOrigin) cachedGoPartials.lastValidPartials().get(0).getOrigin();
+            RepoConfigOrigin origin = (RepoConfigOrigin) cachedGoPartials.lastValidPartials().getFirst().getOrigin();
             assertThat(origin.getRevision()).isEqualTo("r1");
         }
     }
@@ -1144,10 +1123,10 @@ public class CachedGoConfigIntegrationTest {
         CruiseConfig editedConfig = GoConfigMother.deepClone(originalConfig);
 
         editedConfig.addPipeline("default", upstream);
-        ConfigSaveState state = cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(editedConfig, goConfigService.configFileMd5()));
+        ConfigSaveState state = cachedGoConfig.writeFullConfigWithLock(new FullConfigUpdateCommand(editedConfig, configHelper.currentConfig().getMd5()));
 
         String gitShaAfterSave = configRepository.getCurrentRevCommit().getName();
-        String configXmlFromConfigFolder = FileUtils.readFileToString(new File(goConfigDao.fileLocation()), UTF_8);
+        String configXmlFromConfigFolder = Files.readString(Path.of(goConfigDao.fileLocation()), UTF_8);
 
         assertThat(state).isEqualTo(ConfigSaveState.UPDATED);
         assertThat(cachedGoConfig.loadForEditing()).isEqualTo(editedConfig);
@@ -1155,7 +1134,7 @@ public class CachedGoConfigIntegrationTest {
         assertThat(cachedGoConfig.loadForEditing().getMd5()).isEqualTo(configRepository.getCurrentRevision().getMd5());
         assertThat(cachedGoConfig.currentConfig().getMd5()).isEqualTo(configRepository.getCurrentRevision().getMd5());
         assertThat(configXmlFromConfigFolder).isEqualTo(configRepository.getCurrentRevision().getContent());
-        RepoConfigOrigin origin = (RepoConfigOrigin) cachedGoPartials.lastValidPartials().get(0).getOrigin();
+        RepoConfigOrigin origin = (RepoConfigOrigin) cachedGoPartials.lastValidPartials().getFirst().getOrigin();
         assertThat(origin.getRevision()).isEqualTo("r2");
         assertThat(cachedGoPartials.lastKnownPartials().contains(partialConfig)).isTrue();
         assertThat(cachedGoPartials.lastValidPartials().contains(partialConfig)).isTrue();
@@ -1169,17 +1148,17 @@ public class CachedGoConfigIntegrationTest {
         ArtifactStore artifactStore = new ArtifactStore("dockerhub", "cd.go.artifact.docker.registry");
         artifactStoreService.create(Username.ANONYMOUS, artifactStore, new HttpLocalizedOperationResult());
         File configFile = new File(new SystemEnvironment().getCruiseConfigFile());
-        String config = goConfigMigration.upgradeIfNecessary(IOUtils.toString(getClass().getResource("/data/pluggable_artifacts_with_params.xml"), UTF_8));
-        FileUtils.writeStringToFile(configFile, config, UTF_8);
+        String config = goConfigMigration.upgradeIfNecessary(TestFileUtil.resourceToString("/data/pluggable_artifacts_with_params.xml"));
+        Files.writeString(configFile.toPath(), config, UTF_8);
 
         cachedGoConfig.forceReload();
 
-        Configuration ancestorPluggablePublishAftifactConfigAfterEncryption = goConfigDao.loadConfigHolder()
-                .configForEdit.pipelineConfigByName(new CaseInsensitiveString("ancestor"))
-                .getExternalArtifactConfigs().get(0).getConfiguration();
-        assertThat(ancestorPluggablePublishAftifactConfigAfterEncryption.getProperty("Image").getValue()).isEqualTo("IMAGE_SECRET");
-        assertThat(ancestorPluggablePublishAftifactConfigAfterEncryption.getProperty("Image").getEncryptedValue()).isEqualTo(new GoCipher().encrypt("IMAGE_SECRET"));
-        assertThat(ancestorPluggablePublishAftifactConfigAfterEncryption.getProperty("Image").getConfigValue()).isNull();
+        Configuration ancestorPluggablePublishArtifactConfigAfterEncryption = goConfigDao.loadConfigHolder()
+            .configForEdit.pipelineConfigByName(cis("ancestor"))
+            .getExternalArtifactConfigs().getFirst().getConfiguration();
+        assertThat(ancestorPluggablePublishArtifactConfigAfterEncryption.getProperty("Image").getValue()).isEqualTo("IMAGE_SECRET");
+        assertThat(ancestorPluggablePublishArtifactConfigAfterEncryption.getProperty("Image").getEncryptedValue()).isEqualTo(new GoCipher().encrypt("IMAGE_SECRET"));
+        assertThat(ancestorPluggablePublishArtifactConfigAfterEncryption.getProperty("Image").getConfigValue()).isNull();
     }
 
     @Test
@@ -1190,14 +1169,14 @@ public class CachedGoConfigIntegrationTest {
         ArtifactStore artifactStore = new ArtifactStore("dockerhub", "cd.go.artifact.docker.registry");
         artifactStoreService.create(Username.ANONYMOUS, artifactStore, new HttpLocalizedOperationResult());
         File configFile = new File(new SystemEnvironment().getCruiseConfigFile());
-        String config = goConfigMigration.upgradeIfNecessary(IOUtils.toString(getClass().getResource("/data/pluggable_artifacts_with_params.xml"), UTF_8));
-        FileUtils.writeStringToFile(configFile, config, UTF_8);
+        String config = goConfigMigration.upgradeIfNecessary(TestFileUtil.resourceToString("/data/pluggable_artifacts_with_params.xml"));
+        Files.writeString(configFile.toPath(), config, UTF_8);
 
         cachedGoConfig.forceReload();
 
-        PipelineConfig child = goConfigDao.loadConfigHolder().configForEdit.pipelineConfigByName(new CaseInsensitiveString("child"));
+        PipelineConfig child = goConfigDao.loadConfigHolder().configForEdit.pipelineConfigByName(cis("child"));
         Configuration childFetchConfigAfterEncryption = ((FetchPluggableArtifactTask) child
-                .get(0).getJobs().get(0).tasks().get(0)).getConfiguration();
+            .getFirst().getJobs().getFirst().tasks().getFirst()).getConfiguration();
 
         assertThat(childFetchConfigAfterEncryption.getProperty("FetchProperty").getValue()).isEqualTo("SECRET");
         assertThat(childFetchConfigAfterEncryption.getProperty("FetchProperty").getEncryptedValue()).isEqualTo(new GoCipher().encrypt("SECRET"));
@@ -1240,7 +1219,7 @@ public class CachedGoConfigIntegrationTest {
 
     private UpdateConfigCommand updateEnvironmentVariables(final String name, final String value) {
         return cruiseConfig -> {
-            EnvironmentConfig environmentConfig = cruiseConfig.getEnvironments().get(0);
+            EnvironmentConfig environmentConfig = cruiseConfig.getEnvironments().getFirst();
             environmentConfig.addEnvironmentVariable(name, value);
             return cruiseConfig;
         };
@@ -1267,7 +1246,7 @@ public class CachedGoConfigIntegrationTest {
     }
 
 
-    private class ConfigChangeListenerStub implements ConfigChangedListener {
+    private static class ConfigChangeListenerStub implements ConfigChangedListener {
         private int invocationCount = 0;
 
         @Override

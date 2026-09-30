@@ -15,10 +15,10 @@
  */
 package com.thoughtworks.go.config.update;
 
-import com.thoughtworks.go.config.BasicCruiseConfig;
 import com.thoughtworks.go.config.CruiseConfig;
 import com.thoughtworks.go.config.EnvironmentConfig;
 import com.thoughtworks.go.config.PipelineConfig;
+import com.thoughtworks.go.config.Validatable;
 import com.thoughtworks.go.config.commands.EntityConfigUpdateCommand;
 import com.thoughtworks.go.config.exceptions.EntityType;
 import com.thoughtworks.go.server.domain.Username;
@@ -26,9 +26,11 @@ import com.thoughtworks.go.server.service.GoConfigService;
 import com.thoughtworks.go.server.service.result.LocalizedOperationResult;
 import com.thoughtworks.go.serverhealth.HealthStateType;
 
+import java.util.Optional;
+
 public class DeletePipelineConfigCommand implements EntityConfigUpdateCommand<PipelineConfig> {
     private final GoConfigService goConfigService;
-    private PipelineConfig pipelineConfig;
+    private final PipelineConfig pipelineConfig;
     private final Username currentUser;
     private final LocalizedOperationResult result;
     private PipelineConfig preprocessedPipelineConfig;
@@ -50,14 +52,14 @@ public class DeletePipelineConfigCommand implements EntityConfigUpdateCommand<Pi
     @Override
     public boolean isValid(CruiseConfig preprocessedConfig) {
         for (PipelineConfig pipeline : preprocessedConfig.getAllPipelineConfigs()) {
-            if(pipeline.materialConfigs().hasDependencyMaterial(pipelineConfig)){
+            if (pipeline.materialConfigs().hasDependencyMaterial(pipelineConfig)) {
                 this.result.unprocessableEntity("Cannot delete pipeline '" + pipelineConfig.name() + "' as pipeline '" + String.format("%s (%s)", pipeline.name(), pipeline.getOriginDisplayName()) + "' depends on it");
                 return false;
             }
         }
 
         for (EnvironmentConfig environment : preprocessedConfig.getEnvironments()) {
-            if(environment.getPipelineNames().contains(pipelineConfig.name())){
+            if (environment.getPipelineNames().contains(pipelineConfig.name())) {
                 this.result.unprocessableEntity("Cannot delete pipeline '" + pipelineConfig.name() + "' as it is present in environment '" + environment.name() + "'.");
                 return false;
             }
@@ -68,7 +70,7 @@ public class DeletePipelineConfigCommand implements EntityConfigUpdateCommand<Pi
 
     @Override
     public void clearErrors() {
-        BasicCruiseConfig.clearErrors(pipelineConfig);
+        Validatable.clearErrors(pipelineConfig);
     }
 
     @Override
@@ -78,8 +80,8 @@ public class DeletePipelineConfigCommand implements EntityConfigUpdateCommand<Pi
 
     @Override
     public boolean canContinue(CruiseConfig cruiseConfig) {
-        String groupName = goConfigService.findGroupNameByPipeline(pipelineConfig.name());
-        if (goConfigService.groups().hasGroup(groupName) && !goConfigService.isUserAdminOfGroup(currentUser.getUsername(), groupName)) {
+        Optional<String> groupName = goConfigService.findGroupNameByPipelineOptional(pipelineConfig.name());
+        if (groupName.map(g -> !goConfigService.isUserAdminOfGroup(currentUser.getUsername(), g)).orElse(false)) {
             result.forbidden(EntityType.Pipeline.forbiddenToDelete(pipelineConfig.getName(), currentUser.getUsername()), HealthStateType.forbidden());
             return false;
         }

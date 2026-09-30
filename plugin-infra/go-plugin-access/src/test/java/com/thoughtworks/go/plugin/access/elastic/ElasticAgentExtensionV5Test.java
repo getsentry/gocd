@@ -256,12 +256,11 @@ public class ElasticAgentExtensionV5Test {
     @Test
     public void shouldMakeClusterProfileChangedCall() {
         ClusterProfilesChangedStatus status = ClusterProfilesChangedStatus.CREATED;
-        Map<String, String> oldClusterProfile = null;
         Map<String, String> newClusterProfile = Map.of("key1", "key2");
 
         when(pluginManager.submitTo(eq(PLUGIN_ID), eq(ELASTIC_AGENT_EXTENSION), requestArgumentCaptor.capture())).thenReturn(DefaultGoPluginApiResponse.success(null));
 
-        extensionV5.clusterProfilesChanged(PLUGIN_ID, status, oldClusterProfile, newClusterProfile);
+        extensionV5.clusterProfilesChanged(PLUGIN_ID, status, null, newClusterProfile);
 
         String expectedRequestBody = "{" +
                 "  \"status\":\"created\"," +
@@ -294,8 +293,9 @@ public class ElasticAgentExtensionV5Test {
         final Map<String, String> profile = Map.of("Image", "alpine:latest");
         final Map<String, String> clusterProfileProperties = Map.of("ServerURL", "https://example.com/go");
         final AgentMetadata agentMetadata = new AgentMetadata("foo-agent-id", "Idle", "Idle", "Enabled");
+        final JobIdentifier jobIdentifier = new JobIdentifier("up42", 2, "Test", "up42_stage", "10", "up42_job");
         when(pluginManager.submitTo(eq(PLUGIN_ID), eq(ELASTIC_AGENT_EXTENSION), requestArgumentCaptor.capture())).thenReturn(DefaultGoPluginApiResponse.success("true"));
-        final boolean shouldAssignWork = extensionV5.shouldAssignWork(PLUGIN_ID, agentMetadata, "test-env", profile, clusterProfileProperties, new JobIdentifier());
+        final boolean shouldAssignWork = extensionV5.shouldAssignWork(PLUGIN_ID, agentMetadata, "test-env", profile, clusterProfileProperties, jobIdentifier);
 
         assertTrue(shouldAssignWork);
 
@@ -314,7 +314,15 @@ public class ElasticAgentExtensionV5Test {
                     "build_state": "Idle",
                     "config_state": "Enabled"
                   },
-                  "job_identifier": {}
+                  "job_identifier": {
+                    "pipeline_name": "up42",
+                    "pipeline_label": "Test",
+                    "pipeline_counter": 2,
+                    "stage_name": "up42_stage",
+                    "stage_counter": "10",
+                    "job_name": "up42_job",
+                    "job_id": -1
+                  }
                 }""";
 
         assertExtensionRequest("5.0", REQUEST_SHOULD_ASSIGN_WORK, expectedRequestBody);
@@ -384,11 +392,13 @@ public class ElasticAgentExtensionV5Test {
 
     @Test
     public void shouldMigrateElasticAgentInformation() {
-        String responseBody = "{" +
-                "    \"plugin_settings\":{}," +
-                "    \"cluster_profiles\":[]," +
-                "    \"elastic_agent_profiles\":[]" +
-                "}\n";
+        String responseBody = """
+            {
+                "plugin_settings": {},
+                "cluster_profiles": [],
+                "elastic_agent_profiles": []
+            }
+            """;
         when(pluginManager.submitTo(eq(PLUGIN_ID), eq(ELASTIC_AGENT_EXTENSION), requestArgumentCaptor.capture())).thenReturn(DefaultGoPluginApiResponse.success(responseBody));
 
         ElasticAgentInformation elasticAgentInformation = new ElasticAgentInformation(Collections.emptyMap(), Collections.emptyList(), Collections.emptyList());
@@ -407,11 +417,12 @@ public class ElasticAgentExtensionV5Test {
         Map<String, String> clusterProfile = Map.of("key1", "value1");
         extensionV5.getClusterStatusReport(PLUGIN_ID, clusterProfile);
 
-        final String requestBody = "{\n" +
-                "  \"cluster_profile_properties\":{" +
-                "       \"key1\":\"value1\"" +
-                "  }" +
-                "}";
+        final String requestBody = """
+            {
+              "cluster_profile_properties": {
+                   "key1": "value1"
+              }
+            }""";
 
         assertExtensionRequest("5.0", REQUEST_CLUSTER_STATUS_REPORT, requestBody);
     }
@@ -444,7 +455,7 @@ public class ElasticAgentExtensionV5Test {
         assertThat(REQUEST_GET_PLUGIN_SETTINGS_ICON).startsWith(REQUEST_PREFIX);
     }
 
-    private void assertExtensionRequest(String extensionVersion, String requestName, String requestBody) {
+    private void assertExtensionRequest(@SuppressWarnings("SameParameterValue") String extensionVersion, String requestName, String requestBody) {
         final GoPluginApiRequest request = requestArgumentCaptor.getValue();
         assertThat(request.requestName()).isEqualTo(requestName);
         assertThat(request.extensionVersion()).isEqualTo(extensionVersion);

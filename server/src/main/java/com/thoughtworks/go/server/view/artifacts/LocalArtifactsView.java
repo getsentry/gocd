@@ -16,6 +16,7 @@
 package com.thoughtworks.go.server.view.artifacts;
 
 import com.thoughtworks.go.domain.JobIdentifier;
+import com.thoughtworks.go.domain.exception.IllegalArtifactLocationException;
 import com.thoughtworks.go.server.service.ArtifactsService;
 import com.thoughtworks.go.server.service.ConsoleService;
 import com.thoughtworks.go.server.web.ArtifactFolder;
@@ -24,8 +25,9 @@ import com.thoughtworks.go.server.web.FileModelAndView;
 import org.springframework.web.servlet.ModelAndView;
 
 import java.io.File;
+import java.io.IOException;
 
-import static com.thoughtworks.go.util.ArtifactLogUtil.isConsoleOutput;
+import static com.thoughtworks.go.util.ArtifactUtil.isConsoleOutput;
 
 public class LocalArtifactsView implements ArtifactsView {
     private final ArtifactsService artifactsService;
@@ -42,7 +44,7 @@ public class LocalArtifactsView implements ArtifactsView {
     }
 
     @Override
-    public final ModelAndView createView(String filePath, String sha) throws Exception {
+    public final ModelAndView createView(String filePath, String sha) throws IllegalArtifactLocationException, IOException {
         //return the artifact itself if this is a single file
         File file = isConsoleOutput(filePath) ? consoleService.consoleLogFile(translatedId)
                 : artifactsService.findArtifact(translatedId, filePath);

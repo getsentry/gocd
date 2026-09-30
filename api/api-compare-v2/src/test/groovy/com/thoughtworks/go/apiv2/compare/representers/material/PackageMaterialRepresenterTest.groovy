@@ -17,7 +17,6 @@ package com.thoughtworks.go.apiv2.compare.representers.material
 
 import com.thoughtworks.go.apiv2.compare.representers.MaterialRepresenter
 import com.thoughtworks.go.config.BasicCruiseConfig
-import com.thoughtworks.go.config.CaseInsensitiveString
 import com.thoughtworks.go.config.PipelineConfig
 import com.thoughtworks.go.config.PipelineConfigSaveValidationContext
 import com.thoughtworks.go.config.materials.MaterialConfigs
@@ -28,6 +27,7 @@ import com.thoughtworks.go.helper.MaterialConfigsMother
 import org.junit.jupiter.api.Test
 
 import static com.thoughtworks.go.api.base.JsonUtils.toObjectString
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson
 
 class PackageMaterialRepresenterTest {
@@ -41,11 +41,11 @@ class PackageMaterialRepresenterTest {
 
   @Test
   void "should render errors"() {
-    def package_config = new PackageMaterialConfig(new CaseInsensitiveString(''), '', PackageDefinitionMother.create("pkg-def", PackageRepositoryMother.create("pkg-repo")))
+    def package_config = new PackageMaterialConfig(cis(''), '', PackageDefinitionMother.create("pkg-def", PackageRepositoryMother.create("pkg-repo")))
     def material_configs = new MaterialConfigs(package_config)
     material_configs.validateTree(PipelineConfigSaveValidationContext.forChain(true, "group", new BasicCruiseConfig(), new PipelineConfig()))
 
-    def actualJson = toObjectString({ MaterialRepresenter.toJSON(it, material_configs.first()) })
+    def actualJson = toObjectString({ MaterialRepresenter.toJSON(it, material_configs.getFirst()) })
 
     assertThatJson(actualJson).isEqualTo(expectedMaterialHashWithErrors)
   }

@@ -20,7 +20,7 @@ class StagesController < ApplicationController
   include StagesHelper
   include SparkUrlAware
 
-  STAGE_DETAIL_ACTIONS = [:overview, :materials, :jobs, :rerun_jobs, :stats, :stats_iframe, :stage_config]
+  STAGE_DETAIL_ACTIONS = [:overview, :materials, :jobs, :rerun_jobs, :stats, :stats_iframe]
   BASE_TIME = Time.parse("00:00:00")
   STAGE_DURATION_RANGE = 300
   layout "pipelines", :only => STAGE_DETAIL_ACTIONS
@@ -28,7 +28,6 @@ class StagesController < ApplicationController
   before_action :load_stage_history, :only => STAGE_DETAIL_ACTIONS - [:stats, :stats_iframe]
   before_action :load_current_config_version, :only => STAGE_DETAIL_ACTIONS << :history
   before_action :load_pipeline_instance, :only => :redirect_to_first_stage
-  before_action :feed_api_url
 
   STAGE_HISTORY_PAGE_SIZE = 10
 
@@ -86,11 +85,6 @@ class StagesController < ApplicationController
 
 
     render layout: nil
-  end
-
-  def stage_config
-    @ran_with_config_revision = go_config_service.getConfigAtVersion(@stage.getStage().getConfigVersion())
-    render_stage
   end
 
   def materials
@@ -164,10 +158,6 @@ class StagesController < ApplicationController
     respond_to do |format|
       format.html { render action: 'stage', status: status }
       format.json { render action: 'stage', status: status }
-      format.xml {
-        redirect_to spark_url_for({:request => request},
-                                  "/api/feed/pipelines/#{@stage.getPipelineName()}/#{@stage.getPipelineCounter()}/#{@stage.getName()}/#{@stage.getStageCounter()}")
-      }
     end
   end
 
@@ -190,11 +180,7 @@ class StagesController < ApplicationController
   end
 
   def date_range(stage_summary_models)
-    [DateUtils::formatToSimpleDate(stage_summary_models.last.getStage().scheduledDate()), DateUtils::formatToSimpleDate(stage_summary_models.first.getStage().scheduledDate())]
-  end
-
-  def feed_api_url
-      @feed_api_url = spark_url_for({:request => request}, "/api/feed/pipelines/#{params[:pipeline_name]}/stages.xml")
+    [Dates.formatToSimpleDate(stage_summary_models.last.getStage().scheduledDate()), Dates.formatToSimpleDate(stage_summary_models.first.getStage().scheduledDate())]
   end
 
   def can_view_settings?

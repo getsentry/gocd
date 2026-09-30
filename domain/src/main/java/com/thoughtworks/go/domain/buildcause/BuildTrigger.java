@@ -18,6 +18,7 @@ package com.thoughtworks.go.domain.buildcause;
 import com.thoughtworks.go.domain.MaterialRevisions;
 
 import java.io.Serializable;
+import java.util.Objects;
 
 /**
  * Understands how a pipeline was triggered
@@ -34,7 +35,9 @@ public class BuildTrigger implements Serializable {
     static final String FORCED_BUILD_CAUSE = "ManualForcedBuildCause";
 
     private BuildTrigger(String message, boolean forced, Priority priority, String dbName) {
-        if (dbName==null) throw new IllegalArgumentException("dbName cannot be null");
+        if (dbName == null) {
+            throw new IllegalArgumentException("dbName cannot be null");
+        }
 
         this.message = message;
         this.forced = forced;
@@ -93,20 +96,10 @@ public class BuildTrigger implements Serializable {
 
         BuildTrigger trigger = (BuildTrigger) o;
 
-        if (forced != trigger.forced) {
-            return false;
-        }
-        if (dbName != null ? !dbName.equals(trigger.dbName) : trigger.dbName != null) {
-            return false;
-        }
-        if (message != null ? !message.equals(trigger.message) : trigger.message != null) {
-            return false;
-        }
-        if (priority != trigger.priority) {
-            return false;
-        }
-
-        return true;
+        return forced == trigger.forced &&
+            Objects.equals(dbName, trigger.dbName) &&
+            Objects.equals(message, trigger.message) &&
+            priority == trigger.priority;
     }
 
     @Override
@@ -114,7 +107,7 @@ public class BuildTrigger implements Serializable {
         int result = message != null ? message.hashCode() : 0;
         result = 31 * result + (forced ? 1 : 0);
         result = 31 * result + (priority != null ? priority.hashCode() : 0);
-        result = 31 * result + (dbName != null ? dbName.hashCode() : 0);
+        result = 31 * result + dbName.hashCode();
         return result;
     }
 

@@ -16,21 +16,19 @@
 package com.thoughtworks.go.domain;
 
 import java.io.Serializable;
-
-import static com.thoughtworks.go.util.ExceptionUtils.bombIfNull;
+import java.util.Objects;
 
 public class PipelineIdentifier implements Serializable {
     private String name;
-    private Integer counter;
+    private int counter;
     private String label;
 
-    public PipelineIdentifier(String name, long counter) {
-        bombIfNull(counter, "Pipeline Identifier cannot be created without a counter");
+    public PipelineIdentifier(String name, int counter) {
         this.name = name;
-        this.counter = (int) counter;
+        this.counter = counter;
     }
 
-    public PipelineIdentifier(String name, Integer counter, String label) {
+    public PipelineIdentifier(String name, int counter, String label) {
         this(name, counter);
         this.label = label;
     }
@@ -47,12 +45,12 @@ public class PipelineIdentifier implements Serializable {
         return label;
     }
 
-    public Integer getCounter() {
+    public int getCounter() {
         return counter;
     }
 
     public boolean hasCounter() {
-        return counter != null && counter >0;
+        return counter > 0;
     }
 
     public String pipelineLocator() {
@@ -87,24 +85,16 @@ public class PipelineIdentifier implements Serializable {
 
         PipelineIdentifier that = (PipelineIdentifier) o;
 
-        if (counter != null ? !counter.equals(that.counter) : that.counter != null) {
-            return false;
-        }
-        if (label != null ? !label.equals(that.label) : that.label != null) {
-            return false;
-        }
-        if (name != null ? !name.equals(that.name) : that.name != null) {
-            return false;
-        }
-
-        return true;
+        return counter == that.counter &&
+            Objects.equals(label, that.label) &&
+            Objects.equals(name, that.name);
     }
 
     @Override
     public int hashCode() {
         int result;
-        result = (name != null ? name.hashCode() : 0);
-        result = 31 * result + (counter != null ? counter.hashCode() : 0);
+        result = name != null ? name.hashCode() : 0;
+        result = 31 * result + counter;
         result = 31 * result + (label != null ? label.hashCode() : 0);
         return result;
     }

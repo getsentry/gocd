@@ -15,11 +15,11 @@
  */
 import * as CONSTANTS from "helpers/constants";
 import _ from "lodash";
-import LRUCache from "lru-cache";
+import {LRUCache} from "lru-cache";
 import moment from "moment";
 import "moment-duration-format";
 
-const utcOffsetInMinutes = CONSTANTS.SERVER_TIMEZONE_UTC_OFFSET / 60000;
+const utcOffsetInMinutes = CONSTANTS.SERVER_TIMEZONE_UTC_OFFSET_MINS;
 const CACHE_SIZE         = 10000;
 const DATE_FORMAT        = "DD MMM YYYY";
 const LOCAL_TIME_FORMAT  = "DD MMM, YYYY [at] HH:mm:ss [Local Time]";
@@ -44,14 +44,10 @@ class Cache implements _.MapCache {
   }
 
   delete(key: any) {
-    if (this.lru.has(key)) {
-      this.lru.del(key);
-      return true;
-    }
-    return false;
+    return this.lru.delete(key);
   }
 
-  clear() { this.lru.reset(); }
+  clear() { this.lru.clear(); }
 }
 
 const format = _.memoize((time) => {

@@ -17,8 +17,7 @@ package com.thoughtworks.go.api.util;
 
 import com.google.gson.JsonObject;
 import com.thoughtworks.go.config.CaseInsensitiveString;
-import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.lang3.StringUtils;
+import com.thoughtworks.go.remote.StandardHeaders;
 
 import static java.lang.String.format;
 
@@ -60,12 +59,8 @@ public abstract class HaltApiMessages {
         return "You must specify a 'Content-Type' of 'application/json'";
     }
 
-    public static String deprecatedConfirmHeaderMissing() {
-        return "Missing required header 'Confirm' with value 'true'";
-    }
-
     public static String confirmHeaderMissing() {
-        return "Missing required header 'X-GoCD-Confirm' with value 'true'";
+        return format("Missing required header '%s' with value 'true'", StandardHeaders.REQUEST_CONFIRM_MODIFICATION);
     }
 
     public static String propertyIsNotAJsonString(String property, JsonObject jsonObject) {
@@ -106,8 +101,8 @@ public abstract class HaltApiMessages {
 
     public static String queryParamIsUnknownMessage(String paramName, String value, String... goodValues) {
         String message = "Value `" + value + "` is not allowed for query parameter named `" + paramName + "`.";
-        if (!ArrayUtils.isEmpty(goodValues)) {
-            message += " Valid values are " + StringUtils.join(goodValues, ", ") + ".";
+        if (goodValues != null && goodValues.length > 0) {
+            message += " Valid values are " + String.join(", ", goodValues) + ".";
         }
         return message;
     }

@@ -19,7 +19,7 @@ import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.CrudController;
 import com.thoughtworks.go.api.base.OutputWriter;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.apiv3.secretconfigs.representers.SecretConfigRepresenter;
 import com.thoughtworks.go.apiv3.secretconfigs.representers.SecretConfigsRepresenter;
@@ -29,9 +29,10 @@ import com.thoughtworks.go.config.exceptions.EntityType;
 import com.thoughtworks.go.server.service.EntityHashingService;
 import com.thoughtworks.go.server.service.SecretConfigService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import spark.Request;
@@ -47,14 +48,14 @@ import static spark.Spark.*;
 public class SecretConfigsControllerV3 extends ApiController implements SparkSpringController, CrudController<SecretConfig> {
 
     public static final String CONFIG_ID_PARAM = "config_id";
-    public final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final SecretConfigService configService;
     private final EntityHashingService entityHashingService;
 
     @Autowired
-    public SecretConfigsControllerV3(ApiAuthenticationHelper apiAuthenticationHelper, SecretConfigService configService, EntityHashingService entityHashingService) {
+    public SecretConfigsControllerV3(ApiAuthorizationHelper apiAuthorizationHelper, SecretConfigService configService, EntityHashingService entityHashingService) {
         super(ApiVersion.v3);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.configService = configService;
         this.entityHashingService = entityHashingService;
     }
@@ -65,12 +66,12 @@ public class SecretConfigsControllerV3 extends ApiController implements SparkSpr
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
-            before("", mimeType, apiAuthenticationHelper::checkAdminUserAnd403);
-            before("/*", mimeType, apiAuthenticationHelper::checkAdminUserAnd403);
+            before("", mimeType, apiAuthorizationHelper::checkAdminUserAnd403);
+            before("/*", mimeType, apiAuthorizationHelper::checkAdminUserAnd403);
 
             get("", mimeType, this::index);
             get(Routes.SecretConfigsAPI.ID, mimeType, this::show);
@@ -169,7 +170,7 @@ public class SecretConfigsControllerV3 extends ApiController implements SparkSpr
     }
 
     private boolean isRenameAttempt(String profileIdFromRequestParam, String profileIdFromRequestBody) {
-        return !StringUtils.equals(profileIdFromRequestBody, profileIdFromRequestParam);
+        return !Strings.CS.equals(profileIdFromRequestBody, profileIdFromRequestParam);
     }
 
     private void haltIfEntityWithSameIdExists(SecretConfig secretConfig) {

@@ -28,7 +28,7 @@ class EnvironmentAgentsConfigTest {
     private EnvironmentAgentsConfig envAgentsConfig = new EnvironmentAgentsConfig();
 
     @Test
-    void shouldGetAllAgentUUIDs(){
+    void shouldGetAllAgentUUIDs() {
         EnvironmentAgentConfig envAgentConfig1 = new EnvironmentAgentConfig("uuid1");
         EnvironmentAgentConfig envAgentConfig2 = new EnvironmentAgentConfig("uuid2");
         EnvironmentAgentConfig envAgentConfig3 = new EnvironmentAgentConfig("uuid3");
@@ -36,18 +36,17 @@ class EnvironmentAgentsConfigTest {
 
         List<String> uuids = envAgentsConfig.getUuids();
 
-        assertThat(uuids.size()).isEqualTo(3);
-        assertThat(uuids.containsAll(List.of("uuid1", "uuid2", "uuid3"))).isTrue();
+        assertThat(uuids).containsExactly("uuid1", "uuid2", "uuid3");
     }
 
     @Test
-    void shouldGetEmptyListOfUUIDsWhenThereAreNoAgentsAssociatedWithEnvironment(){
+    void shouldGetEmptyListOfUUIDsWhenThereAreNoAgentsAssociatedWithEnvironment() {
         List<String> uuids = envAgentsConfig.getUuids();
         assertThat(uuids.size()).isEqualTo(0);
     }
 
     @Test
-    void shouldSetAgentConfigAttributes(){
+    void shouldSetAgentConfigAttributes() {
         Map<String, String> map1 = new HashMap<>();
         map1.put("uuid", "agent-1");
 
@@ -62,7 +61,7 @@ class EnvironmentAgentsConfigTest {
     }
 
     @Test
-    void shouldNotSetAgentConfigAttributesWhenItIsNull(){
+    void shouldNotSetAgentConfigAttributesWhenItIsNull() {
         envAgentsConfig.setConfigAttributes(null);
         assertThat(envAgentsConfig.size()).isEqualTo(0);
     }

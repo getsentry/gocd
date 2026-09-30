@@ -20,16 +20,19 @@ import com.thoughtworks.go.domain.PersistentObject;
 import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.domain.materials.MaterialConfig;
 import com.thoughtworks.go.domain.materials.ValidationBean;
-import com.thoughtworks.go.util.CachedDigestUtils;
+import com.thoughtworks.go.util.UriEncodingUtil;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.codec.digest.DigestUtils;
 
 import java.io.File;
-import java.net.URLEncoder;
-import java.util.*;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
 
 import static com.thoughtworks.go.util.command.EnvironmentVariableContext.escapeEnvironmentVariable;
-import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.stream.Collectors.joining;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 /**
  * Understands material configuration
@@ -97,7 +100,7 @@ public abstract class AbstractMaterial extends PersistentObject implements Mater
     @Override
     public String getFingerprint() {
         if (fingerprint == null) {
-            fingerprint = generateFingerprintFromCriteria(getSqlCriteria());
+            fingerprint = fingerprintFrom(getSqlCriteria());
         }
         return fingerprint;
     }
@@ -107,19 +110,17 @@ public abstract class AbstractMaterial extends PersistentObject implements Mater
         if (pipelineUniqueFingerprint == null) {
             Map<String, Object> basicCriteria = new LinkedHashMap<>(getSqlCriteria());
             appendPipelineUniqueCriteria(basicCriteria);
-            pipelineUniqueFingerprint = generateFingerprintFromCriteria(basicCriteria);
+            pipelineUniqueFingerprint = fingerprintFrom(basicCriteria);
         }
         return pipelineUniqueFingerprint;
     }
 
-    private String generateFingerprintFromCriteria(Map<String, Object> sqlCriteria) {
-        List<String> list = new ArrayList<>();
-        for (Map.Entry<String, Object> criteria : sqlCriteria.entrySet()) {
-            list.add(criteria.getKey() + "=" + criteria.getValue());
-        }
-        String fingerprint = StringUtils.join(list, FINGERPRINT_DELIMITER);
+    private String fingerprintFrom(Map<String, Object> map) {
         // CAREFUL! the hash algorithm has to be same as the one used in 47_create_new_materials.sql
-        return CachedDigestUtils.sha256Hex(fingerprint);
+        return DigestUtils.sha256Hex(map.entrySet().stream()
+            .map(criteria -> criteria.getKey() + "=" + criteria.getValue())
+            .collect(joining(FINGERPRINT_DELIMITER))
+        );
     }
 
     @Override
@@ -192,18 +193,8 @@ public abstract class AbstractMaterial extends PersistentObject implements Mater
         return String.format("AbstractMaterial{name=%s, type=%s}", name, materialType);
     }
 
-    @Override
-    public MaterialConfig config() {
-        throw new RuntimeException("You need to implement this");
-    }
-
-    @Override
-    public Map<String, Object> getAttributes(boolean addSecureFields) {
-        throw new RuntimeException("You need to implement this");
-    }
-
     protected boolean hasDestinationFolder() {
-        return !StringUtils.isBlank(getFolder());
+        return !isBlank(getFolder());
     }
 
     public boolean supportsDestinationFolder() {
@@ -228,6 +219,7 @@ public abstract class AbstractMaterial extends PersistentObject implements Mater
         return false;
     }
 
+    @Override
     public ValidationBean checkConnection(final SubprocessExecutionContext execCtx) {
         throw new UnsupportedOperationException(String.format("'checkConnection' cannot be performed on material of type %s", materialType));
     }
@@ -235,14 +227,16 @@ public abstract class AbstractMaterial extends PersistentObject implements Mater
     boolean dataHasSecureValue(EnvironmentVariableContext context, Map.Entry<String, String> dataEntry) {
         boolean isSecure = false;
         for (EnvironmentVariableContext.EnvironmentVariable secureEnvironmentVariable : context.getSecureEnvironmentVariables()) {
-            String urlEncodedValue;
-            urlEncodedValue = URLEncoder.encode(secureEnvironmentVariable.value(), UTF_8);
-            boolean isSecureEnvironmentVariableEncoded = !StringUtils.isBlank(urlEncodedValue) && !secureEnvironmentVariable.value().equals(urlEncodedValue);
-            if (isSecureEnvironmentVariableEncoded && dataEntry.getValue().contains(urlEncodedValue)) {
+            String urlEncodedValue = UriEncodingUtil.encodePartParanoid(secureEnvironmentVariable.value());
+            if (isAlreadyEncoded(secureEnvironmentVariable, urlEncodedValue) && dataEntry.getValue().contains(urlEncodedValue)) {
                 isSecure = true;
                 break;
             }
         }
         return isSecure;
+    }
+
+    private static boolean isAlreadyEncoded(EnvironmentVariableContext.EnvironmentVariable secureEnvironmentVariable, String urlEncodedValue) {
+        return !isBlank(urlEncodedValue) && !secureEnvironmentVariable.value().equals(urlEncodedValue);
     }
 }

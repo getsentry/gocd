@@ -125,7 +125,7 @@ public class ConfigurationPropertyTest {
         GoCipher goCipher = mock(GoCipher.class);
         ConfigurationProperty property = new ConfigurationProperty(new ConfigurationKey("secureKey"), new ConfigurationValue(""), new EncryptedConfigurationValue("old"), goCipher);
         property.handleSecureValueConfiguration(true);
-        assertThat(property.getEncryptedValue()).isEqualTo("");
+        assertThat(property.getEncryptedValue()).isEmpty();
         verify(cipher, never()).decrypt(anyString());
     }
 
@@ -185,7 +185,7 @@ public class ConfigurationPropertyTest {
 
         assertThat(configurationProperty.getConfigurationKey().getName()).isEqualTo("key");
         assertThat(configurationProperty.getConfigurationValue()).isNotNull();
-        assertThat(configurationProperty.getConfigurationValue().getValue()).isEqualTo("");
+        assertThat(configurationProperty.getConfigurationValue().getValue()).isEmpty();
         assertThat(configurationProperty.getEncryptedConfigurationValue()).isNull();
         Method initializeMethod = ReflectionUtils.findMethod(ConfigurationProperty.class, "initialize");
         assertThat(initializeMethod.getAnnotation(PostConstruct.class)).isNotNull();
@@ -262,8 +262,8 @@ public class ConfigurationPropertyTest {
 
     @Test
     void shouldGetEmptyValueWhenSecurePropertyValueIsNullOrEmpty() throws Exception {
-        assertThat(new ConfigurationProperty(new ConfigurationKey("key"), null, new EncryptedConfigurationValue(""), cipher).getValue()).isEqualTo("");
-        assertThat(new ConfigurationProperty(new ConfigurationKey("key"), null, new EncryptedConfigurationValue(null), cipher).getValue()).isEqualTo("");
+        assertThat(new ConfigurationProperty(new ConfigurationKey("key"), null, new EncryptedConfigurationValue(""), cipher).getValue()).isEmpty();
+        assertThat(new ConfigurationProperty(new ConfigurationKey("key"), null, new EncryptedConfigurationValue(null), cipher).getValue()).isEmpty();
         verify(cipher, never()).decrypt(anyString());
     }
 
@@ -322,7 +322,7 @@ public class ConfigurationPropertyTest {
 
             assertThat(property.hasSecretParams()).isTrue();
             assertThat(property.getSecretParams().size()).isEqualTo(1);
-            assertThat(property.getSecretParams().get(0)).isEqualTo(new SecretParam("secret_config_id", "lookup_key"));
+            assertThat(property.getSecretParams().getFirst()).isEqualTo(new SecretParam("secret_config_id", "lookup_key"));
         }
 
         @Test
@@ -334,7 +334,7 @@ public class ConfigurationPropertyTest {
 
             assertThat(property.hasSecretParams()).isTrue();
             assertThat(property.getSecretParams().size()).isEqualTo(1);
-            assertThat(property.getSecretParams().get(0)).isEqualTo(new SecretParam("secret_config_id", "lookup_key"));
+            assertThat(property.getSecretParams().getFirst()).isEqualTo(new SecretParam("secret_config_id", "lookup_key"));
         }
 
         @Test
@@ -357,7 +357,7 @@ public class ConfigurationPropertyTest {
         @Test
         void shouldReturnResolvedValue() {
             ConfigurationProperty property = new ConfigurationProperty(new ConfigurationKey("key"), new ConfigurationValue("{{SECRET:[secret_config_id][lookup_key]}}"));
-            property.getSecretParams().get(0).setValue("some-dummy-value");
+            property.getSecretParams().getFirst().setValue("some-dummy-value");
 
             assertThat(property.getResolvedValue()).isEqualTo("some-dummy-value");
         }

@@ -15,8 +15,6 @@
  */
 package com.thoughtworks.go.plugin.access.scm;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.thoughtworks.go.plugin.access.common.handler.JSONResultMessageHandler;
 import com.thoughtworks.go.plugin.access.scm.material.MaterialPollResult;
 import com.thoughtworks.go.plugin.access.scm.revision.ModifiedAction;
@@ -25,19 +23,17 @@ import com.thoughtworks.go.plugin.access.scm.revision.SCMRevision;
 import com.thoughtworks.go.plugin.api.config.Property;
 import com.thoughtworks.go.plugin.api.response.Result;
 import com.thoughtworks.go.plugin.api.response.validation.ValidationResult;
-import org.apache.commons.lang3.StringUtils;
+import com.thoughtworks.go.util.Dates;
+import com.thoughtworks.go.util.json.JsonHelper;
 
-import java.text.SimpleDateFormat;
 import java.util.*;
 
 import static java.lang.String.format;
+import static java.lang.String.join;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 
 @SuppressWarnings({"rawtypes", "unchecked"})
 public class JsonMessageHandler1_0 implements JsonMessageHandler {
-    public static final Gson GSON = new GsonBuilder().excludeFieldsWithoutExposeAnnotation().create();
-    private static final String DATE_PATTERN = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
-
     private final JSONResultMessageHandler jsonResultMessageHandler;
 
     public JsonMessageHandler1_0() {
@@ -124,7 +120,7 @@ public class JsonMessageHandler1_0 implements JsonMessageHandler {
     public String requestMessageForIsSCMConfigurationValid(SCMPropertyConfiguration scmConfiguration) {
         Map configuredValues = new LinkedHashMap();
         configuredValues.put("scm-configuration", jsonResultMessageHandler.configurationToMap(scmConfiguration));
-        return GSON.toJson(configuredValues);
+        return JsonHelper.toJsonExposeOnly(configuredValues);
     }
 
     @Override
@@ -136,7 +132,7 @@ public class JsonMessageHandler1_0 implements JsonMessageHandler {
     public String requestMessageForCheckConnectionToSCM(SCMPropertyConfiguration scmConfiguration) {
         Map configuredValues = new LinkedHashMap();
         configuredValues.put("scm-configuration", jsonResultMessageHandler.configurationToMap(scmConfiguration));
-        return GSON.toJson(configuredValues);
+        return JsonHelper.toJsonExposeOnly(configuredValues);
     }
 
     @Override
@@ -150,7 +146,7 @@ public class JsonMessageHandler1_0 implements JsonMessageHandler {
         configuredValues.put("scm-configuration", jsonResultMessageHandler.configurationToMap(scmConfiguration));
         configuredValues.put("scm-data", materialData);
         configuredValues.put("flyweight-folder", flyweightFolder);
-        return GSON.toJson(configuredValues);
+        return JsonHelper.toJsonExposeOnly(configuredValues);
     }
 
     @Override
@@ -166,12 +162,14 @@ public class JsonMessageHandler1_0 implements JsonMessageHandler {
         configuredValues.put("scm-data", materialData);
         configuredValues.put("flyweight-folder", flyweightFolder);
         configuredValues.put("previous-revision", scmRevisionToMap(previousRevision));
-        return GSON.toJson(configuredValues);
+        return JsonHelper.toJsonExposeOnly(configuredValues);
     }
 
     @Override
     public MaterialPollResult responseMessageForLatestRevisionsSince(String responseBody) {
-        if (isEmpty(responseBody)) return new MaterialPollResult();
+        if (isEmpty(responseBody)) {
+            return new MaterialPollResult();
+        }
         Map responseBodyMap = getResponseMap(responseBody);
         return new MaterialPollResult(toMaterialDataMap(responseBodyMap), toSCMRevisions(responseBodyMap));
     }
@@ -182,7 +180,7 @@ public class JsonMessageHandler1_0 implements JsonMessageHandler {
         configuredValues.put("scm-configuration", jsonResultMessageHandler.configurationToMap(scmConfiguration));
         configuredValues.put("destination-folder", destinationFolder);
         configuredValues.put("revision", scmRevisionToMap(revision));
-        return GSON.toJson(configuredValues);
+        return JsonHelper.toJsonExposeOnly(configuredValues);
     }
 
     @Override
@@ -191,7 +189,7 @@ public class JsonMessageHandler1_0 implements JsonMessageHandler {
     }
 
     private Map parseResponseToMap(String responseBody) {
-        return (Map) new GsonBuilder().create().fromJson(responseBody, Object.class);
+        return (Map) JsonHelper.fromJson(responseBody, Object.class);
     }
 
     private SCMProperty toSCMProperty(String key, Map configuration) {
@@ -233,13 +231,13 @@ public class JsonMessageHandler1_0 implements JsonMessageHandler {
 
         Integer displayOrder = null;
         try {
-            displayOrder = configuration.get("display-order") == null ? null : Integer.parseInt((String) configuration.get("display-order"));
+            displayOrder = configuration.get("display-order") == null ? null : Integer.valueOf((String) configuration.get("display-order"));
         } catch (Exception e) {
             errors.add(format("'display-order' property for key '%s' should be of type integer", key));
         }
 
         if (!errors.isEmpty()) {
-            throw new RuntimeException(StringUtils.join(errors, ", "));
+            throw new RuntimeException(join(", ", errors));
         }
 
         SCMProperty scmProperty = new SCMProperty(key);
@@ -363,7 +361,7 @@ public class JsonMessageHandler1_0 implements JsonMessageHandler {
         Date timestamp;
         try {
             String timestampString = (String) map.get("timestamp");
-            timestamp = new SimpleDateFormat(DATE_PATTERN).parse(timestampString);
+            timestamp = Dates.parseIso8601StrictOffset(timestampString);
         } catch (Exception e) {
             throw new RuntimeException("SCM revision timestamp should be of type string with format yyyy-MM-dd'T'HH:mm:ss.SSS'Z' and cannot be empty");
         }
@@ -440,7 +438,7 @@ public class JsonMessageHandler1_0 implements JsonMessageHandler {
     private Map scmRevisionToMap(SCMRevision scmRevision) {
         Map map = new LinkedHashMap();
         map.put("revision", scmRevision.getRevision());
-        map.put("timestamp", new SimpleDateFormat(DATE_PATTERN).format(scmRevision.getTimestamp()));
+        map.put("timestamp", Dates.formatIso8601UtcWithMillis(scmRevision.getTimestamp()));
         map.put("data", scmRevision.getData());
         return map;
     }

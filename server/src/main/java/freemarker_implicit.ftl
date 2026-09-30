@@ -14,8 +14,6 @@
 [#-- @ftlvariable name="elasticAgentId" type="java.lang.String" --]
 
 [#-- @ftlvariable name="userHasAdministratorRights" type="boolean" --]
-[#-- @ftlvariable name="userHasTemplateAdministratorRights" type="boolean" --]
-[#-- @ftlvariable name="userHasTemplateAdministratorRights" type="boolean" --]
 [#-- @ftlvariable name="userHasViewAdministratorRights" type="boolean" --]
 [#-- @ftlvariable name="userHasTemplateViewUserRights" type="boolean" --]
 [#-- @ftlvariable name="userHasGroupAdministratorRights" type="boolean" --]
@@ -26,8 +24,6 @@
 [#-- @ftlvariable name="concatenatedCruiseIconFilePath" type="java.lang.String" --]
 
 [#-- @ftlvariable name="pathResolver" type="com.thoughtworks.go.server.service.RailsAssetsService" --]
-[#-- @ftlvariable name="goUpdate" type="java.lang.String" --]
-[#-- @ftlvariable name="goUpdateCheckEnabled" type="boolean" --]
 
 [#-- @ftlvariable name="showAnalyticsDashboard" type="boolean" --]
 [#-- @ftlvariable name="webpackAssetsService" type="com.thoughtworks.go.server.service.WebpackAssetsService" --]

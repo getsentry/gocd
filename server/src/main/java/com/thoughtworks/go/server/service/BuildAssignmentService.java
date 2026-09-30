@@ -21,7 +21,6 @@ import com.thoughtworks.go.config.materials.PackageMaterial;
 import com.thoughtworks.go.config.materials.PluggableSCMMaterial;
 import com.thoughtworks.go.domain.*;
 import com.thoughtworks.go.domain.builder.Builder;
-import com.thoughtworks.go.domain.exception.IllegalArtifactLocationException;
 import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.listener.ConfigChangedListener;
 import com.thoughtworks.go.listener.EntityConfigChangedListener;
@@ -36,8 +35,7 @@ import com.thoughtworks.go.server.service.builders.BuilderFactory;
 import com.thoughtworks.go.server.transaction.TransactionTemplate;
 import com.thoughtworks.go.util.SystemEnvironment;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
-import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.collections4.IterableUtils;
+import org.jetbrains.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +46,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.util.command.EnvironmentVariableContext.GO_ENVIRONMENT_NAME;
 import static java.lang.String.format;
 import static java.util.stream.Collectors.toList;
@@ -64,23 +63,24 @@ public class BuildAssignmentService implements ConfigChangedListener {
     public static final String GO_PIPELINE_GROUP_NAME = "GO_PIPELINE_GROUP_NAME";
     public static final String GO_AGENT_RESOURCES = "GO_AGENT_RESOURCES";
 
-    private GoConfigService goConfigService;
-    private JobInstanceService jobInstanceService;
-    private ScheduleService scheduleService;
-    private AgentService agentService;
-    private EnvironmentConfigService environmentConfigService;
-    private TransactionTemplate transactionTemplate;
+    private final GoConfigService goConfigService;
+    private final JobInstanceService jobInstanceService;
+    private final ScheduleService scheduleService;
+    private final AgentService agentService;
+    private final EnvironmentConfigService environmentConfigService;
+    private final TransactionTemplate transactionTemplate;
     private final ScheduledPipelineLoader scheduledPipelineLoader;
 
-    private List<JobPlan> jobPlans = new ArrayList<>();
     private final UpstreamPipelineResolver resolver;
     private final BuilderFactory builderFactory;
-    private MaintenanceModeService maintenanceModeService;
+    private final MaintenanceModeService maintenanceModeService;
     private final ElasticAgentPluginService elasticAgentPluginService;
     private final SystemEnvironment systemEnvironment;
-    private SecretParamResolver secretParamResolver;
-    private JobStatusTopic jobStatusTopic;
-    private ConsoleService consoleService;
+    private final SecretParamResolver secretParamResolver;
+    private final JobStatusTopic jobStatusTopic;
+    private final ConsoleService consoleService;
+
+    private List<JobPlan> jobPlans = new ArrayList<>();
 
     @Autowired
     public BuildAssignmentService(GoConfigService goConfigService, JobInstanceService jobInstanceService,
@@ -128,7 +128,7 @@ public class BuildAssignmentService implements ConfigChangedListener {
                         jobsToRemove = getAllJobPlansFromDeletedPipeline(pipelineConfig, jobPlans);
                     }
 
-                    IterableUtils.forEach(jobsToRemove, o -> removeJob(o));
+                    jobsToRemove.forEach(o -> tryRemoveJob(o));
                 }
             }
         };
@@ -138,10 +138,10 @@ public class BuildAssignmentService implements ConfigChangedListener {
         List<JobPlan> jobsToRemove = new ArrayList<>();
 
         for (JobPlan jobPlan : allJobPlans) {
-            if (pipelineConfig.name().equals(new CaseInsensitiveString(jobPlan.getPipelineName()))) {
-                StageConfig stageConfig = pipelineConfig.findBy(new CaseInsensitiveString(jobPlan.getStageName()));
+            if (pipelineConfig.name().equals(cis(jobPlan.getPipelineName()))) {
+                StageConfig stageConfig = pipelineConfig.findBy(cis(jobPlan.getStageName()));
                 if (stageConfig != null) {
-                    JobConfig jobConfig = stageConfig.jobConfigByConfigName(new CaseInsensitiveString(jobPlan.getName()));
+                    JobConfig jobConfig = stageConfig.jobConfigByConfigName(cis(jobPlan.getName()));
                     if (jobConfig == null) {
                         jobsToRemove.add(jobPlan);
                     }
@@ -156,7 +156,7 @@ public class BuildAssignmentService implements ConfigChangedListener {
 
     private List<JobPlan> getAllJobPlansFromDeletedPipeline(PipelineConfig pipelineConfig, List<JobPlan> allJobPlans) {
         return allJobPlans.stream()
-                .filter(jobPlan -> new CaseInsensitiveString(jobPlan.getPipelineName()).equals(pipelineConfig.name()))
+                .filter(jobPlan -> cis(jobPlan.getPipelineName()).equals(pipelineConfig.name()))
                 .collect(toList());
     }
 
@@ -183,17 +183,18 @@ public class BuildAssignmentService implements ConfigChangedListener {
             final JobPlan job = findMatchingJob(agent);
             if (job != null) {
                 Work buildWork = createWork(agent, job);
-                AgentBuildingInfo buildingInfo = new AgentBuildingInfo(job.getIdentifier().buildLocatorForDisplay(),
-                        job.getIdentifier().buildLocator());
+                AgentBuildingInfo buildingInfo = new AgentBuildingInfo(job.getIdentifier().buildLocatorForDisplay(), job.getIdentifier().buildLocator());
                 agentService.building(agent.getUuid(), buildingInfo);
-                LOGGER.info("[Agent Assignment] Assigned job [{}] to agent [{}]", job.getIdentifier(), agent.getAgent().getAgentIdentifier());
-
+                if (!NO_WORK.equals(buildWork)) {
+                    LOGGER.info("[Agent Assignment] Assigned job [{}] to agent [{}]", job.getIdentifier(), agent.getAgent().getAgentIdentifier());
+                }
                 return buildWork;
             }
         }
         return NO_WORK;
     }
 
+    @VisibleForTesting
     JobPlan findMatchingJob(AgentInstance agent) {
         List<JobPlan> filteredJobPlans = environmentConfigService.filterJobsByAgent(jobPlans, agent.getUuid());
         JobPlan match = null;
@@ -209,8 +210,11 @@ public class BuildAssignmentService implements ConfigChangedListener {
                 } catch (RulesViolationException | SecretResolutionFailureException e) {
                     JobInstance instance = jobInstanceService.buildById(jobPlan.getJobId());
                     JobIdentifier jobIdentifier = jobPlan.getIdentifier();
-                    String failureMessage = format("\nThis job was failed by GoCD. This job is configured to run on an elastic agent, there were errors while resolving secrets for the the associated elastic configurations.\nReasons: %s", e.getMessage());
-                    logToJobConsole(jobIdentifier, failureMessage);
+                    String failureMessage = format("""
+                        
+                        This job was failed by GoCD. This job is configured to run on an elastic agent, there were errors while resolving secrets for the the associated elastic configurations.
+                        Reasons: %s""", e.getMessage());
+                    consoleService.appendToConsoleLogSafe(jobIdentifier, failureMessage);
                     scheduleService.failJob(instance);
                     jobStatusTopic.post(new JobStatusMessage(jobIdentifier, instance.getState(), agent.getUuid()));
                 }
@@ -222,6 +226,7 @@ public class BuildAssignmentService implements ConfigChangedListener {
         return match;
     }
 
+    @SuppressWarnings("unused") // used by spring scheduler
     public void onTimer() {
         if (maintenanceModeService.isMaintenanceMode()) {
             LOGGER.debug("[Maintenance Mode] GoCD server is in 'maintenance' mode, skip checking build assignments");
@@ -246,37 +251,36 @@ public class BuildAssignmentService implements ConfigChangedListener {
     }
 
     @Override
-    public void onConfigChange(CruiseConfig newCruiseConfig) {
-        LOGGER.info("[Configuration Changed] Removing jobs for pipelines that no longer exist in configuration.");
+    public void onConfigChange(CruiseConfig cruiseConfig) {
         synchronized (this) {
+            if (jobPlans.isEmpty()) {
+                return;
+            }
+            LOGGER.info("[Configuration Changed] Removing jobs for pipelines that no longer exist in configuration.");
             List<JobPlan> jobsToRemove = new ArrayList<>();
             for (JobPlan jobPlan : jobPlans) {
-                if (!newCruiseConfig.hasBuildPlan(new CaseInsensitiveString(jobPlan.getPipelineName()), new CaseInsensitiveString(jobPlan.getStageName()), jobPlan.getName(), true)) {
+                if (!cruiseConfig.hasBuildPlan(cis(jobPlan.getPipelineName()), cis(jobPlan.getStageName()), jobPlan.getName(), true)) {
                     jobsToRemove.add(jobPlan);
                 }
             }
-            IterableUtils.forEach(jobsToRemove, this::removeJob);
+            jobsToRemove.forEach(this::tryRemoveJob);
         }
     }
 
-    private void removeJobIfNotPresentInCruiseConfig(CruiseConfig newCruiseConfig, JobPlan jobPlan) {
-        if (!newCruiseConfig.hasBuildPlan(new CaseInsensitiveString(jobPlan.getPipelineName()), new CaseInsensitiveString(jobPlan.getStageName()), jobPlan.getName(), true)) {
-            removeJob(jobPlan);
+    private void removeJobIfNotPresentInCruiseConfig(CruiseConfig cruiseConfig, JobPlan jobPlan) {
+        if (!cruiseConfig.hasBuildPlan(cis(jobPlan.getPipelineName()), cis(jobPlan.getStageName()), jobPlan.getName(), true)) {
+            tryRemoveJob(jobPlan);
         }
     }
 
-    private void removeJob(JobPlan jobPlan) {
+    private void tryRemoveJob(JobPlan jobPlan) {
         try {
             jobPlans.remove(jobPlan);
             LOGGER.info("Removing job plan {} that no longer exists in the config", jobPlan);
-            JobInstance instance = jobInstanceService.buildByIdWithTransitions(jobPlan.getJobId());
-            //#2846 - remove this hack
-            instance.setIdentifier(jobPlan.getIdentifier());
-
-            scheduleService.cancelJob(instance);
+            scheduleService.cancelJob(jobInstanceService.buildByIdWithTransitions(jobPlan.getJobId()));
             LOGGER.info("Successfully removed job plan {} that no longer exists in the config", jobPlan);
         } catch (Exception e) {
-            LOGGER.warn("Unable to remove plan {} from queue that no longer exists in the config", jobPlan);
+            LOGGER.warn("Unable to remove plan {} from queue that no longer exists in the config ({})", jobPlan, e.toString());
         }
     }
 
@@ -306,9 +310,10 @@ public class BuildAssignmentService implements ConfigChangedListener {
                     final EnvironmentVariableContext environmentVariableContext = buildEnvVarContext(job.getIdentifier().getPipelineName());
 
                     // Agent may have a NULL "resources"
-                    if (CollectionUtils.isNotEmpty(agent.getResourceConfigs())) {
+                    String resources = agent.getAgent().getResourcesNormalized();
+                    if (resources != null) {
                         // Users relying on this env. var. can test for its existence rather than checking for an empty string
-                        environmentVariableContext.setProperty(GO_AGENT_RESOURCES, agent.getResourceConfigs().getCommaSeparatedResourceNames(), false);
+                        environmentVariableContext.setProperty(GO_AGENT_RESOURCES, resources, false);
                     }
                     // Reason to resolve them separately: the rules for pluggable scm material verifies `SCM` based rules
                     // whereas the assignment considers `PipelineGroup` based rules
@@ -344,7 +349,7 @@ public class BuildAssignmentService implements ConfigChangedListener {
      * It will also resolve secrets, if any wrt environment config
      */
     EnvironmentVariableContext buildEnvVarContext(String pipelineName) {
-        String pipelineGroupName = goConfigService.findGroupNameByPipeline(new CaseInsensitiveString(pipelineName));
+        String pipelineGroupName = goConfigService.findGroupNameByPipelineOptional(cis(pipelineName)).orElse(null);
         EnvironmentVariableContext environmentVariableContext = new EnvironmentVariableContext(GO_PIPELINE_GROUP_NAME, pipelineGroupName);
 
         EnvironmentConfig environmentForPipeline = environmentConfigService.environmentForPipeline(pipelineName);
@@ -360,30 +365,17 @@ public class BuildAssignmentService implements ConfigChangedListener {
     }
 
     private void logSecretsResolutionFailure(JobIdentifier jobIdentifier, SecretResolutionFailureException e) {
-        try {
-            final String description = format("\nJob for pipeline '%s' failed due to errors while resolving secret params.", jobIdentifier.buildLocator());
-            consoleService.appendToConsoleLog(jobIdentifier, description);
-            consoleService.appendToConsoleLog(jobIdentifier, format("\nReason: %s\n", e.getMessage()));
-        } catch (IllegalArtifactLocationException e1) {
-            LOGGER.error(e1.getMessage(), e1);
-        }
+        consoleService.appendToConsoleLogSafe(jobIdentifier, format("""
+            
+            Job for pipeline '%s' failed due to errors while resolving secret params.
+            Reason: %s
+            """, jobIdentifier.buildLocator(), e.getMessage()));
     }
 
     private void logRulesViolation(JobIdentifier jobIdentifier, RulesViolationException e) {
-        try {
-            final String description = format("\nJob for pipeline '%s' failed due to errors: %s", jobIdentifier.buildLocator(), e.getMessage());
-            consoleService.appendToConsoleLog(jobIdentifier, description);
-        } catch (IllegalArtifactLocationException e1) {
-            LOGGER.error(e1.getMessage(), e1);
-        }
-    }
-
-    private void logToJobConsole(JobIdentifier jobIdentifier, String errorMessage) {
-        try {
-            consoleService.appendToConsoleLog(jobIdentifier, errorMessage);
-        } catch (IllegalArtifactLocationException e) {
-            LOGGER.error(format("Failed to add message(%s) to the job(%s) console", errorMessage, jobIdentifier), e);
-        }
+        consoleService.appendToConsoleLogSafe(jobIdentifier, format("""
+            
+            Job for pipeline '%s' failed due to errors: %s""", jobIdentifier.buildLocator(), e.getMessage()));
     }
 
     private Set<String> getArtifactStoreIdsRequiredByArtifactPlans(List<ArtifactPlan> artifactPlans) {
@@ -404,7 +396,7 @@ public class BuildAssignmentService implements ConfigChangedListener {
     private void resolveSecretsForMaterials(MaterialRevisions materialRevisions) {
         List<Material> materials = stream(materialRevisions.spliterator(), true)
                 .map(MaterialRevision::getMaterial)
-                .filter((material) -> material instanceof PluggableSCMMaterial || material instanceof PackageMaterial)
+                .filter(material -> material instanceof PluggableSCMMaterial || material instanceof PackageMaterial)
                 .collect(toList());
         secretParamResolver.resolve(materials);
     }

@@ -16,7 +16,6 @@
 package com.thoughtworks.go.util.validators;
 
 import com.thoughtworks.go.util.ConfigDirProvider;
-import org.apache.commons.io.IOUtils;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -79,7 +78,7 @@ public class FileValidator implements Validator {
             // Make sure the dir exists
             file.getParentFile().mkdirs();
             try (FileOutputStream output = new FileOutputStream(file)) {
-                IOUtils.copy(input, output);
+                input.transferTo(output);
             }
         } catch (Exception e) {
             return handleExceptionDuringFileHandling(validation, e);
@@ -94,15 +93,19 @@ public class FileValidator implements Validator {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         FileValidator that = (FileValidator) o;
 
-        if (shouldReplace != that.shouldReplace) return false;
-        if (!Objects.equals(fileName, that.fileName)) return false;
-        if (!Objects.equals(srcDir, that.srcDir)) return false;
-        return Objects.equals(destDir, that.destDir);
+        return shouldReplace == that.shouldReplace &&
+            Objects.equals(fileName, that.fileName) &&
+            Objects.equals(srcDir, that.srcDir) &&
+            Objects.equals(destDir, that.destDir);
     }
 
     @Override

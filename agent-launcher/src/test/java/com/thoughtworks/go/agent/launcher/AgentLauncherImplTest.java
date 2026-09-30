@@ -16,13 +16,10 @@
 package com.thoughtworks.go.agent.launcher;
 
 import com.thoughtworks.cruise.agent.common.launcher.AgentLaunchDescriptor;
-import com.thoughtworks.cruise.agent.common.launcher.AgentLauncher;
-import com.thoughtworks.go.CurrentGoCDVersion;
 import com.thoughtworks.go.agent.common.AgentBootstrapperArgs;
 import com.thoughtworks.go.agent.testhelper.FakeGoServer;
 import com.thoughtworks.go.agent.testhelper.FakeGoServerExtension;
 import com.thoughtworks.go.agent.testhelper.GoTestResource;
-import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,13 +30,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.file.Files;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.thoughtworks.go.agent.common.util.Downloader.*;
 import static com.thoughtworks.go.agent.testhelper.FakeGoServer.TestResource.*;
+import static com.thoughtworks.go.util.SystemEnvironment.WEBAPP_CONTEXT_PATH;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -52,35 +49,21 @@ public class AgentLauncherImplTest {
     public FakeGoServer server;
 
     @BeforeEach
-    public void setUp() {
+    public void setUp() throws IOException {
         cleanup();
     }
 
     @AfterEach
-    public void tearDown() {
+    public void tearDown() throws IOException {
         cleanup();
     }
 
-    private void cleanup() {
-        FileUtils.deleteQuietly(AGENT_PLUGINS_ZIP);
-        FileUtils.deleteQuietly(AGENT_BINARY_JAR);
-        FileUtils.deleteQuietly(AGENT_LAUNCHER_JAR);
-        FileUtils.deleteQuietly(TFS_IMPL_JAR);
-        new Lockfile(new File(AgentLauncherImpl.AGENT_BOOTSTRAPPER_LOCK_FILE)).delete();
-    }
-
-    @Test
-    public void shouldPassLauncherVersionToAgent() throws IOException {
-        final List<String> actualVersion = new ArrayList<>();
-        final AgentLauncher launcher = new AgentLauncherImpl((launcherVersion, launcherMd5, urlConstructor, environmentVariables, context) -> {
-            actualVersion.add(launcherVersion);
-            return 0;
-        });
-        TEST_AGENT_LAUNCHER.copyTo(AGENT_LAUNCHER_JAR);
-        launcher.launch(launchDescriptor());
-
-        assertThat(actualVersion.size()).isEqualTo(1);
-        assertThat(actualVersion.get(0)).isEqualTo(CurrentGoCDVersion.getInstance().fullVersion());
+    private void cleanup() throws IOException {
+        Files.deleteIfExists(AGENT_PLUGINS_ZIP.toPath());
+        Files.deleteIfExists(AGENT_BINARY_JAR.toPath());
+        Files.deleteIfExists(AGENT_LAUNCHER_JAR.toPath());
+        Files.deleteIfExists(TFS_IMPL_JAR.toPath());
+        new File(AgentLauncherImpl.AGENT_BOOTSTRAPPER_LOCK_FILE).delete();
     }
 
     @Test
@@ -95,7 +78,7 @@ public class AgentLauncherImplTest {
     private AgentLaunchDescriptor launchDescriptor() {
         AgentLaunchDescriptor launchDescriptor = mock(AgentLaunchDescriptor.class);
         Map<String, String> contextMap = new ConcurrentHashMap<>();
-        contextMap.put(AgentBootstrapperArgs.SERVER_URL, "http://localhost:" + server.getPort() + "/go");
+        contextMap.put(AgentBootstrapperArgs.SERVER_URL, "http://localhost:" + server.getPort() + WEBAPP_CONTEXT_PATH);
         contextMap.put(AgentBootstrapperArgs.SSL_VERIFICATION_MODE, "NONE");
         when(launchDescriptor.context()).thenReturn(contextMap);
         return launchDescriptor;
@@ -156,7 +139,7 @@ public class AgentLauncherImplTest {
     }
 
     private File randomFile(final File pathname) throws IOException {
-        FileUtils.write(pathname, "some rubbish", StandardCharsets.UTF_8);
+        Files.writeString(pathname.toPath(), "some rubbish", StandardCharsets.UTF_8);
         return pathname;
     }
 }

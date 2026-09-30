@@ -19,7 +19,7 @@ import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.base.OutputWriter;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.api.util.HaltApiResponses;
 import com.thoughtworks.go.api.util.MessageJson;
@@ -38,11 +38,11 @@ import com.thoughtworks.go.domain.materials.Modification;
 import com.thoughtworks.go.plugin.access.configrepo.ConfigFileList;
 import com.thoughtworks.go.plugin.access.configrepo.ExportedConfig;
 import com.thoughtworks.go.server.service.*;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import com.thoughtworks.go.util.FileUtil;
 import com.thoughtworks.go.util.SystemEnvironment;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,13 +62,14 @@ import java.util.function.Consumer;
 import static com.thoughtworks.go.api.util.HaltApiResponses.haltBecauseOfReason;
 import static com.thoughtworks.go.spark.Routes.PaC.*;
 import static java.lang.String.format;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 import static spark.Spark.*;
 
 @Component
 public class PipelinesAsCodeInternalControllerV1 extends ApiController implements SparkSpringController {
     private static final Logger LOGGER = LoggerFactory.getLogger(PipelinesAsCodeInternalControllerV1.class);
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final PasswordDeserializer passwordDeserializer;
     private final GoConfigService goConfigService;
     private final GoConfigPluginService pluginService;
@@ -82,7 +83,7 @@ public class PipelinesAsCodeInternalControllerV1 extends ApiController implement
 
     @Autowired
     public PipelinesAsCodeInternalControllerV1(
-            ApiAuthenticationHelper apiAuthenticationHelper,
+            ApiAuthorizationHelper apiAuthorizationHelper,
             PasswordDeserializer passwordDeserializer,
             GoConfigService goConfigService,
             GoConfigPluginService pluginService,
@@ -94,7 +95,7 @@ public class PipelinesAsCodeInternalControllerV1 extends ApiController implement
             ConfigRepoService configRepoService,
             EntityHashingService entityHashingService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.passwordDeserializer = passwordDeserializer;
         this.goConfigService = goConfigService;
         this.pluginService = pluginService;
@@ -113,10 +114,10 @@ public class PipelinesAsCodeInternalControllerV1 extends ApiController implement
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
-            before(PREVIEW, this.mimeType, this::setContentType, this::verifyContentType, this.apiAuthenticationHelper::checkAdminUserAnd403);
-            before(CONFIG_FILES, this.mimeType, this::setContentType, this::verifyContentType, this.apiAuthenticationHelper::checkAdminUserAnd403);
+            before(PREVIEW, this.mimeType, this::setContentType, this::verifyContentType, this.apiAuthorizationHelper::checkAdminUserAnd403);
+            before(CONFIG_FILES, this.mimeType, this::setContentType, this::verifyContentType, this.apiAuthorizationHelper::checkAdminUserAnd403);
 
             post(PREVIEW, this.mimeType, this::preview);
 
@@ -211,7 +212,7 @@ public class PipelinesAsCodeInternalControllerV1 extends ApiController implement
 
     protected void validateMaterial(MaterialConfig materialConfig) {
         PipelineConfigSaveValidationContext vctx = PipelineConfigSaveValidationContext.forChain(false, null, goConfigService.getCurrentConfig(), materialConfig);
-        ((ScmMaterialConfig) materialConfig).validateConcreteScmMaterial(vctx);
+        ((ScmMaterialConfig) materialConfig).validateConcreteScmMaterial();
     }
 
     protected void checkoutFromMaterialConfig(MaterialConfig materialConfig, File folder) throws ExecutionException, InterruptedException, TimeoutException {
@@ -227,7 +228,9 @@ public class PipelinesAsCodeInternalControllerV1 extends ApiController implement
         try {
             future.get(timeout, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
-            LOGGER.debug(format("Failed to clone material %s in %d ms", material.getDescription(), timeout), e);
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("Failed to clone material {} in {} ms", material.getDescription(), timeout, e);
+            }
             future.cancel(true);
             throw e;
         } finally {
@@ -277,7 +280,7 @@ public class PipelinesAsCodeInternalControllerV1 extends ApiController implement
     private String requiredParam(final Request req, @SuppressWarnings("SameParameterValue") final String name) {
         String value = req.params(name);
 
-        if (StringUtils.isBlank(value)) {
+        if (isBlank(value)) {
             throw HaltApiResponses.haltBecauseRequiredParamMissing(name);
         }
 
@@ -287,7 +290,7 @@ public class PipelinesAsCodeInternalControllerV1 extends ApiController implement
     private String requiredQueryParam(final Request req, @SuppressWarnings("SameParameterValue") final String name) {
         String value = req.queryParams(name);
 
-        if (StringUtils.isBlank(value)) {
+        if (isBlank(value)) {
             throw HaltApiResponses.haltBecauseRequiredParamMissing(name);
         }
 

@@ -17,7 +17,7 @@ package com.thoughtworks.go.apiv1.internalpipelinestructure;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.HaltApiResponses;
 import com.thoughtworks.go.apiv1.internalpipelinestructure.models.PipelineStructureViewModel;
 import com.thoughtworks.go.apiv1.internalpipelinestructure.representers.InternalPipelineStructuresRepresenter;
@@ -26,6 +26,7 @@ import com.thoughtworks.go.config.EnvironmentsConfig;
 import com.thoughtworks.go.config.TemplatesConfig;
 import com.thoughtworks.go.domain.PipelineGroups;
 import com.thoughtworks.go.server.service.*;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes.InternalPipelineStructure;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import com.thoughtworks.go.util.Node;
@@ -36,8 +37,9 @@ import spark.Response;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.Hashtable;
+import java.util.Collections;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 import static java.lang.Boolean.parseBoolean;
@@ -46,7 +48,7 @@ import static spark.Spark.*;
 @Component
 public class InternalPipelineStructureControllerV1 extends ApiController implements SparkSpringController {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final Map<String, Supplier<PipelineGroups>> pipelineGroupAuthorizationRegistry;
     private final Map<String, Supplier<TemplatesConfig>> templateAuthorizationRegistry;
     private final UserService userService;
@@ -54,15 +56,15 @@ public class InternalPipelineStructureControllerV1 extends ApiController impleme
     private final EnvironmentConfigService environmentConfigService;
 
     @Autowired
-    public InternalPipelineStructureControllerV1(ApiAuthenticationHelper apiAuthenticationHelper,
+    public InternalPipelineStructureControllerV1(ApiAuthorizationHelper apiAuthorizationHelper,
                                                  PipelineConfigService pipelineConfigService,
                                                  TemplateConfigService templateConfigService, UserService userService,
                                                  GoConfigService goConfigService, EnvironmentConfigService environmentConfigService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.pipelineGroupAuthorizationRegistry = Map.of(
                 "view", () -> pipelineConfigService.viewableGroupsForUserIncludingConfigRepos(currentUsername()),
-                "operate", () -> pipelineConfigService.viewableOrOperatableGroupsForIncludingConfigRepos(currentUsername()),
+                "operate", () -> pipelineConfigService.operableGroupsForIncludingConfigRepos(currentUsername()),
                 "administer", () -> pipelineConfigService.adminGroupsForIncludingConfigRepos(currentUsername())
         );
 
@@ -81,14 +83,14 @@ public class InternalPipelineStructureControllerV1 extends ApiController impleme
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
             before("/*", mimeType, this::verifyContentType);
 
-            before("", mimeType, this.apiAuthenticationHelper::checkUserAnd403);
+            before("", mimeType, this.apiAuthorizationHelper::checkUserAnd403);
 
             get("", mimeType, this::index);
         });
@@ -108,7 +110,7 @@ public class InternalPipelineStructureControllerV1 extends ApiController impleme
         EnvironmentsConfig environments = new EnvironmentsConfig();
         environments.addAll(environmentConfigService.getEnvironments());
 
-        Hashtable<CaseInsensitiveString, Node> dependencyTable = goConfigService.getCurrentConfig().getDependencyTable();
+        Map<CaseInsensitiveString, Node> dependencyTable = goConfigService.getCurrentConfig().getDependencyTable();
 
         PipelineStructureViewModel pipelineStructureViewModel = new PipelineStructureViewModel()
                 .setPipelineGroups(pipelineGroupsSupplier.get())
@@ -121,8 +123,9 @@ public class InternalPipelineStructureControllerV1 extends ApiController impleme
         if (!withAdditionalInfo) {
             return writerForTopLevelObject(request, response, outputWriter -> InternalPipelineStructuresRepresenter.toJSON(outputWriter, pipelineStructureViewModel));
         }
-        Collection<String> users = userService.allUsernames();
-        Collection<String> roles = userService.allRoleNames();
+
+        Collection<String> users = apiAuthorizationHelper.isPipelineGroupAdminOrTemplateAdmin() ? userService.allUsernames() : Set.of(currentUsernameString());
+        Collection<String> roles = apiAuthorizationHelper.isPipelineGroupAdminOrTemplateAdmin() ? userService.allRoleNames() : Collections.emptySet();
 
         return writerForTopLevelObject(request, response, outputWriter -> InternalPipelineStructuresRepresenter.toJSON(outputWriter, pipelineStructureViewModel, users, roles));
     }

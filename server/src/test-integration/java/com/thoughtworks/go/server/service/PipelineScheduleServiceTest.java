@@ -17,9 +17,12 @@ package com.thoughtworks.go.server.service;
 
 import com.thoughtworks.go.config.*;
 import com.thoughtworks.go.config.materials.MaterialConfigs;
+import com.thoughtworks.go.config.materials.ScmMaterial;
+import com.thoughtworks.go.config.materials.git.GitMaterial;
 import com.thoughtworks.go.domain.*;
 import com.thoughtworks.go.domain.buildcause.BuildCause;
-import com.thoughtworks.go.domain.materials.TestingMaterial;
+import com.thoughtworks.go.domain.materials.Modification;
+import com.thoughtworks.go.domain.materials.ModifiedAction;
 import com.thoughtworks.go.domain.materials.svn.Subversion;
 import com.thoughtworks.go.domain.materials.svn.SvnCommand;
 import com.thoughtworks.go.fixture.PipelineWithTwoStages;
@@ -27,7 +30,7 @@ import com.thoughtworks.go.helper.PipelineMother;
 import com.thoughtworks.go.helper.StageConfigMother;
 import com.thoughtworks.go.helper.SvnTestRepo;
 import com.thoughtworks.go.helper.TestRepo;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.dao.PipelineDao;
 import com.thoughtworks.go.server.dao.StageSqlMapDao;
@@ -49,12 +52,18 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static com.thoughtworks.go.domain.buildcause.BuildCause.APPROVER_AUTOMATICALLY_TRIGGERED;
+import static com.thoughtworks.go.helper.EnvironmentVariablesConfigMother.env;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.svnMaterialConfig;
 import static com.thoughtworks.go.helper.ModificationsMother.modifyOneFile;
-import static com.thoughtworks.go.util.GoConfigFileHelper.env;
-import static com.thoughtworks.go.util.GoConstants.DEFAULT_APPROVED_BY;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -86,7 +95,7 @@ public class PipelineScheduleServiceTest {
     @Autowired private InstanceFactory instanceFactory;
     @Autowired private AgentService agentService;
 
-    private PipelineWithTwoStages pipelineWithTwoStages;
+    private PipelineWithTwoStages pipelineFixture;
     private PipelineConfig mingleConfig;
     private PipelineConfig evolveConfig;
     private final String md5 = "md5-test";
@@ -106,16 +115,15 @@ public class PipelineScheduleServiceTest {
         repository = new SvnCommand(null, testRepo.projectRepositoryUrl());
         mingleConfig = configHelper.addPipeline("mingle", STAGE_NAME, repository, "unit", "functional");
 
-
         goConfig = configHelper.addPipeline("go", STAGE_NAME, repository, "unit");
         StageConfig ftStageConfig = StageConfigMother.custom("ft", "twist");
-        ftStageConfig.jobConfigByConfigName(new CaseInsensitiveString("twist")).addVariable("JOB_LVL", "job value");
+        ftStageConfig.jobConfigByConfigName(cis("twist")).addVariable("JOB_LVL", "job value");
         ftStageConfig.setVariables(env("STAGE_LVL", "stage value"));
         configHelper.addStageToPipeline("go", ftStageConfig);
         configHelper.addEnvironmentVariableToPipeline("go", env("PIPELINE_LVL", "pipeline value"));
         configHelper.addEnvironments("uat");
-        EnvironmentConfig uatEnv = configHelper.currentConfig().getEnvironments().named(new CaseInsensitiveString("uat"));
-        uatEnv.addPipeline(new CaseInsensitiveString("go"));
+        EnvironmentConfig uatEnv = configHelper.currentConfig().getEnvironments().named(cis("uat"));
+        uatEnv.addPipeline(cis("go"));
         uatEnv.addEnvironmentVariable("ENV_LVL", "env value");
 
         evolveConfig = configHelper.addPipeline("evolve", STAGE_NAME, repository, "unit");
@@ -124,8 +132,8 @@ public class PipelineScheduleServiceTest {
 
     @AfterEach
     public void teardown() throws Exception {
-        if (pipelineWithTwoStages != null) {
-            pipelineWithTwoStages.onTearDown();
+        if (pipelineFixture != null) {
+            pipelineFixture.onTearDown();
         }
         dbHelper.onTearDown();
         pipelineScheduleQueue.clear();
@@ -137,15 +145,15 @@ public class PipelineScheduleServiceTest {
     @Test
     public void shouldScheduleStageAfterModifications() throws Exception {
         scheduleAndCompleteInitialPipelines();
-        TestingMaterial stubMaterial = new TestingMaterial();
+        ScmMaterial stubMaterial = new GitMaterial("nowhere");
 
         mingleConfig.setMaterialConfigs(new MaterialConfigs(stubMaterial.config()));
 
         MaterialRevisions revisions = new MaterialRevisions();
-        revisions.addRevision(stubMaterial, stubMaterial.modificationsSince());
+        revisions.addRevision(stubMaterial, multipleModifications());
         BuildCause buildCause = BuildCause.createWithModifications(revisions, "");
         dbHelper.saveMaterials(buildCause.getMaterialRevisions());
-        Pipeline pipeline = instanceFactory.createPipelineInstance(mingleConfig, buildCause, new DefaultSchedulingContext(DEFAULT_APPROVED_BY), md5, new TimeProvider());
+        Pipeline pipeline = instanceFactory.createPipelineInstance(mingleConfig, buildCause, new DefaultSchedulingContext(APPROVER_AUTOMATICALLY_TRIGGERED), md5, new TimeProvider());
         pipelineService.save(pipeline);
 
         verifyMingleScheduledWithModifications();
@@ -157,16 +165,16 @@ public class PipelineScheduleServiceTest {
 
         configHelper.lockPipeline("mingle");
 
-        TestingMaterial stubMaterial = new TestingMaterial();
+        ScmMaterial stubMaterial = new GitMaterial("nowhere");
         mingleConfig.setMaterialConfigs(new MaterialConfigs(stubMaterial.config()));
 
         assertThat(pipelineLockService.isLocked("mingle")).isEqualTo(false);
 
         MaterialRevisions revisions = new MaterialRevisions();
-        revisions.addRevision(stubMaterial, stubMaterial.modificationsSince());
+        revisions.addRevision(stubMaterial, multipleModifications());
         BuildCause buildCause = BuildCause.createWithModifications(revisions, "");
         dbHelper.saveMaterials(buildCause.getMaterialRevisions());
-        Pipeline pipeline = instanceFactory.createPipelineInstance(mingleConfig, buildCause, new DefaultSchedulingContext(DEFAULT_APPROVED_BY), md5, new TimeProvider());
+        Pipeline pipeline = instanceFactory.createPipelineInstance(mingleConfig, buildCause, new DefaultSchedulingContext(APPROVER_AUTOMATICALLY_TRIGGERED), md5, new TimeProvider());
         pipelineService.save(pipeline);
 
         assertThat(pipelineLockService.isLocked("mingle")).isEqualTo(true);
@@ -177,19 +185,20 @@ public class PipelineScheduleServiceTest {
         configHelper.addEnvironments("dev");
         Agent agentConfigWithUuid1 = new Agent("uuid1", "localhost", "127.0.0.1", "cookie1");
         agentConfigWithUuid1.setEnvironments("dev");
+        agentService.clearAll();
         agentService.saveOrUpdate(agentConfigWithUuid1);
         agentService.saveOrUpdate(new Agent("uuid2", "localhost", "127.0.0.1", "cookie2"));
         agentService.saveOrUpdate(new Agent("uuid3", "localhost", "127.0.0.1", "cookie3"));
         configHelper.setRunOnAllAgents(CaseInsensitiveString.str(evolveConfig.name()), STAGE_NAME, "unit", true);
 
-        TestingMaterial stubMaterial = new TestingMaterial();
+        ScmMaterial stubMaterial = new GitMaterial("nowhere");
         evolveConfig.setMaterialConfigs(new MaterialConfigs(stubMaterial.config()));
         MaterialRevisions revisions = new MaterialRevisions();
-        revisions.addRevision(stubMaterial, stubMaterial.modificationsSince());
+        revisions.addRevision(stubMaterial, multipleModifications());
         BuildCause buildCause = BuildCause.createWithModifications(revisions, "");
         dbHelper.saveMaterials(buildCause.getMaterialRevisions());
 
-        Pipeline pipeline = instanceFactory.createPipelineInstance(evolveConfig, buildCause, new DefaultSchedulingContext(DEFAULT_APPROVED_BY, environmentConfigService.agentsForPipeline(evolveConfig.name())), md5,
+        Pipeline pipeline = instanceFactory.createPipelineInstance(evolveConfig, buildCause, new DefaultSchedulingContext(APPROVER_AUTOMATICALLY_TRIGGERED, environmentConfigService.agentsForPipeline(evolveConfig.name())), md5,
                 new TimeProvider());
         pipelineService.save(pipeline);
 
@@ -212,14 +221,14 @@ public class PipelineScheduleServiceTest {
 	public void shouldScheduleMultipleJobsWhenToBeRunMultipleInstance() {
 		configHelper.setRunMultipleInstance(CaseInsensitiveString.str(evolveConfig.name()), STAGE_NAME, "unit", 2);
 
-		TestingMaterial stubMaterial = new TestingMaterial();
+		ScmMaterial stubMaterial = new GitMaterial("nowhere");
 		evolveConfig.setMaterialConfigs(new MaterialConfigs(stubMaterial.config()));
 		MaterialRevisions revisions = new MaterialRevisions();
-		revisions.addRevision(stubMaterial, stubMaterial.modificationsSince());
+		revisions.addRevision(stubMaterial, multipleModifications());
 		BuildCause buildCause = BuildCause.createWithModifications(revisions, "");
 		dbHelper.saveMaterials(buildCause.getMaterialRevisions());
 
-		Pipeline pipeline = instanceFactory.createPipelineInstance(evolveConfig, buildCause, new DefaultSchedulingContext(DEFAULT_APPROVED_BY, environmentConfigService.agentsForPipeline(evolveConfig.name())), md5, new TimeProvider());
+		Pipeline pipeline = instanceFactory.createPipelineInstance(evolveConfig, buildCause, new DefaultSchedulingContext(APPROVER_AUTOMATICALLY_TRIGGERED, environmentConfigService.agentsForPipeline(evolveConfig.name())), md5, new TimeProvider());
 		pipelineService.save(pipeline);
 
 		Stage instance = scheduleService.scheduleStage(pipeline, STAGE_NAME, "anyone", new ScheduleService.NewStageInstanceCreator(goConfigService), new ScheduleService.ExceptioningErrorHandler());
@@ -238,7 +247,7 @@ public class PipelineScheduleServiceTest {
         Pipeline pipeline = pipelineDao.mostRecentPipeline("go");
 
         Stage stage = scheduleService.scheduleStage(pipeline, "ft", "anonymous", new ScheduleService.NewStageInstanceCreator(goConfigService), new ScheduleService.ExceptioningErrorHandler());
-        EnvironmentVariables jobVariables = stage.getJobInstances().first().getPlan().getVariables();
+        EnvironmentVariables jobVariables = stage.getJobInstances().getFirst().getPlan().getVariables();
         assertThat(jobVariables).containsExactlyInAnyOrder(
             new EnvironmentVariable("PIPELINE_LVL", "pipeline value"),
             new EnvironmentVariable("STAGE_LVL", "stage value"),
@@ -263,19 +272,19 @@ public class PipelineScheduleServiceTest {
 
     @Test
     public void shouldForceFirstStagePlan(@TempDir Path tempDir) throws Exception {
-        pipelineWithTwoStages = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
-        pipelineWithTwoStages.usingDbHelper(dbHelper).usingConfigHelper(configHelper).onSetUp();
-        pipelineWithTwoStages.createPipelineWithFirstStagePassedAndSecondStageRunning();
-        Pipeline pipeline = manualSchedule(pipelineWithTwoStages.pipelineName);
+        pipelineFixture = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
+        pipelineFixture.usingDbHelper(dbHelper).usingConfigHelper(configHelper).onSetUp();
+        pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
+        Pipeline pipeline = manualSchedule(pipelineFixture.pipelineName);
         assertThat(pipeline.getFirstStage().stageState()).isEqualTo(StageState.Building);
     }
 
     @Test
     public void shouldForceFirstStagePlanWhenOtherStageIsRunning(@TempDir Path tempDir) throws Exception {
-        pipelineWithTwoStages = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
-        pipelineWithTwoStages.usingDbHelper(dbHelper).usingConfigHelper(configHelper).onSetUp();
-        pipelineWithTwoStages.createPipelineWithFirstStagePassedAndSecondStageRunning();
-        Pipeline pipeline = manualSchedule(pipelineWithTwoStages.pipelineName);
+        pipelineFixture = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
+        pipelineFixture.usingDbHelper(dbHelper).usingConfigHelper(configHelper).onSetUp();
+        pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
+        Pipeline pipeline = manualSchedule(pipelineFixture.pipelineName);
         assertThat(pipeline.getFirstStage().isActive()).isEqualTo(true);
     }
 
@@ -283,15 +292,15 @@ public class PipelineScheduleServiceTest {
     public void shouldForceStagePlanWithModificationsSinceLast() throws Exception {
         Pipeline completedMingle = scheduleAndCompleteInitialPipelines();
         pipelineDao.loadPipeline(completedMingle.getId());
-        TestingMaterial testingMaterial = new TestingMaterial();
+        ScmMaterial testingMaterial = new GitMaterial("nowhere");
         mingleConfig.setMaterialConfigs(new MaterialConfigs(testingMaterial.config()));
 
         MaterialRevisions revisions = new MaterialRevisions();
-        revisions.addRevision(testingMaterial, testingMaterial.modificationsSince());
+        revisions.addRevision(testingMaterial, multipleModifications());
         BuildCause buildCause = BuildCause.createManualForced(revisions, Username.ANONYMOUS);
         dbHelper.saveMaterials(buildCause.getMaterialRevisions());
         Pipeline forcedPipeline = instanceFactory.createPipelineInstance(mingleConfig, buildCause, new DefaultSchedulingContext(
-                DEFAULT_APPROVED_BY), md5, new TimeProvider());
+            APPROVER_AUTOMATICALLY_TRIGGERED), md5, new TimeProvider());
 
         pipelineService.save(forcedPipeline);
 
@@ -322,15 +331,15 @@ public class PipelineScheduleServiceTest {
     public void shouldNotScheduleBuildIfNoModification() throws Exception {
         autoSchedulePipelines("mingle", "evolve");
         // Get the scheduled evolve stage and complete it.
-        Stage evolveInstance = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(evolveConfig.name()), evolveConfig.findBy(new CaseInsensitiveString("dev")));
+        Stage evolveInstance = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(evolveConfig.name()), evolveConfig.findBy(cis("dev")));
         dbHelper.passStage(evolveInstance);
         stageDao.stageStatusChanged(evolveInstance);
 
         autoSchedulePipelines();
-        Stage mostRecent = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(evolveConfig.name()), evolveConfig.findBy(new CaseInsensitiveString("dev")));
+        Stage mostRecent = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(evolveConfig.name()), evolveConfig.findBy(cis("dev")));
 
         assertThat(mostRecent.getId()).isEqualTo(evolveInstance.getId());
-        assertThat(mostRecent.getJobInstances().first().getState()).isEqualTo(JobState.Completed);
+        assertThat(mostRecent.getJobInstances().getFirst().getState()).isEqualTo(JobState.Completed);
     }
 
 
@@ -341,8 +350,8 @@ public class PipelineScheduleServiceTest {
 
         autoSchedulePipelines("mingle", "evolve", "cruise");
 
-        Stage cruise = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(cruisePlan.name()), cruisePlan.findBy(new CaseInsensitiveString("dev")));
-        JobInstance instance = cruise.getJobInstances().first();
+        Stage cruise = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(cruisePlan.name()), cruisePlan.findBy(cis("dev")));
+        JobInstance instance = cruise.getJobInstances().getFirst();
         assertThat(instance.getState()).isEqualTo(JobState.Scheduled);
     }
 
@@ -369,7 +378,7 @@ public class PipelineScheduleServiceTest {
     public void shouldRemoveBuildCauseIfAnyExceptionIsThrown() throws Exception {
         configHelper.addPipeline("cruise", "dev", repository);
         goConfigService.forceNotifyListeners();
-        goConfigService.getCurrentConfig().pipelineConfigByName(new CaseInsensitiveString("cruise")).get(0).jobConfigByConfigName(new CaseInsensitiveString("unit")).setRunOnAllAgents(true);
+        goConfigService.getCurrentConfig().pipelineConfigByName(cis("cruise")).getFirst().jobConfigByConfigName(cis("unit")).setRunOnAllAgents(true);
         scheduleHelper.autoSchedulePipelinesWithRealMaterials("cruise");
 
         goConfigService.forceNotifyListeners();
@@ -395,8 +404,8 @@ public class PipelineScheduleServiceTest {
 
     @Test
     public void shouldConsumeAllBuildCausesInServerHealth() {
-        pipelineScheduleQueue.schedule(new CaseInsensitiveString("mingle"), BuildCause.createManualForced(modifyOneFile(mingleConfig), Username.ANONYMOUS));
-        pipelineScheduleQueue.schedule(new CaseInsensitiveString("evolve"), BuildCause.createManualForced(modifyOneFile(evolveConfig), Username.ANONYMOUS));
+        pipelineScheduleQueue.schedule(cis("mingle"), BuildCause.createManualForced(modifyOneFile(mingleConfig), Username.ANONYMOUS));
+        pipelineScheduleQueue.schedule(cis("evolve"), BuildCause.createManualForced(modifyOneFile(evolveConfig), Username.ANONYMOUS));
 
         scheduleService.autoSchedulePipelinesFromRequestBuffer();
         assertThat(pipelineScheduleQueue.toBeScheduled().size()).isEqualTo(0);
@@ -408,7 +417,7 @@ public class PipelineScheduleServiceTest {
     }
 
     private Pipeline manualSchedule(String pipelineName) throws Exception {
-        scheduleHelper.manuallySchedulePipelineWithRealMaterials(pipelineName, new Username(new CaseInsensitiveString("some user name")));
+        scheduleHelper.manuallySchedulePipelineWithRealMaterials(pipelineName, new Username(cis("some user name")));
         scheduleService.autoSchedulePipelinesFromRequestBuffer();
         return pipelineService.mostRecentFullPipelineByName(pipelineName);
     }
@@ -418,7 +427,7 @@ public class PipelineScheduleServiceTest {
         Stage mingleStage = minglePipeline.getFirstStage();
         assertThat(mingleStage.getName()).isEqualTo(STAGE_NAME);
         assertThat(mingleStage.getJobInstances().size()).isEqualTo(2);
-        JobInstance mingleJob = mingleStage.getJobInstances().first();
+        JobInstance mingleJob = mingleStage.getJobInstances().getFirst();
         assertThat(mingleJob.getState()).isEqualTo(JobState.Scheduled);
 
         assertPipelineScheduled(evolveConfig);
@@ -426,17 +435,17 @@ public class PipelineScheduleServiceTest {
     }
 
     private void assertPipelineScheduled(PipelineConfig config) {
-        Stage evolveStage = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(config.name()), config.findBy(new CaseInsensitiveString("dev")));
+        Stage evolveStage = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(config.name()), config.findBy(cis("dev")));
         assertThat(evolveStage.getName()).isEqualTo("dev");
         assertThat(evolveStage.getJobInstances().size()).isEqualTo(1);
-        assertThat(evolveStage.getJobInstances().first().getState()).isEqualTo(JobState.Scheduled);
+        assertThat(evolveStage.getJobInstances().getFirst().getState()).isEqualTo(JobState.Scheduled);
     }
 
     private void verifyMingleScheduledWithModifications() {
         Pipeline scheduledPipeline = pipelineDao.mostRecentPipeline(CaseInsensitiveString.str(mingleConfig.name()));
         BuildCause buildCause = scheduledPipeline.getBuildCause();
         assertThat(buildCause.getMaterialRevisions().totalNumberOfModifications()).isEqualTo(3);
-        JobInstance instance = scheduledPipeline.getFirstStage().getJobInstances().first();
+        JobInstance instance = scheduledPipeline.getFirstStage().getJobInstances().getFirst();
         assertThat(instance.getState()).isEqualTo(JobState.Scheduled);
     }
 
@@ -448,11 +457,32 @@ public class PipelineScheduleServiceTest {
     }
 
     private Pipeline passFirstStage(PipelineConfig pipelineConfig) {
-        Stage completedMingleStage = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(pipelineConfig.name()), pipelineConfig.findBy(new CaseInsensitiveString("dev")));
+        Stage completedMingleStage = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(pipelineConfig.name()), pipelineConfig.findBy(cis("dev")));
         dbHelper.passStage(completedMingleStage);
         dbHelper.passStage(completedMingleStage);
-        assertThat(completedMingleStage.getJobInstances().first().getState()).isEqualTo(JobState.Completed);
+        assertThat(completedMingleStage.getJobInstances().getFirst().getState()).isEqualTo(JobState.Completed);
         Pipeline pipeline = pipelineDao.mostRecentPipeline(CaseInsensitiveString.str(pipelineConfig.name()));
         return dbHelper.passPipelineFirstStageOnly(pipeline);
+    }
+
+    private List<Modification> multipleModifications() {
+        List<Modification> modifications = new ArrayList<>();
+
+        Date today = new Date();
+        Date yesterday = Date.from(Instant.now().minus(1, ChronoUnit.DAYS));
+
+        Modification modification1 = new Modification("lgao", "Fixing the not checked in files", "foo@bar.com", yesterday, "99");
+        modification1.createModifiedFile("build.xml", "\\build", ModifiedAction.added);
+        modifications.add(modification1);
+
+        Modification modification2 = new Modification("committer", "Added the README file", "foo@bar.com", today, "100");
+        modification2.createModifiedFile("oldbuild.xml", "\\build", ModifiedAction.added);
+        modifications.add(modification2);
+
+        Modification modification3 = new Modification("committer <html />", "Added the README file with <html />", "foo@bar.com", today, "101");
+        modification3.createModifiedFile("README.txt", "\\build", ModifiedAction.added);
+        modifications.add(modification3);
+
+        return modifications;
     }
 }

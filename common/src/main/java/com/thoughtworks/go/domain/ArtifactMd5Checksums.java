@@ -16,43 +16,21 @@
 package com.thoughtworks.go.domain;
 
 import org.jetbrains.annotations.TestOnly;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.util.Objects;
 import java.util.Properties;
 
 public class ArtifactMd5Checksums implements Serializable {
 
     private final Properties checksumProperties;
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(ArtifactMd5Checksums.class);
-
     public ArtifactMd5Checksums(File checksumProperties) {
         this.checksumProperties = new Properties();
-        FileReader fileReader = null;
-        BufferedReader reader = null;
-        try {
-            fileReader = new FileReader(checksumProperties);
-            reader = new BufferedReader(fileReader);
+        try (BufferedReader reader = new BufferedReader(new FileReader(checksumProperties))) {
             this.checksumProperties.load(reader);
         } catch (IOException e) {
             throw new RuntimeException(String.format("[Checksum Verification] Could not load the MD5 from the checksum file '%s'", checksumProperties), e);
-        } finally {
-            if (reader != null) {
-                try {
-                    reader.close();
-                } catch (IOException e) {
-                    LOGGER.warn("Failed to close buffered reader for checksum file: {}", checksumProperties.getAbsolutePath(), e);
-                }
-            }
-            if (fileReader != null) {
-                try {
-                    fileReader.close();
-                } catch (IOException e) {
-                    LOGGER.warn("Failed to close file-reader for checksum file: {}", checksumProperties.getAbsolutePath(), e);
-                }
-            }
         }
     }
 
@@ -66,15 +44,7 @@ public class ArtifactMd5Checksums implements Serializable {
         if (this == o) {
             return true;
         }
-        if (!(o instanceof ArtifactMd5Checksums that)) {
-            return false;
-        }
-
-        if (checksumProperties != null ? !checksumProperties.equals(that.checksumProperties) : that.checksumProperties != null) {
-            return false;
-        }
-
-        return true;
+        return o instanceof ArtifactMd5Checksums that && Objects.equals(checksumProperties, that.checksumProperties);
     }
 
     @Override

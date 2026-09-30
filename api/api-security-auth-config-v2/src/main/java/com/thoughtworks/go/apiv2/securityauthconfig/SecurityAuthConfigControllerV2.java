@@ -20,7 +20,7 @@ import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.CrudController;
 import com.thoughtworks.go.api.base.OutputWriter;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.apiv2.securityauthconfig.representers.SecurityAuthConfigRepresenter;
 import com.thoughtworks.go.apiv2.securityauthconfig.representers.SecurityAuthConfigsRepresenter;
@@ -30,9 +30,10 @@ import com.thoughtworks.go.config.exceptions.EntityType;
 import com.thoughtworks.go.server.service.EntityHashingService;
 import com.thoughtworks.go.server.service.SecurityAuthConfigService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import spark.Request;
@@ -44,22 +45,23 @@ import java.util.stream.Collectors;
 
 import static com.thoughtworks.go.api.util.HaltApiResponses.*;
 import static com.thoughtworks.go.util.CachedDigestUtils.sha512_256Hex;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 import static spark.Spark.*;
 
 @Component
 public class SecurityAuthConfigControllerV2 extends ApiController implements SparkSpringController, CrudController<SecurityAuthConfig> {
 
     private final SecurityAuthConfigService securityAuthConfigService;
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final EntityHashingService entityHashingService;
 
     @Autowired
     public SecurityAuthConfigControllerV2(SecurityAuthConfigService securityAuthConfigService,
-                                          ApiAuthenticationHelper apiAuthenticationHelper,
+                                          ApiAuthorizationHelper apiAuthorizationHelper,
                                           EntityHashingService entityHashingService) {
         super(ApiVersion.v2);
         this.securityAuthConfigService = securityAuthConfigService;
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.entityHashingService = entityHashingService;
     }
 
@@ -69,13 +71,13 @@ public class SecurityAuthConfigControllerV2 extends ApiController implements Spa
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
 
-            before("", this.mimeType, this.apiAuthenticationHelper::checkAdminUserAnd403);
-            before("/*", this.mimeType, this.apiAuthenticationHelper::checkAdminUserAnd403);
+            before("", this.mimeType, this.apiAuthorizationHelper::checkAdminUserAnd403);
+            before("/*", this.mimeType, this.apiAuthorizationHelper::checkAdminUserAnd403);
 
             get("", mimeType, this::index);
             get(Routes.SecurityAuthConfigAPI.ID, mimeType, this::show);
@@ -176,10 +178,10 @@ public class SecurityAuthConfigControllerV2 extends ApiController implements Spa
     }
 
     private boolean isRenameAttempt(String profileIdFromRequestParam, String profileIdFromRequestBody) {
-        if (StringUtils.isBlank(profileIdFromRequestBody)) {
+        if (isBlank(profileIdFromRequestBody)) {
             return false;
         }
-        return !StringUtils.equals(profileIdFromRequestBody, profileIdFromRequestParam);
+        return !Strings.CS.equals(profileIdFromRequestBody, profileIdFromRequestParam);
     }
 
     private void haltIfEntityWithSameIdExists(SecurityAuthConfig securityAuthConfig) {

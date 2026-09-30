@@ -123,7 +123,7 @@ public class CrossingMinimization {
     }
 
     void initializeNodeDepths(NodeLevelMap nodeLevelMap) {
-        Node pipeline = nodeLevelMap.get(LEVEL_OF_CURRENT_PIPELINE).get(0);
+        Node pipeline = nodeLevelMap.get(LEVEL_OF_CURRENT_PIPELINE).getFirst();
 
         Map<Integer, Integer> levelToDepthMap = new HashMap<>();
 
@@ -176,7 +176,7 @@ public class CrossingMinimization {
 
         @Override
         public boolean hasNext() {
-            return nodeLevelMap.get(index) != null;
+            return nodeLevelMap.contains(index);
         }
 
         @Override
@@ -211,7 +211,7 @@ public class CrossingMinimization {
 
         @Override
         public boolean hasNext() {
-            return nodeLevelMap.get(index) != null;
+            return nodeLevelMap.contains(index);
         }
 
         @Override
@@ -231,18 +231,17 @@ public class CrossingMinimization {
     }
 
     private static class NodeBaryCentre implements Comparable<NodeBaryCentre> {
-
         private final Node node;
-        private final Float averageDepth;
+        private final float averageDepth;
 
-        public NodeBaryCentre(Node node, Float averageDepth) {
+        public NodeBaryCentre(Node node, float averageDepth) {
             this.node = node;
             this.averageDepth = averageDepth;
         }
 
         @Override
         public int compareTo(NodeBaryCentre other) {
-            return this.averageDepth.compareTo(other.averageDepth);
+            return Float.compare(this.averageDepth, other.averageDepth);
         }
     }
 }

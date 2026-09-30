@@ -22,6 +22,8 @@ import java.util.List;
 
 import static com.thoughtworks.go.config.exceptions.NameOrId.*;
 import static java.lang.String.format;
+import static java.lang.String.join;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 
 public enum EntityType {
     AccessToken("access token", id),
@@ -59,15 +61,15 @@ public enum EntityType {
     }
 
     public String deleteSuccessful() {
-        return format("%s was deleted successfully!", StringUtils.capitalize(this.entityType));
+        return format("%s was deleted successfully!", capitalize(this.entityType));
     }
 
     public String deleteSuccessful(String id) {
-        return format("%s %s '%s' was deleted successfully!", StringUtils.capitalize(this.entityType), this.nameOrId.descriptor, id);
+        return format("%s %s '%s' was deleted successfully!", capitalize(this.entityType), this.nameOrId.descriptor, id);
     }
 
-    public String deleteSuccessful(List<?> ids) {
-        return format("%ss %ss '%s' were deleted successfully!", StringUtils.capitalize(this.entityType), this.nameOrId.descriptor, StringUtils.join(ids, ", "));
+    public String deleteSuccessful(List<String> ids) {
+        return format("%ss %ss '%s' were deleted successfully!", capitalize(this.entityType), this.nameOrId.descriptor, join(", ", ids));
     }
 
     public String deleteSuccessful(CaseInsensitiveString id) {
@@ -75,7 +77,7 @@ public enum EntityType {
     }
 
     public String updateSuccessful(String nameOrId) {
-        return format("%s %s '%s' was updated successfully!", StringUtils.capitalize(this.entityType), this.nameOrId.descriptor, nameOrId);
+        return format("%s %s '%s' was updated successfully!", capitalize(this.entityType), this.nameOrId.descriptor, nameOrId);
     }
 
     public String staleConfig(String id) {
@@ -83,10 +85,6 @@ public enum EntityType {
                 this.entityType.toLowerCase(),
                 this.nameOrId.descriptor,
                 id);
-    }
-
-    public String staleConfig() {
-        return format("Someone has modified the configuration for %s. Please update your copy of the config with the changes.", this.entityType.toLowerCase());
     }
 
     public String staleConfig(CaseInsensitiveString id) {
@@ -106,11 +104,15 @@ public enum EntityType {
     }
 
     public String notFoundMessage() {
-        return format("%s was not found!", StringUtils.capitalize(this.entityType));
+        return format("%s was not found!", capitalize(this.entityType));
     }
 
     public String notFoundMessage(String id) {
-        return format("%s %s '%s' was not found!", StringUtils.capitalize(this.entityType), this.nameOrId.descriptor, id);
+        return format("%s %s '%s' was not found!", capitalize(this.entityType), this.nameOrId.descriptor, id);
+    }
+
+    public String notFoundMessage(EntityType lookupBy, String id) {
+        return format("%s (lookup by %s %s '%s') was not found!", capitalize(this.entityType), capitalize(lookupBy.entityType), lookupBy.nameOrId.descriptor, id);
     }
 
     public String notFoundMessage(long id) {
@@ -121,7 +123,7 @@ public enum EntityType {
         return notFoundMessage(id.toString());
     }
 
-    public String notFoundMessage(List<?> ids) {
+    public String notFoundMessage(List<String> ids) {
         return format("%ss %ss [%s] were not found!", StringUtils.capitalize(this.entityType), this.nameOrId.descriptor, StringUtils.join(ids, ", "));
     }
 
@@ -130,7 +132,7 @@ public enum EntityType {
     }
 
     public String alreadyExists(String id) {
-        return format("%s %s '%s' already exists!", StringUtils.capitalize(this.entityType), this.nameOrId.descriptor, id);
+        return format("%s %s '%s' already exists!", capitalize(this.entityType), this.nameOrId.descriptor, id);
     }
 
     public String alreadyExists(CaseInsensitiveString id) {
@@ -141,16 +143,8 @@ public enum EntityType {
         return format("User '%s' does not have permission to view %s %s '%s'", username, entityType.toLowerCase(), nameOrId.descriptor, id);
     }
 
-    public String forbiddenToView(CaseInsensitiveString id, CaseInsensitiveString username) {
-        return forbiddenToView(id.toString(), username.toString());
-    }
-
     public String forbiddenToView(String id, CaseInsensitiveString username) {
         return forbiddenToView(id, username.toString());
-    }
-
-    public String forbiddenToView(CaseInsensitiveString id, String username) {
-        return forbiddenToView(id.toString(), username);
     }
 
     public String forbiddenToEdit(String id, String username) {
@@ -165,10 +159,6 @@ public enum EntityType {
         return forbiddenToEdit(id, username.toString());
     }
 
-    public String forbiddenToEdit(CaseInsensitiveString id, String username) {
-        return forbiddenToEdit(id.toString(), username);
-    }
-
     public String forbiddenToDelete(CaseInsensitiveString id, CaseInsensitiveString username) {
         return forbiddenToDelete(id.toString(), username.toString());
     }
@@ -177,24 +167,16 @@ public enum EntityType {
         return forbiddenToDelete(id, username.toString());
     }
 
-    public String forbiddenToDelete(CaseInsensitiveString id, String username) {
-        return forbiddenToDelete(id.toString(), username);
-    }
-
     public String forbiddenToDelete(String id, String username) {
         return format("User '%s' does not have permission to delete %s %s '%s'", username, entityType.toLowerCase(), nameOrId.descriptor, id);
     }
 
     public String idCannotBeBlank() {
-        return StringUtils.capitalize(this.entityType) + " " + nameOrId.descriptor + " cannot be blank.";
-    }
-
-    public String forbiddenToDelete(CaseInsensitiveString username) {
-        return format("User '%s' does not have permission to delete %s", username, entityType.toLowerCase());
+        return capitalize(this.entityType) + " " + nameOrId.descriptor + " cannot be blank.";
     }
 
     public String alreadyUsesATemplate(String id) {
-        return format("%s %s '%s' already uses a template.", StringUtils.capitalize(this.entityType), this.nameOrId.descriptor, id);
+        return format("%s %s '%s' already uses a template.", capitalize(this.entityType), this.nameOrId.descriptor, id);
     }
 
     public String notAllowedToRefer(CaseInsensitiveString identifier) {

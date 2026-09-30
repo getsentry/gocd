@@ -17,7 +17,6 @@ package com.thoughtworks.go.apiv7.agents.representers;
 
 import com.thoughtworks.go.api.base.OutputListWriter;
 import com.thoughtworks.go.api.base.OutputWriter;
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.EnvironmentConfig;
 import com.thoughtworks.go.config.EnvironmentsConfig;
 import com.thoughtworks.go.config.remote.ConfigOrigin;
@@ -31,13 +30,14 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static com.thoughtworks.go.CurrentGoCDVersion.apiDocsUrl;
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
 
 public class EnvironmentsRepresenter {
     public static void toJSON(OutputListWriter writer, Collection<EnvironmentConfig> environments, AgentInstance agentInstance) {
         EnvironmentsConfig envConfigs = new EnvironmentsConfig();
         envConfigs.addAll(environments);
-        Stream<String> agentEnvAssociationFromDB = agentInstance.getAgent().getEnvironmentsAsList().stream();
+        Stream<String> agentEnvAssociationFromDB = agentInstance.getAgent().getEnvironmentsAsStream();
         Stream<String> agentEnvAssociationFromConfigRepo = envConfigs.stream()
                 .filter(environmentConfig -> !environmentConfig.isLocal())
                 .map(environmentConfig -> environmentConfig.name().toString());
@@ -48,16 +48,16 @@ public class EnvironmentsRepresenter {
                 .toList();
 
         for (String envName : sortedEnvNames) {
-            EnvironmentConfig envConfig = envConfigs.find(new CaseInsensitiveString(envName));
+            EnvironmentConfig envConfig = envConfigs.find(cis(envName));
             if (envConfig != null) {
-                writer.addChild((childWriter) -> {
+                writer.addChild(childWriter -> {
                     childWriter.add("name", envName);
-                    childWriter.addChild("origin", (originWriter) -> origin(originWriter, envConfig, agentInstance.getUuid()));
+                    childWriter.addChild("origin", originWriter -> origin(originWriter, envConfig, agentInstance.getUuid()));
                 });
             } else {
-                writer.addChild((childWriter) -> {
+                writer.addChild(childWriter -> {
                     childWriter.add("name", envName);
-                    childWriter.addChild("origin", (originWriter) -> originWriter.add("type", "unknown"));
+                    childWriter.addChild("origin", originWriter -> originWriter.add("type", "unknown"));
                 });
             }
         }
@@ -76,7 +76,7 @@ public class EnvironmentsRepresenter {
 
     private static void writeConfigRepoOrigin(OutputWriter writer, RepoConfigOrigin repoConfigOrigin) {
         writer.add("type", "config-repo");
-        writer.addLinks((linksWriter) -> {
+        writer.addLinks(linksWriter -> {
             linksWriter.addLink("self", Routes.ConfigRepos.id(repoConfigOrigin.getConfigRepo().getId()));
             linksWriter.addAbsoluteLink("doc", Routes.ConfigRepos.DOC);
             linksWriter.addLink("find", Routes.ConfigRepos.find());
@@ -85,7 +85,7 @@ public class EnvironmentsRepresenter {
 
     private static void writeConfigXmlOrigin(OutputWriter writer) {
         writer.add("type", "gocd");
-        writer.addLinks((linksWriter) -> {
+        writer.addLinks(linksWriter -> {
             linksWriter.addLink("self", Routes.ConfigView.SELF);
             linksWriter.addAbsoluteLink("doc", apiDocsUrl("#get-configuration"));
         });

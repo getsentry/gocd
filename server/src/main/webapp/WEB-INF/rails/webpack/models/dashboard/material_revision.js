@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 import _ from "lodash";
+import {parseRawCommentUnsafe} from "helpers/render_comment";
 
 const Modifications = {};
 
@@ -28,17 +29,10 @@ Modifications.Modification.Pipeline = function (modification) {
   this.stageDetailsUrl = modification._links.stage_details_url.href;
 };
 
-const packageMaterialCommentFor = (comment) => {
-  const commentJSON   = JSON.parse(comment);
-  const trackbackURL  = commentJSON['TRACKBACK_URL'] ? commentJSON['TRACKBACK_URL'] : "Not Provided";
-  const packageOrigin = commentJSON.COMMENT ? commentJSON.COMMENT : "";
-  return `${packageOrigin}Trackback: ${trackbackURL}`;
-};
-
 Modifications.Modification.SCM = function (modification, materialType) {
   Modifications.Modification.call(this, modification);
   this.username = modification.user_name;
-  this.comment  = (materialType === 'Package') ? packageMaterialCommentFor(modification.comment) : modification.comment;
+  this.comment  = parseRawCommentUnsafe(modification.comment, materialType.toLowerCase());
   this.vsmPath  = modification._links.vsm.href;
 };
 

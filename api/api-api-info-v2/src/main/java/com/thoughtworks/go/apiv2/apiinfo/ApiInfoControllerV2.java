@@ -18,8 +18,9 @@ package com.thoughtworks.go.apiv2.apiinfo;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv2.apiinfo.representers.RouteEntryRepresenter;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.RouteEntry;
 import com.thoughtworks.go.spark.spring.RouteInformationProvider;
@@ -38,14 +39,14 @@ import static spark.Spark.*;
 
 @Component
 public class ApiInfoControllerV2 extends ApiController implements SparkSpringController {
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final RouteInformationProvider provider;
 
     @Autowired
-    public ApiInfoControllerV2(ApiAuthenticationHelper apiAuthenticationHelper,
+    public ApiInfoControllerV2(ApiAuthorizationHelper apiAuthorizationHelper,
                                RouteInformationProvider provider) {
         super(ApiVersion.v2);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.provider = provider;
     }
 
@@ -55,10 +56,10 @@ public class ApiInfoControllerV2 extends ApiController implements SparkSpringCon
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
-            before("", mimeType, this.apiAuthenticationHelper::checkUserAnd403);
+            before("", mimeType, this.apiAuthorizationHelper::checkUserAnd403);
 
             get("", mimeType, this::index);
         });
@@ -67,7 +68,7 @@ public class ApiInfoControllerV2 extends ApiController implements SparkSpringCon
     public String index(Request request, Response response) throws IOException {
         List<RouteEntry> filteredRoutes = provider.getRoutes().stream()
             .filter(RouteEntry::isAPI)
-            .sorted(Comparator.comparing(RouteEntry::getPath))
+            .sorted(Comparator.comparing(RouteEntry::path))
             .collect(Collectors.toList());
 
         return writerForTopLevelArray(request, response, writer -> RouteEntryRepresenter.toJSON(writer, filteredRoutes));

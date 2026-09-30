@@ -34,18 +34,18 @@ public class GoConfigGraphWalkerTest {
 
     @Test
     public void walkedObject_shouldOnlyAcceptObjectsInThoughtworksPackage() {
-        assertThat(new GoConfigGraphWalker.WalkedObject("non-tw object").shouldWalk()).isFalse();
-        assertThat(new GoConfigGraphWalker.WalkedObject(new PipelineConfig()).shouldWalk()).isTrue();
+        assertThat(GoConfigGraphWalker.shouldWalk("non-tw object")).isFalse();
+        assertThat(GoConfigGraphWalker.shouldWalk(new PipelineConfig())).isTrue();
     }
 
     @Test
     public void walkedObject_shouldWalkMergePipelineConfigs() {
-        assertThat(new GoConfigGraphWalker.WalkedObject(new MergePipelineConfigs(new BasicPipelineConfigs())).shouldWalk()).isTrue();
+        assertThat(GoConfigGraphWalker.shouldWalk(new MergePipelineConfigs(new BasicPipelineConfigs()))).isTrue();
     }
 
     @Test
     public void walkedObject_shouldNotWalkNull() {
-        assertThat(new GoConfigGraphWalker.WalkedObject(null).shouldWalk()).isFalse();
+        assertThat(GoConfigGraphWalker.shouldWalk(null)).isFalse();
     }
 
     private PipelineConfig mockPipelineConfig() {
@@ -74,7 +74,7 @@ public class GoConfigGraphWalkerTest {
         PipelineConfig pipe = mockPipelineConfig();
         BasicPipelineConfigs basicPipelines = new BasicPipelineConfigs(pipe);
         new GoConfigGraphWalker(basicPipelines).walk(Validatable::validate);
-        verify(pipe, atLeastOnce()).validate(any(ValidationContext.class));
+        verify(pipe, atLeastOnce()).validate(any());
     }
 
     @Test
@@ -82,7 +82,7 @@ public class GoConfigGraphWalkerTest {
         PipelineConfig pipe = mockPipelineConfig();
         MergePipelineConfigs mergePipelines = new MergePipelineConfigs(new BasicPipelineConfigs(pipe));
         new GoConfigGraphWalker(mergePipelines).walk(Validatable::validate);
-        verify(pipe, atLeastOnce()).validate(any(ValidationContext.class));
+        verify(pipe, atLeastOnce()).validate(any());
     }
 
     @Test
@@ -91,7 +91,7 @@ public class GoConfigGraphWalkerTest {
         PackageDefinition packageDefinition = new PackageDefinition();
         packageDefinition.setRepository(repository);
         new GoConfigGraphWalker(packageDefinition).walk(Validatable::validate);
-        verify(repository, never()).validate(any(ValidationContext.class));
+        verify(repository, never()).validate(any());
     }
 
     @Test
@@ -111,7 +111,7 @@ public class GoConfigGraphWalkerTest {
         final ConfigSaveValidationContext context = new ConfigSaveValidationContext(config);
 
         new GoConfigGraphWalker(packageMaterialConfig).walk((validatable, ctx) -> validatable.validate(context));
-        verify(packageDefinition, never()).validate(any(ValidationContext.class));
+        verify(packageDefinition, never()).validate(any());
     }
 
     @Test
@@ -125,6 +125,6 @@ public class GoConfigGraphWalkerTest {
         config.getSCMs().add(scmConfig);
         final ConfigSaveValidationContext context = new ConfigSaveValidationContext(config);
         new GoConfigGraphWalker(pluggableSCMMaterialConfig).walk((validatable, ctx) -> validatable.validate(context));
-        verify(scmConfig, never()).validate(any(ValidationContext.class));
+        verify(scmConfig, never()).validate(any());
     }
 }

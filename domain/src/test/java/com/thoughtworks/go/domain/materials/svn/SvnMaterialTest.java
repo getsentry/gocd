@@ -24,7 +24,6 @@ import com.thoughtworks.go.domain.materials.RevisionContext;
 import com.thoughtworks.go.domain.materials.TestSubprocessExecutionContext;
 import com.thoughtworks.go.helper.MaterialConfigsMother;
 import com.thoughtworks.go.helper.MaterialsMother;
-import com.thoughtworks.go.security.GoCipher;
 import com.thoughtworks.go.util.SerializationTester;
 import com.thoughtworks.go.util.TempDirUtils;
 import com.thoughtworks.go.util.command.InMemoryStreamConsumer;
@@ -150,23 +149,23 @@ public class SvnMaterialTest {
 
     @Test
     void shouldBeEqualWhenUrlSameForSvnMaterial() {
-        final Material material1 = MaterialsMother.defaultSvnMaterialsWithUrl("url1").get(0);
-        final Material material = MaterialsMother.defaultSvnMaterialsWithUrl("url1").get(0);
+        final Material material1 = MaterialsMother.defaultSvnMaterialsWithUrl("url1").getFirst();
+        final Material material = MaterialsMother.defaultSvnMaterialsWithUrl("url1").getFirst();
         assertComplementaryEquals(material1, material, true);
 
     }
 
     @Test
     void shouldNotBeEqualWhenUrlDifferent() {
-        final Material material1 = MaterialsMother.defaultSvnMaterialsWithUrl("url1").get(0);
-        final Material material2 = MaterialsMother.defaultSvnMaterialsWithUrl("url2").get(0);
+        final Material material1 = MaterialsMother.defaultSvnMaterialsWithUrl("url1").getFirst();
+        final Material material2 = MaterialsMother.defaultSvnMaterialsWithUrl("url2").getFirst();
         assertComplementaryEquals(material1, material2, false);
     }
 
     @Test
     void shouldNotBeEqualWhenTypeDifferent() {
-        final Material hgMaterial = MaterialsMother.hgMaterials("url1", "hgdir").get(0);
-        final Material nonHgMaterial = MaterialsMother.defaultSvnMaterialsWithUrl("url1").get(0);
+        final Material hgMaterial = MaterialsMother.hgMaterials("url1", "hgdir").getFirst();
+        final Material nonHgMaterial = MaterialsMother.defaultSvnMaterialsWithUrl("url1").getFirst();
         assertComplementaryEquals(hgMaterial, nonHgMaterial, false);
     }
 
@@ -315,21 +314,6 @@ public class SvnMaterialTest {
         SvnMaterial svnZooser = new SvnMaterial("foo.com", "loser", "zooser", true);
         assertThat(svnBoozer.hashCode()).isEqualTo(svnZooser.hashCode());
         assertThat(svnBoozer).isEqualTo(svnZooser);
-    }
-
-    @Test
-    void shouldNotDecryptSvnPasswordIfPasswordIsNotNull() throws Exception {
-        GoCipher mockGoCipher = mock(GoCipher.class);
-        when(mockGoCipher.encrypt("password")).thenReturn("encrypted");
-        when(mockGoCipher.decrypt("encrypted")).thenReturn("password");
-
-        SvnMaterial material = new SvnMaterial("/foo", "username", "password", false, mockGoCipher);
-        material.ensureEncrypted();
-        when(mockGoCipher.encrypt("new_password")).thenReturn("new_encrypted");
-        material.setPassword("new_password");
-        when(mockGoCipher.decrypt("new_encrypted")).thenReturn("new_password");
-
-        assertThat(material.getPassword()).isEqualTo("new_password");
     }
 
     @Test

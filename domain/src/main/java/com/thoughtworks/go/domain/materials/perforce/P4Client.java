@@ -59,12 +59,17 @@ public class P4Client extends SCMCommand {
     }
 
     private String clientSpec(String clientName, File workingFolder, String view) {
-        return "Client: " + clientName + "\n\n"
-                + "Root: " + workingFolder.getAbsolutePath() + "\n\n"
-                + "Options: clobber rmdir\n\n"
-                + "LineEnd: local\n\n"
-                + "View:\n"
-                + view;
+        return """
+            Client: %s
+            
+            Root: %s
+            
+            Options: clobber rmdir
+            
+            LineEnd: local
+            
+            View:
+            %s""".formatted(clientName, workingFolder.getAbsolutePath(), view);
     }
 
     public ConsoleResult checkConnection() {
@@ -116,7 +121,9 @@ public class P4Client extends SCMCommand {
         login();
         String[] input1 = new String[]{input};
         ConsoleResult result = runOrBomb(p4, input1);
-        if (result.error().size() > 0) throw new RuntimeException(result.describe());
+        if (result.error().size() > 0) {
+            throw new RuntimeException(result.describe());
+        }
         return result;
     }
 
@@ -124,22 +131,27 @@ public class P4Client extends SCMCommand {
         login();
         int returnCode = run(p4, outputStreamConsumer, input);
         if (failOnError) {
-            if (ProgramExitCode.COMMAND_NOT_FOUND == returnCode)
+            if (ProgramExitCode.COMMAND_NOT_FOUND == returnCode) {
                 throw new RuntimeException("Failed to find 'p4' on your PATH. Please ensure 'p4' is executable by the Go Server and on the Go Agents where this material will be used.");
-            if (ProgramExitCode.SUCCESS != returnCode) throw new RuntimeException("Failed to run : " + p4.describe());
+            }
+            if (ProgramExitCode.SUCCESS != returnCode) {
+                throw new RuntimeException("Failed to run : " + p4.describe());
+            }
         }
         return returnCode;
     }
 
     private ConsoleResult execute(CommandLine p4) {
-        LOG.debug("about to execute {}", p4.describe());
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("about to execute {}", p4.describe());
+        }
         return execute(p4, "");
     }
 
 
     private void login() {
         if (useTickets && !loggedIn) {
-            loggedIn = true;//To change body of created methods use File | Settings | File Templates.
+            loggedIn = true;
             execute(p4("login"), p4passwd + "\n");
         }
     }

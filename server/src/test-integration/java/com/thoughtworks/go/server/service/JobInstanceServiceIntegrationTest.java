@@ -17,7 +17,6 @@ package com.thoughtworks.go.server.service;
 
 import com.thoughtworks.go.config.*;
 import com.thoughtworks.go.domain.*;
-import com.thoughtworks.go.domain.activity.JobStatusCache;
 import com.thoughtworks.go.domain.buildcause.BuildCause;
 import com.thoughtworks.go.fixture.PipelineWithTwoStages;
 import com.thoughtworks.go.fixture.SchedulerFixture;
@@ -34,9 +33,9 @@ import com.thoughtworks.go.server.scheduling.ScheduleHelper;
 import com.thoughtworks.go.server.transaction.TransactionTemplate;
 import com.thoughtworks.go.server.ui.JobInstancesModel;
 import com.thoughtworks.go.server.ui.SortOrder;
+import com.thoughtworks.go.util.Dates;
 import com.thoughtworks.go.util.GoConfigFileHelper;
 import com.thoughtworks.go.util.TimeProvider;
-import org.joda.time.DateTime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,6 +48,7 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallbackWithoutResult;
 
 import java.nio.file.Path;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -56,29 +56,29 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static com.thoughtworks.go.domain.buildcause.BuildCause.APPROVER_AUTOMATICALLY_TRIGGERED;
 import static com.thoughtworks.go.helper.AgentMother.localAgentWithResources;
 import static com.thoughtworks.go.helper.BuildPlanMother.withBuildPlans;
 import static com.thoughtworks.go.helper.JobInstanceMother.*;
 import static com.thoughtworks.go.helper.ModificationsMother.modifyOneFile;
 import static com.thoughtworks.go.helper.ModificationsMother.modifySomeFiles;
-import static com.thoughtworks.go.util.GoConstants.DEFAULT_APPROVED_BY;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.fail;
 
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(locations = {
-        "classpath:/applicationContext-global.xml",
-        "classpath:/applicationContext-dataLocalAccess.xml",
-        "classpath:/testPropertyConfigurer.xml",
-        "classpath:/spring-all-servlet.xml",
+    "classpath:/applicationContext-global.xml",
+    "classpath:/applicationContext-dataLocalAccess.xml",
+    "classpath:/testPropertyConfigurer.xml",
+    "classpath:/spring-all-servlet.xml",
 })
 public class JobInstanceServiceIntegrationTest {
     @Autowired
     private GoConfigDao goConfigDao;
     @Autowired
     private JobInstanceDao jobInstanceDao;
-    @Autowired
-    private JobStatusCache jobStatusCache;
     @Autowired
     private JobInstanceService jobInstanceService;
     @Autowired
@@ -98,7 +98,7 @@ public class JobInstanceServiceIntegrationTest {
     @Autowired
     private InstanceFactory instanceFactory;
 
-    private static GoConfigFileHelper configHelper = new GoConfigFileHelper();
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
     private PipelineWithTwoStages pipelineFixture;
     private SchedulerFixture schedulerFixture;
 
@@ -106,7 +106,6 @@ public class JobInstanceServiceIntegrationTest {
     public void setUp(@TempDir Path tempDir) throws Exception {
         dbHelper.onSetUp();
         pipelineFixture = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
-        configHelper.onSetUp();
         configHelper.usingCruiseConfigDao(goConfigDao);
         pipelineFixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
         schedulerFixture = new SchedulerFixture(dbHelper, stageDao, scheduleService);
@@ -114,9 +113,7 @@ public class JobInstanceServiceIntegrationTest {
 
     @AfterEach
     public void teardown() throws Exception {
-        dbHelper.onTearDown();
         pipelineFixture.onTearDown();
-        jobStatusCache.clear();
     }
 
     @Test
@@ -132,7 +129,7 @@ public class JobInstanceServiceIntegrationTest {
         }
 
         JobInstances jobs1 = jobInstanceService.latestCompletedJobs(
-                pipelineFixture.pipelineName, pipelineFixture.devStage, stage.getJobInstances().first().getName());
+            pipelineFixture.pipelineName, pipelineFixture.devStage, stage.getJobInstances().getFirst().getName());
         assertThat(jobs1.size()).isEqualTo(25);
     }
 
@@ -146,28 +143,28 @@ public class JobInstanceServiceIntegrationTest {
         long stageId = stage.getId();
         Stage stageLoadedBeforeJobUpdate = stageService.stageById(stageId);
 
-        assertThat(stageLoadedBeforeJobUpdate.getJobInstances().get(0).getState()).isEqualTo(JobState.Scheduled);
+        assertThat(stageLoadedBeforeJobUpdate.getJobInstances().getFirst().getState()).isEqualTo(JobState.Scheduled);
 
-        JobInstance instance = stage.getJobInstances().get(0);
+        JobInstance instance = stage.getJobInstances().getFirst();
         instance.changeState(JobState.Building, new Date());
         jobInstanceService.updateStateAndResult(instance);
 
         Stage stageLoadedAfterJobUpdate = stageService.stageById(stageId);
 
-        assertThat(stageLoadedAfterJobUpdate.getJobInstances().get(0).getState()).isEqualTo(JobState.Building);
+        assertThat(stageLoadedAfterJobUpdate.getJobInstances().getFirst().getState()).isEqualTo(JobState.Building);
     }
 
     @Test
     public void shouldContainIdentifierAfterSaved() {
         final Pipeline pipeline = pipelineFixture.createdPipelineWithAllStagesPassed();
 
-        JobConfig jobConfig = pipelineFixture.devStage().allBuildPlans().first();
+        JobConfig jobConfig = pipelineFixture.devStage().allBuildPlans().getFirst();
         RunOnAllAgents.CounterBasedJobNameGenerator jobNameGenerator = new RunOnAllAgents.CounterBasedJobNameGenerator(CaseInsensitiveString.str(jobConfig.name()));
-        JobInstances instances = instanceFactory.createJobInstance(new CaseInsensitiveString("someStage"), jobConfig, new DefaultSchedulingContext(), new TimeProvider(), jobNameGenerator);
-        final JobInstance newJob = instances.first();
+        JobInstances instances = instanceFactory.createJobInstance(cis("someStage"), jobConfig, new DefaultSchedulingContext(), new TimeProvider(), jobNameGenerator);
+        final JobInstance newJob = instances.getFirst();
 
         final StageIdentifier stageIdentifier = new StageIdentifier(pipeline.getName(), pipeline.getCounter(), pipeline.getLabel(),
-                pipeline.getFirstStage().getName(), String.valueOf(pipeline.getFirstStage().getCounter()));
+            pipeline.getFirstStage().getName(), String.valueOf(pipeline.getFirstStage().getCounter()));
         dbHelper.txTemplate().execute(new TransactionCallbackWithoutResult() {
             @Override
             protected void doInTransactionWithoutResult(TransactionStatus status) {
@@ -176,67 +173,6 @@ public class JobInstanceServiceIntegrationTest {
         });
 
         assertThat(newJob.getIdentifier()).isEqualTo(new JobIdentifier(pipeline, pipeline.getFirstStage(), newJob));
-    }
-
-    @Test
-    public void shouldFindCurrentJobsOrderedByName() {
-        StageConfig stageConfig = StageConfigMother.custom("dev", "build", "alpha");
-        Stage stage = instanceFactory.createStageInstance(stageConfig, new DefaultSchedulingContext("anyone"), "md5-test", new TimeProvider());
-
-        for (JobInstance instance : stage.getJobInstances()) {
-            instance.setIdentifier(new JobIdentifier("cruise", 1, "1", "dev", "1", instance.getName()));
-        }
-
-        jobStatusCache.jobStatusChanged(stage.getJobInstances().first());
-        jobStatusCache.jobStatusChanged(stage.getJobInstances().last());
-
-        JobInstances jobs = jobInstanceService.currentJobsOfStage("cruise", stageConfig);
-        assertThat(jobs.first().getName()).isEqualTo("alpha");
-        assertThat(jobs.last().getName()).isEqualTo("build");
-    }
-
-    @Test
-    public void shouldFindAllCopiesOfJobsRunOnAllAgents() {
-        StageConfig stageConfig = StageConfigMother.custom("dev", "build");
-        JobConfig jobConfig = stageConfig.jobConfigByInstanceName("build", true);
-        jobConfig.setRunOnAllAgents(true);
-        String uuid1 = UUID.randomUUID().toString();
-        String uuid2 = UUID.randomUUID().toString();
-        DefaultSchedulingContext schedulingContext = new DefaultSchedulingContext("anyone", new Agents(new Agent(uuid1), new Agent(uuid2)));
-        Stage stage = instanceFactory.createStageInstance(stageConfig, schedulingContext, "md5-test", new TimeProvider());
-
-        for (JobInstance instance : stage.getJobInstances()) {
-            instance.setIdentifier(new JobIdentifier("cruise", 1, "1", "dev", "1", instance.getName()));
-        }
-
-        jobStatusCache.jobStatusChanged(stage.getJobInstances().first());
-        jobStatusCache.jobStatusChanged(stage.getJobInstances().last());
-
-        JobInstances jobs = jobInstanceService.currentJobsOfStage("cruise", stageConfig);
-        assertThat(jobs.first().getName()).isEqualTo(RunOnAllAgents.CounterBasedJobNameGenerator.appendMarker("build", 1));
-        assertThat(jobs.last().getName()).isEqualTo(RunOnAllAgents.CounterBasedJobNameGenerator.appendMarker("build", 2));
-        assertThat(jobs.size()).isEqualTo(2);
-    }
-
-    @Test
-    public void shouldFindAllCopiesOfJobsRunMultipleInstance() {
-        StageConfig stageConfig = StageConfigMother.custom("dev", "build");
-        JobConfig jobConfig = stageConfig.jobConfigByInstanceName("build", true);
-        jobConfig.setRunInstanceCount(2);
-        DefaultSchedulingContext schedulingContext = new DefaultSchedulingContext("anyone", new Agents());
-        Stage stage = instanceFactory.createStageInstance(stageConfig, schedulingContext, "md5-test", new TimeProvider());
-
-        for (JobInstance instance : stage.getJobInstances()) {
-            instance.setIdentifier(new JobIdentifier("cruise", 1, "1", "dev", "1", instance.getName()));
-        }
-
-        jobStatusCache.jobStatusChanged(stage.getJobInstances().first());
-        jobStatusCache.jobStatusChanged(stage.getJobInstances().last());
-
-        JobInstances jobs = jobInstanceService.currentJobsOfStage("cruise", stageConfig);
-        assertThat(jobs.size()).isEqualTo(2);
-        assertThat(jobs.first().getName()).isEqualTo(RunMultipleInstance.CounterBasedJobNameGenerator.appendMarker("build", 1));
-        assertThat(jobs.last().getName()).isEqualTo(RunMultipleInstance.CounterBasedJobNameGenerator.appendMarker("build", 2));
     }
 
     @Test
@@ -262,10 +198,10 @@ public class JobInstanceServiceIntegrationTest {
         PipelineConfig pipelineConfig = PipelineMother.withSingleStageWithMaterials("go", "dev", withBuildPlans("unit"));
         pipelineConfig.getFirstStageConfig().setFetchMaterials(false);
         configHelper.addPipeline("go", "dev");
-        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), DEFAULT_APPROVED_BY);
+        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), APPROVER_AUTOMATICALLY_TRIGGERED);
         List<JobPlan> jobPlans = jobInstanceService.orderedScheduledBuilds();
         assertThat(jobPlans.size()).isEqualTo(1);
-        assertThat(jobPlans.get(0).shouldFetchMaterials()).isFalse();
+        assertThat(jobPlans.getFirst().shouldFetchMaterials()).isFalse();
     }
 
     @Test
@@ -273,10 +209,10 @@ public class JobInstanceServiceIntegrationTest {
         PipelineConfig pipelineConfig = PipelineMother.withSingleStageWithMaterials("go", "dev", withBuildPlans("unit"));
         pipelineConfig.getFirstStageConfig().setCleanWorkingDir(true);
         configHelper.addPipeline("go", "dev");
-        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), DEFAULT_APPROVED_BY);
+        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), APPROVER_AUTOMATICALLY_TRIGGERED);
         List<JobPlan> jobPlans = jobInstanceService.orderedScheduledBuilds();
         assertThat(jobPlans.size()).isEqualTo(1);
-        assertThat(jobPlans.get(0).shouldCleanWorkingDir()).isTrue();
+        assertThat(jobPlans.getFirst().shouldCleanWorkingDir()).isTrue();
     }
 
     @Test
@@ -286,16 +222,16 @@ public class JobInstanceServiceIntegrationTest {
         configHelper.addPipeline("go", "dev");
         configHelper.addEnvironments("newEnv");
         configHelper.addPipelineToEnvironment("newEnv", "go");
-        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), DEFAULT_APPROVED_BY);
+        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), APPROVER_AUTOMATICALLY_TRIGGERED);
         List<JobPlan> jobPlans = jobInstanceService.orderedScheduledBuilds();
 
-        Username viewOnlyUser = new Username(new CaseInsensitiveString("view"));
+        Username viewOnlyUser = new Username(cis("view"));
         configHelper.setViewPermissionForGroup(BasicPipelineConfigs.DEFAULT_GROUP, "view");
 
         List<WaitingJobPlan> waitingJobPlans = jobInstanceService.waitingJobPlans(viewOnlyUser);
         assertThat(waitingJobPlans.size()).isEqualTo(1);
-        assertThat(waitingJobPlans.get(0).jobPlan()).isEqualTo(jobPlans.get(0));
-        assertThat(waitingJobPlans.get(0).envName()).isEqualTo("newEnv");
+        assertThat(waitingJobPlans.getFirst().jobPlan()).isEqualTo(jobPlans.getFirst());
+        assertThat(waitingJobPlans.getFirst().envName()).isEqualTo("newEnv");
     }
 
     @Test
@@ -307,15 +243,15 @@ public class JobInstanceServiceIntegrationTest {
         PipelineConfig pipelineConfig1 = PipelineMother.withSingleStageWithMaterials("build", "build", withBuildPlans("test"));
         configHelper.addPipeline("go", "dev");
         configHelper.addPipelineToGroup(pipelineConfig1, "first");
-        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), DEFAULT_APPROVED_BY);
-        scheduleHelper.schedule(pipelineConfig1, BuildCause.createWithModifications(modifyOneFile(pipelineConfig1), ""), DEFAULT_APPROVED_BY);
+        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), APPROVER_AUTOMATICALLY_TRIGGERED);
+        scheduleHelper.schedule(pipelineConfig1, BuildCause.createWithModifications(modifyOneFile(pipelineConfig1), ""), APPROVER_AUTOMATICALLY_TRIGGERED);
 
-        Username viewOnlyUser = new Username(new CaseInsensitiveString("view"));
+        Username viewOnlyUser = new Username(cis("view"));
         configHelper.setViewPermissionForGroup("first", "view");
 
         List<WaitingJobPlan> waitingJobPlans = jobInstanceService.waitingJobPlans(viewOnlyUser);
         assertThat(waitingJobPlans.size()).isEqualTo(1);
-        assertThat(waitingJobPlans.get(0).jobPlan().getPipelineName()).isEqualTo("build");
+        assertThat(waitingJobPlans.getFirst().jobPlan().getPipelineName()).isEqualTo("build");
     }
 
     @Test
@@ -327,46 +263,29 @@ public class JobInstanceServiceIntegrationTest {
         PipelineConfig pipelineConfig1 = PipelineMother.withSingleStageWithMaterials("build", "build", withBuildPlans("test"));
         configHelper.addPipeline("go", "dev");
         configHelper.addPipelineToGroup(pipelineConfig1, "first");
-        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), DEFAULT_APPROVED_BY);
-        scheduleHelper.schedule(pipelineConfig1, BuildCause.createWithModifications(modifyOneFile(pipelineConfig1), ""), DEFAULT_APPROVED_BY);
+        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), APPROVER_AUTOMATICALLY_TRIGGERED);
+        scheduleHelper.schedule(pipelineConfig1, BuildCause.createWithModifications(modifyOneFile(pipelineConfig1), ""), APPROVER_AUTOMATICALLY_TRIGGERED);
 
-        Username viewOnlyUser = new Username(new CaseInsensitiveString("root"));
+        Username viewOnlyUser = new Username(cis("root"));
         configHelper.setViewPermissionForGroup("first", "view");
 
         List<WaitingJobPlan> waitingJobPlans = jobInstanceService.waitingJobPlans(viewOnlyUser);
         assertThat(waitingJobPlans.size()).isEqualTo(2);
-        assertThat(waitingJobPlans.get(0).jobPlan().getPipelineName()).isEqualTo("go");
-        assertThat(waitingJobPlans.get(1).jobPlan().getPipelineName()).isEqualTo("build");
-    }
-
-    @Test
-    public void shouldLoadAllBuildingJobs() {
-        PipelineConfig goConfig = PipelineMother.withSingleStageWithMaterials("go", "dev", withBuildPlans("unit"));
-        Stage goDev = dbHelper.schedulePipeline(goConfig, new TimeProvider()).getStages().get(0);
-        dbHelper.buildingBuildInstance(goDev);
-
-        PipelineConfig mingleConfig = PipelineMother.withSingleStageWithMaterials("mingle", "test", withBuildPlans("integration"));
-        Stage mingleTest = dbHelper.schedulePipeline(mingleConfig, new TimeProvider()).getStages().get(0);
-        dbHelper.buildingBuildInstance(mingleTest);
-
-        dbHelper.newPipelineWithAllStagesPassed(PipelineMother.withSingleStageWithMaterials("twist", "acceptance", withBuildPlans("firefox"))).getStages().get(0);//a completed pipeline
-
-        assertThat(jobInstanceService.allBuildingJobs().size()).isEqualTo(2);
-        assertThat(jobInstanceService.allBuildingJobs()).contains(goDev.getFirstJob().getIdentifier());
-        assertThat(jobInstanceService.allBuildingJobs()).contains(mingleTest.getFirstJob().getIdentifier());
+        assertThat(waitingJobPlans.getFirst().jobPlan().getPipelineName()).isEqualTo("go");
+        assertThat(waitingJobPlans.getLast().jobPlan().getPipelineName()).isEqualTo("build");
     }
 
     @Test
     public void shouldFailRequestedJobAndNotifyStageChange() {
         PipelineConfig goConfig = PipelineMother.withSingleStageWithMaterials("go", "dev", withBuildPlans("unit"));
-        Stage goDev = dbHelper.schedulePipeline(goConfig, new TimeProvider()).getStages().get(0);
+        Stage goDev = dbHelper.schedulePipeline(goConfig, new TimeProvider()).getStages().getFirst();
         dbHelper.buildingBuildInstance(goDev);
 
         PipelineConfig mingleConfig = PipelineMother.withSingleStageWithMaterials("mingle", "test", withBuildPlans("integration"));
-        Stage mingleTest = dbHelper.schedulePipeline(mingleConfig, new TimeProvider()).getStages().get(0);
+        Stage mingleTest = dbHelper.schedulePipeline(mingleConfig, new TimeProvider()).getStages().getFirst();
         dbHelper.buildingBuildInstance(mingleTest);
 
-        JobInstance jobInstance = dbHelper.newPipelineWithFirstStageScheduled(PipelineMother.withSingleStageWithMaterials("twist", "acceptance", withBuildPlans("firefox"))).getStages().get(0).getJobInstances().get(0);
+        JobInstance jobInstance = dbHelper.newPipelineWithFirstStageScheduled(PipelineMother.withSingleStageWithMaterials("twist", "acceptance", withBuildPlans("firefox"))).getStages().getFirst().getJobInstances().getFirst();
 
         final JobInstance[] changedJobPassed = new JobInstance[1];
 
@@ -384,9 +303,9 @@ public class JobInstanceServiceIntegrationTest {
 
         configHelper.addPipeline("existingPipeline", "existingStage");
 
-        Long existingStage = stageWithId("existingPipeline", "existingStage");
+        long existingStage = stageWithId("existingPipeline", "existingStage");
 
-        Long nonExistentStage = stageWithId("existingPipeline", "removedStage");
+        long nonExistentStage = stageWithId("existingPipeline", "removedStage");
 
         JobInstance completedJob = completed("existingJob", JobResult.Passed, new Date(1));
         completedJob.setAgentUuid(agentUuid);
@@ -396,7 +315,7 @@ public class JobInstanceServiceIntegrationTest {
         jobInstanceDao.save(nonExistentStage, rescheduledJob);
         jobInstanceDao.ignore(rescheduledJob);
 
-        Long stageFromDeletedPipeline = stageWithId("deletedPipeline", "stage");
+        long stageFromDeletedPipeline = stageWithId("deletedPipeline", "stage");
 
         JobInstance cancelledJob = cancelled("job");
         cancelledJob.setAgentUuid(agentUuid);
@@ -415,7 +334,7 @@ public class JobInstanceServiceIntegrationTest {
 
     @Test
     public void shouldCompletedJobsForGivenAgent() {
-        Long stageB_Id = stageWithId("pipeline-aaa", "stage-bbb");
+        long stageB_Id = stageWithId("pipeline-aaa", "stage-bbb");
 
         String agentUuid = "special_uuid";
 
@@ -427,21 +346,21 @@ public class JobInstanceServiceIntegrationTest {
         jobInstanceDao.save(stageB_Id, rescheduledJob);
         jobInstanceDao.ignore(rescheduledJob);
 
-        Long stageC_Id = stageWithId("pipeline-bbb", "stage-ccc");
+        long stageC_Id = stageWithId("pipeline-bbb", "stage-ccc");
 
         JobInstance cancelledJob = cancelled("job3");
         cancelledJob.setAgentUuid(agentUuid);
         jobInstanceDao.save(stageC_Id, cancelledJob);
 
         JobInstance simpleJob = failed("simpleJob");
-        simpleJob.getTransition(JobState.Completed).setStateChangeTime(new DateTime().plusYears(2).toDate());
+        simpleJob.getTransition(JobState.Completed).setStateChangeTime(Dates.from(ZonedDateTime.now().plusYears(2)));
         simpleJob.setAgentUuid(agentUuid);
         jobInstanceDao.save(stageC_Id, simpleJob);
 
         //completed
         List<JobInstance> sortedOnCompleted = listOf(jobInstanceService.completedJobsOnAgent(agentUuid, JobInstanceService.JobHistoryColumns.completed, SortOrder.DESC, 1, 10));
         assertThat(sortedOnCompleted.size()).isEqualTo(4);
-        assertThat(sortedOnCompleted.get(0).getName()).isEqualTo("simpleJob");
+        assertThat(sortedOnCompleted.getFirst().getName()).isEqualTo("simpleJob");
 
         List<JobInstance> sortedOnCompletedAsc = listOf(jobInstanceService.completedJobsOnAgent(agentUuid, JobInstanceService.JobHistoryColumns.completed, SortOrder.ASC, 1, 10));
         assertThat(sortedOnCompletedAsc.size()).isEqualTo(4);
@@ -513,57 +432,56 @@ public class JobInstanceServiceIntegrationTest {
         StageConfig ftStage = pipelineFixture.ftStage();
         Pipeline pipeline = pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
         Stage stage = pipeline.getStages().byName(CaseInsensitiveString.str(ftStage.name()));
-        final JobInstance instance = stage.getJobInstances().get(0);
+        final JobInstance instance = stage.getJobInstances().getFirst();
         instance.changeState(JobState.Building, new Date());
-        try {
+        RuntimeException toThrow = new RuntimeException("to rollback txn");
+        assertThatThrownBy(() ->
             transactionTemplate.execute(new TransactionCallbackWithoutResult() {
                 @Override
                 protected void doInTransactionWithoutResult(TransactionStatus status) {
                     jobInstanceService.updateStateAndResult(instance);
-                    throw new RuntimeException("to rollback txn");
+                    throw toThrow;
                 }
-            });
-            fail("Should have thrown an exception and transaction rolled back. Listeners should not have be called on afterCommit");
-        } catch (RuntimeException e) {
-        }
+            })).isSameAs(toThrow);
+
         assertThat(isListenerCalled[0]).isFalse();
     }
 
     @Test
     public void shouldSaveJobDetailsCorrectlyForEveryJobInARunMultipleInstancesJob() {
         PipelineConfig pipelineConfig = PipelineMother.withSingleStageWithMaterials("go", "dev", withBuildPlans("unit"));
-        JobConfig jobConfig = pipelineConfig.getFirstStageConfig().getJobs().get(0);
+        JobConfig jobConfig = pipelineConfig.getFirstStageConfig().getJobs().getFirst();
         jobConfig.setRunInstanceCount(2);
         jobConfig.addResourceConfig("blah");
         jobConfig.artifactTypeConfigs().add(new BuildArtifactConfig("src1", "dest1"));
         configHelper.addPipeline("go", "dev");
 
-        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), DEFAULT_APPROVED_BY);
+        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), APPROVER_AUTOMATICALLY_TRIGGERED);
 
         List<JobPlan> jobPlans = jobInstanceService.orderedScheduledBuilds();
 
         assertThat(jobPlans.size()).isEqualTo(2);
 
-        JobPlan job1 = jobPlans.get(0);
+        JobPlan job1 = jobPlans.getFirst();
         assertThat(job1.getResources().size()).isEqualTo(1);
-        assertThat(job1.getResources().get(0).getName()).isEqualTo("blah");
+        assertThat(job1.getResources().getFirst().getName()).isEqualTo("blah");
         assertThat(job1.getArtifactPlans().size()).isEqualTo(1);
-        assertThat(job1.getArtifactPlans().get(0).getSrc()).isEqualTo("src1");
+        assertThat(job1.getArtifactPlans().getFirst().getSrc()).isEqualTo("src1");
 
         JobPlan job2 = jobPlans.get(1);
         assertThat(job2.getResources().size()).isEqualTo(1);
-        assertThat(job2.getResources().get(0).getName()).isEqualTo("blah");
+        assertThat(job2.getResources().getFirst().getName()).isEqualTo("blah");
         assertThat(job2.getArtifactPlans().size()).isEqualTo(1);
-        assertThat(job2.getArtifactPlans().get(0).getSrc()).isEqualTo("src1");
+        assertThat(job2.getArtifactPlans().getFirst().getSrc()).isEqualTo("src1");
 
-        assertThat(job1.getResources().get(0).getId()).isNotEqualTo(job2.getResources().get(0).getId());
-        assertThat(job1.getArtifactPlans().get(0).getId()).isNotEqualTo(job2.getArtifactPlans().get(0).getId());
+        assertThat(job1.getResources().getFirst().getId()).isNotEqualTo(job2.getResources().getFirst().getId());
+        assertThat(job1.getArtifactPlans().getFirst().getId()).isNotEqualTo(job2.getArtifactPlans().getFirst().getId());
     }
 
     @Test
     public void shouldSaveJobDetailsCorrectlyForEveryJobInARunOnAllAgentsJob() {
         PipelineConfig pipelineConfig = PipelineMother.withSingleStageWithMaterials("go", "dev", withBuildPlans("unit"));
-        JobConfig jobConfig = pipelineConfig.getFirstStageConfig().getJobs().get(0);
+        JobConfig jobConfig = pipelineConfig.getFirstStageConfig().getJobs().getFirst();
         jobConfig.setRunOnAllAgents(true);
         jobConfig.addResourceConfig("blah");
         jobConfig.artifactTypeConfigs().add(new BuildArtifactConfig("src1", "dest1"));
@@ -571,29 +489,29 @@ public class JobInstanceServiceIntegrationTest {
 
         DefaultSchedulingContext schedulingContext = new DefaultSchedulingContext("anyone", new Agents(localAgentWithResources("blah"), localAgentWithResources("blah")));
 
-        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), DEFAULT_APPROVED_BY, schedulingContext);
+        scheduleHelper.schedule(pipelineConfig, BuildCause.createWithModifications(modifyOneFile(pipelineConfig), ""), APPROVER_AUTOMATICALLY_TRIGGERED, schedulingContext);
 
         List<JobPlan> jobPlans = jobInstanceService.orderedScheduledBuilds();
 
         assertThat(jobPlans.size()).isEqualTo(2);
 
-        JobPlan job1 = jobPlans.get(0);
+        JobPlan job1 = jobPlans.getFirst();
         assertThat(job1.getResources().size()).isEqualTo(1);
-        assertThat(job1.getResources().get(0).getName()).isEqualTo("blah");
+        assertThat(job1.getResources().getFirst().getName()).isEqualTo("blah");
         assertThat(job1.getArtifactPlans().size()).isEqualTo(1);
-        assertThat(job1.getArtifactPlans().get(0).getSrc()).isEqualTo("src1");
+        assertThat(job1.getArtifactPlans().getFirst().getSrc()).isEqualTo("src1");
 
         JobPlan job2 = jobPlans.get(1);
         assertThat(job2.getResources().size()).isEqualTo(1);
-        assertThat(job2.getResources().get(0).getName()).isEqualTo("blah");
+        assertThat(job2.getResources().getFirst().getName()).isEqualTo("blah");
         assertThat(job2.getArtifactPlans().size()).isEqualTo(1);
-        assertThat(job2.getArtifactPlans().get(0).getSrc()).isEqualTo("src1");
+        assertThat(job2.getArtifactPlans().getFirst().getSrc()).isEqualTo("src1");
 
-        assertThat(job1.getResources().get(0).getId()).isNotEqualTo(job2.getResources().get(0).getId());
-        assertThat(job1.getArtifactPlans().get(0).getId()).isNotEqualTo(job2.getArtifactPlans().get(0).getId());
+        assertThat(job1.getResources().getFirst().getId()).isNotEqualTo(job2.getResources().getFirst().getId());
+        assertThat(job1.getArtifactPlans().getFirst().getId()).isNotEqualTo(job2.getArtifactPlans().getFirst().getId());
     }
 
-    private Long stageWithId(final String pipelineName, final String stageName) {
+    private long stageWithId(final String pipelineName, final String stageName) {
         PipelineConfig pipelineConfig = PipelineMother.withSingleStageWithMaterials(pipelineName, stageName, BuildPlanMother.withBuildPlans("job-random"));
         Pipeline savedPipeline = instanceFactory.createPipelineInstance(pipelineConfig, modifySomeFiles(pipelineConfig), new DefaultSchedulingContext("cruise"), "md5-test", new TimeProvider());
 

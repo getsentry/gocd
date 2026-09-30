@@ -28,21 +28,20 @@ import java.util.List;
 import java.util.Map;
 
 public class StageConverter extends DataConverter<StageNotificationDTO> {
-    public static final String DATE_PATTERN = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
     private final Stage stage;
     private final String pipelineGroup;
     private final BuildCause buildCause;
 
     public StageConverter(StageNotificationData stageNotificationData) {
-        this.stage = stageNotificationData.getStage();
-        this.pipelineGroup = stageNotificationData.getPipelineGroup();
-        this.buildCause = stageNotificationData.getBuildCause();
+        this.stage = stageNotificationData.stage();
+        this.pipelineGroup = stageNotificationData.pipelineGroup();
+        this.buildCause = stageNotificationData.buildCause();
     }
 
     @Override
     public StageNotificationDTO transformData() {
         String pipelineName = stage.getIdentifier().getPipelineName();
-        Integer pipelineCounter = stage.getIdentifier().getPipelineCounter();
+        int pipelineCounter = stage.getIdentifier().getPipelineCounter();
         String pipelineLabel = stage.getIdentifier().getPipelineLabel();
         StageNotificationDTO.PipelineDTO pipeline = new StageNotificationDTO.PipelineDTO(pipelineName, pipelineCounter, pipelineLabel, pipelineGroup, createBuildCause(buildCause), createStageDTO());
         return new StageNotificationDTO(pipeline);

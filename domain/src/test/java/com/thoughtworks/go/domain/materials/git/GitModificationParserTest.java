@@ -15,7 +15,7 @@
  */
 package com.thoughtworks.go.domain.materials.git;
 
-import com.thoughtworks.go.util.DateUtils;
+import com.thoughtworks.go.util.Dates;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,26 +27,26 @@ public class GitModificationParserTest {
     private void simulateOneComment() {
         parser.processLine("commit 4e55d27dc7aad26dadb02a33db0518cb5ec54888");
         parser.processLine("Author: Cruise Developer <cruise@cruise-sf3.(none)>");
-        parser.processLine("Date:   2009-08-11 13:08:51 -0700");
+        parser.processLine("Date:   2009-08-11T13:08:51-07:00");
     }
 
     @Test
     public void shouldCreateModificationForEachCommit() {
         simulateOneComment();
-        assertThat(parser.getModifications().get(0).getRevision()).isEqualTo("4e55d27dc7aad26dadb02a33db0518cb5ec54888");
+        assertThat(parser.getModifications().getFirst().getRevision()).isEqualTo("4e55d27dc7aad26dadb02a33db0518cb5ec54888");
     }
 
     @Test
     public void shouldHaveCommitterAsAuthor() {
         simulateOneComment();
-        assertThat(parser.getModifications().get(0).getUserDisplayName()).isEqualTo("Cruise Developer <cruise@cruise-sf3.(none)>");
+        assertThat(parser.getModifications().getFirst().getUserDisplayName()).isEqualTo("Cruise Developer <cruise@cruise-sf3.(none)>");
     }
 
     @Test
     public void shouldHaveCommitDate() {
         simulateOneComment();
         assertThat(
-                parser.getModifications().get(0).getModifiedTime()).isEqualTo(DateUtils.parseISO8601("2009-08-11 13:08:51 -0700"));
+                parser.getModifications().getFirst().getModifiedTime()).isEqualTo(Dates.parseIso8601StrictOffset("2009-08-11T13:08:51-07:00"));
     }
 
     @Test
@@ -56,7 +56,7 @@ public class GitModificationParserTest {
         parser.processLine("    My Comment");
         parser.processLine("");
         assertThat(
-                parser.getModifications().get(0).getComment()).isEqualTo("My Comment");
+                parser.getModifications().getFirst().getComment()).isEqualTo("My Comment");
     }
 
     @Test
@@ -67,7 +67,7 @@ public class GitModificationParserTest {
         parser.processLine("    line 2");
         parser.processLine("");
         assertThat(
-                parser.getModifications().get(0).getComment()).isEqualTo("My Comment\nline 2");
+                parser.getModifications().getFirst().getComment()).isEqualTo("My Comment\nline 2");
     }
 
      @Test
@@ -79,7 +79,7 @@ public class GitModificationParserTest {
         parser.processLine("    line 2");
         parser.processLine("");
         assertThat(
-                parser.getModifications().get(0).getComment()).isEqualTo("My Comment\n\nline 2");
+                parser.getModifications().getFirst().getComment()).isEqualTo("My Comment\n\nline 2");
     }
 
     @Test
@@ -92,8 +92,8 @@ public class GitModificationParserTest {
         parser.processLine("    My Comment 2");
          parser.processLine("");
         assertThat(
-                parser.getModifications().get(0).getComment()).isEqualTo("My Comment 1");
+                parser.getModifications().getFirst().getComment()).isEqualTo("My Comment 1");
         assertThat(
-                parser.getModifications().get(1).getComment()).isEqualTo("My Comment 2");
+                parser.getModifications().getLast().getComment()).isEqualTo("My Comment 2");
     }
 }

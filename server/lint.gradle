@@ -1,5 +1,3 @@
-import com.thoughtworks.go.build.YarnRunTask
-
 /*
  * Copyright Thoughtworks, Inc.
  *
@@ -16,67 +14,56 @@ import com.thoughtworks.go.build.YarnRunTask
  * limitations under the License.
  */
 
-task stylelintold(type: YarnRunTask) {
+import com.thoughtworks.go.build.YarnRunTask
+
+tasks.register('stylelintold', YarnRunTask) {
   description = "Run stylelint for SCSS on old Rails-bundled SCSS"
   dependsOn 'yarnInstall'
 
   workingDir = project.railsRoot
 
   yarnCommand = ['stylelintold']
-  source(project.file("${project.railsRoot}/app/assets/new_stylesheets"))
-  source(project.file("${project.railsRoot}/.stylelintrc.yml"))
+  source("${project.railsRoot}/.stylelintrc.yml")
+  source("${project.railsRoot}/app/assets/new_stylesheets")
 }
 
-task eslintold(type: YarnRunTask) {
-  description = "Run ESLint for old javascript code"
+tasks.register('eslint', YarnRunTask) {
+  description = "Run ESLint across all JS"
   dependsOn 'yarnInstall'
-
-  workingDir = project.railsRoot
-
-  yarnCommand = ['eslintold']
-  source(project.file("${project.railsRoot}/app/assets/javascripts"))
-  source(project.file("${project.railsRoot}/spec/javascripts"))
-  source(project.file("${project.railsRoot}/.eslintrc-old.json"))
-}
-
-task eslint(type: YarnRunTask) {
-  description = "Run ESLint"
-  dependsOn 'yarnInstall'
-  dependsOn 'generateJSRoutes'
 
   workingDir = project.railsRoot
 
   yarnCommand = ['eslint']
-  source(project.file("${project.railsRoot}/webpack"))
-  source(project.file("${project.railsRoot}/spec/webpack"))
-  source(project.file("${project.railsRoot}/app/assets/new_stylesheets"))
-  source(project.file("${project.railsRoot}/.eslintrc.json"))
+  source(fileTree(project.railsRoot) { include "eslint*.config.mjs" })
+  source(fileTree("${project.railsRoot}/webpack") { exclude '**/gen/**' })
+  source("${project.railsRoot}/spec/webpack")
+  source("${project.railsRoot}/app/assets/javascripts")
+  source("${project.railsRoot}/spec/javascripts")
 }
 
-task tslint(type: YarnRunTask) {
+tasks.register('tslint', YarnRunTask) {
   description = "Run TSLint"
   dependsOn 'yarnInstall'
-  dependsOn 'generateJSRoutes'
 
   workingDir = project.railsRoot
 
   yarnCommand = ['tslint']
-  source(project.file("${project.railsRoot}/webpack"))
-  source(project.file("${project.railsRoot}/spec/webpack"))
-  source(project.file("${project.railsRoot}/tslint.json"))
+  source("${project.railsRoot}/tslint.json")
+  source(fileTree("${project.railsRoot}/webpack", { exclude '**/gen/**' }))
+  source("${project.railsRoot}/spec/webpack")
 }
 
-task lintNew {
+tasks.register('lintNew') {
   description = 'Run lint tools on newer js/scss'
   dependsOn eslint, tslint
 }
 
-task lintOld {
+tasks.register('lintOld') {
   description = 'Run lint tools on older legacy js/scss'
-  dependsOn stylelintold, eslintold
+  dependsOn eslint, stylelintold
 }
 
-task lint {
+tasks.register('lint') {
   description = 'Run all lint tools'
   dependsOn lintNew, lintOld
 }

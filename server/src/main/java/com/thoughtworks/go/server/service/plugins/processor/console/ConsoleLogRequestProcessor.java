@@ -37,16 +37,15 @@ import static java.text.MessageFormat.format;
 
 @Component
 public class ConsoleLogRequestProcessor implements GoPluginApiRequestProcessor {
-    private static final Logger LOGGER = LoggerFactory.getLogger(ConsoleLogRequestProcessor.class);
-
     public static final String APPEND_TO_CONSOLE_LOG = "go.processor.console-log.append";
-
     public static final String VERSION_1 = "1.0";
     public static final String VERSION_2 = "2.0";
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ConsoleLogRequestProcessor.class);
     private static final List<String> supportedVersions = List.of(VERSION_1, VERSION_2);
 
-    private Map<String, MessageHandlerForConsoleLogRequestProcessor> versionToMessageHandlerMap;
-    private ConsoleService consoleService;
+    private final Map<String, MessageHandlerForConsoleLogRequestProcessor> versionToMessageHandlerMap;
+    private final ConsoleService consoleService;
 
     @Autowired
     public ConsoleLogRequestProcessor(PluginRequestProcessorRegistry registry, ConsoleService consoleService) {
@@ -65,7 +64,7 @@ public class ConsoleLogRequestProcessor implements GoPluginApiRequestProcessor {
 
             final MessageHandlerForConsoleLogRequestProcessor handler = versionToMessageHandlerMap.get(request.apiVersion());
             final ConsoleLogAppendRequest logUpdateRequest = handler.deserializeConsoleLogAppendRequest(request.requestBody());
-            consoleService.appendToConsoleLog(logUpdateRequest.jobIdentifier(), logUpdateRequest.text());
+            consoleService.appendToConsoleLogIoSafe(logUpdateRequest.jobIdentifier(), logUpdateRequest.text());
         } catch (Exception e) {
             DefaultGoApiResponse response = new DefaultGoApiResponse(DefaultGoApiResponse.INTERNAL_ERROR);
             response.setResponseBody(format("'{' \"message\": \"Error: {0}\" '}'", e.getMessage()));

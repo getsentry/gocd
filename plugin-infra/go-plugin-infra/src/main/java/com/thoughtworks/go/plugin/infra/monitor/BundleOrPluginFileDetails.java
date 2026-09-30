@@ -18,7 +18,6 @@ package com.thoughtworks.go.plugin.infra.monitor;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.IOUtils;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -26,8 +25,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.jar.JarFile;
 import java.util.zip.ZipEntry;
-
-import static org.apache.commons.lang3.ArrayUtils.isNotEmpty;
 
 @Slf4j
 @EqualsAndHashCode
@@ -65,28 +62,22 @@ public class BundleOrPluginFileDetails {
         return file.exists();
     }
 
-    public boolean isBundleJar() {
-        return isNotEmpty(getEntryAsString(BUNDLE_XML));
+    public InputStream getBundleXml() {
+        byte[] entry = getEntry(BUNDLE_XML);
+        return new ByteArrayInputStream(entry == null ? new byte[0] : entry);
     }
 
-    public ByteArrayInputStream getBundleXml() {
-        return new ByteArrayInputStream(getEntryAsString(BUNDLE_XML));
+    public InputStream getPluginXml() {
+        byte[] entry = getEntry(PLUGIN_XML);
+        return new ByteArrayInputStream(entry == null ? new byte[0] : entry);
     }
 
-    public boolean isPluginJar() {
-        return isNotEmpty(getEntryAsString(PLUGIN_XML));
-    }
-
-    public ByteArrayInputStream getPluginXml() {
-        return new ByteArrayInputStream(getEntryAsString(PLUGIN_XML));
-    }
-
-    private byte[] getEntryAsString(String jarFileEntry) {
+    private byte[] getEntry(String jarFileEntry) {
         try (JarFile jarFile = new JarFile(file)) {
             ZipEntry entry = jarFile.getEntry(jarFileEntry);
             if (entry != null) {
                 try (InputStream inputStream = jarFile.getInputStream(entry)) {
-                    return IOUtils.toByteArray(inputStream);
+                    return inputStream.readAllBytes();
                 }
             }
         } catch (IOException e) {

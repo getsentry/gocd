@@ -31,15 +31,17 @@ import com.thoughtworks.go.server.persistence.MaterialRepository;
 import com.thoughtworks.go.server.service.dd.FanInGraph;
 import com.thoughtworks.go.server.transaction.TransactionTemplate;
 import com.thoughtworks.go.util.SystemEnvironment;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Queue;
+import java.util.function.IntSupplier;
 
+import static com.thoughtworks.go.util.SystemEnvironment.RESOLVE_FANIN_MAX_BACK_TRACK_LIMIT;
 import static java.lang.String.format;
+import static org.apache.commons.lang3.StringUtils.isNumeric;
 
 @Service
 public class PipelineService implements UpstreamPipelineResolver {
@@ -50,8 +52,8 @@ public class PipelineService implements UpstreamPipelineResolver {
     private final PipelineLockService pipelineLockService;
     private final PipelineTimeline pipelineTimeline;
     private final MaterialRepository materialRepository;
-    private final SystemEnvironment systemEnvironment;
     private final MaterialConfigConverter materialConfigConverter;
+    private final IntSupplier maxBackTrackLimit;
 
     @Autowired
     public PipelineService(PipelineSqlMapDao pipelineDao, StageService stageService, PipelineLockService pipelineLockService, PipelineTimeline pipelineTimeline, MaterialRepository materialRepository,
@@ -62,8 +64,8 @@ public class PipelineService implements UpstreamPipelineResolver {
         this.pipelineTimeline = pipelineTimeline;
         this.materialRepository = materialRepository;
         this.transactionTemplate = transactionTemplate;
-        this.systemEnvironment = systemEnvironment;
         this.materialConfigConverter = materialConfigConverter;
+        this.maxBackTrackLimit = () -> systemEnvironment.get(RESOLVE_FANIN_MAX_BACK_TRACK_LIMIT);
     }
 
     public Pipeline fullPipelineById(long pipelineId) {
@@ -96,7 +98,7 @@ public class PipelineService implements UpstreamPipelineResolver {
     }
 
     private void updateCounter(Pipeline pipeline) {
-        Integer lastCount = pipelineDao.getCounterForPipeline(pipeline.getName());
+        int lastCount = pipelineDao.getCounterForPipeline(pipeline.getName());
         pipeline.updateCounter(lastCount);
         pipelineDao.insertOrUpdatePipelineCounter(pipeline, lastCount, pipeline.getCounter());
     }
@@ -115,7 +117,7 @@ public class PipelineService implements UpstreamPipelineResolver {
         return pipelineDao.findPipelineByNameAndCounter(pipelineName, pipelineCounter);
     }
 
-    public Pipeline fullPipelineByCounter(String pipelineName, Integer pipelineCounter) {
+    public Pipeline fullPipelineByCounter(String pipelineName, int pipelineCounter) {
         Pipeline pipeline = findPipelineByNameAndCounter(pipelineName, pipelineCounter);
         pipelineDao.loadAssociations(pipeline, pipelineName);
         return pipeline;
@@ -174,11 +176,11 @@ public class PipelineService implements UpstreamPipelineResolver {
     private MaterialRevision getRevisionFor(List<PipelineConfig> path, DependencyMaterialRevision initialRevision, Material matchedMaterial) {
         Pipeline byNameAndCounter = pipelineDao.findPipelineByNameAndCounter(initialRevision.getPipelineName(), initialRevision.getPipelineCounter());
         MaterialRevisions revisions = materialRepository.findMaterialRevisionsForPipeline(byNameAndCounter.getId());
-        path.remove(0);
+        path.removeFirst();
         if (path.isEmpty()) {
             return revisions.findRevisionForFingerPrint(matchedMaterial.getFingerprint());
         }
-        return getRevisionFor(path, revisions.findDependencyMaterialRevision(CaseInsensitiveString.str(path.get(0).name())), matchedMaterial);
+        return getRevisionFor(path, revisions.findDependencyMaterialRevision(CaseInsensitiveString.str(path.getFirst().name())), matchedMaterial);
     }
 
     private void copyMissingRevisions(MaterialRevisions srcRevisions, MaterialRevisions destRevisions) {
@@ -206,7 +208,7 @@ public class PipelineService implements UpstreamPipelineResolver {
     /* DIAMOND BEGIN */
 
     public MaterialRevisions getRevisionsBasedOnDependencies(MaterialRevisions actualRevisions, CruiseConfig cruiseConfig, CaseInsensitiveString pipelineName) {
-        FanInGraph fanInGraph = new FanInGraph(cruiseConfig, pipelineName, materialRepository, pipelineDao, systemEnvironment, materialConfigConverter);
+        FanInGraph fanInGraph = new FanInGraph(cruiseConfig, pipelineName, materialRepository, pipelineDao, materialConfigConverter, maxBackTrackLimit);
         final MaterialRevisions computedRevisions = fanInGraph.computeRevisions(actualRevisions, pipelineTimeline);
         fillUpNonOverridableRevisions(actualRevisions, computedRevisions);
         return restoreOriginalMaterialConfigAndMaterialOrderUsingFingerprint(actualRevisions, computedRevisions);
@@ -240,26 +242,22 @@ public class PipelineService implements UpstreamPipelineResolver {
 
     /* DIAMOND END */
 
-    public PipelineTimeline getPipelineTimeline() {
-        return pipelineTimeline;
-    }
-
     public PipelineIdentifier mostRecentPipelineIdentifier(String pipelineName) {
         return pipelineDao.mostRecentPipelineIdentifier(pipelineName);
     }
 
-    public Optional<Integer> resolvePipelineCounter(String pipelineName, String pipelineCounter) {
+    public OptionalInt resolvePipelineCounter(String pipelineName, String pipelineCounter) {
         if (JobIdentifier.LATEST.equalsIgnoreCase(pipelineCounter)) {
             PipelineIdentifier pipelineIdentifier = mostRecentPipelineIdentifier(pipelineName);
-            return Optional.of(pipelineIdentifier.getCounter());
-        } else if (!StringUtils.isNumeric(pipelineCounter)) {
-            return Optional.empty();
+            return OptionalInt.of(pipelineIdentifier.getCounter());
+        } else if (!isNumeric(pipelineCounter)) {
+            return OptionalInt.empty();
         } else {
-            return Optional.of(Integer.parseInt(pipelineCounter));
+            return OptionalInt.of(Integer.parseInt(pipelineCounter));
         }
     }
 
-    public boolean isPipelineBisect(String pipelineName, Integer fromCounter, Integer toCounter) {
+    public boolean isPipelineBisect(String pipelineName, int fromCounter, int toCounter) {
         Pipeline fromPipeline = pipelineDao.findPipelineByNameAndCounter(pipelineName, fromCounter);
         Pipeline toPipeline = pipelineDao.findPipelineByNameAndCounter(pipelineName, toCounter);
         if (fromPipeline == null) {

@@ -1,28 +1,20 @@
-<%
-#########################################################################
-# Copyright Thoughtworks, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#########################################################################
--%>
+<%#
+  Copyright Thoughtworks, Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+%>
 
     echo "Installation of GoCD server completed."
-    echo "--> Please edit /usr/share/go-server/wrapper-config/wrapper-properties.conf to add or override environment variables."
-    if [ -f "/etc/init.d/go-server" ]; then
-      echo "--> Once that is done start the GoCD Server with '/etc/init.d/go-server start'"
-    elif [ -f "/etc/systemd/system/go-server.service" ]; then
-      echo "--> Once that is done start the GoCD Server with 'systemctl start go-server'"
-    elif [ -f "/etc/init/go-server.conf" ]; then
-      echo "--> Once that is done start the GoCD Server with 'start go-server'"
-    fi
-
+    echo "--> Please edit /usr/share/<%= name %>/wrapper-config/wrapper-properties.conf to add or override environment variables."
+    echo "--> Once that is done start the GoCD Server with '/usr/share/<%= name %>/bin/<%= name %> start', or via your native service manager as detected below."
+    echo "    '/usr/share/<%= name %>/bin/<%= name %> status' = $(/usr/share/<%= name %>/bin/<%= name %> status)"

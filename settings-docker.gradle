@@ -29,10 +29,13 @@ Distro.values().each { distro ->
   }
 }
 
-dynamicProjectForPath(':docker:gocd-server', Distro.debian.projectName(Distro.debian.getVersion('12')) as String)
+dynamicProjectForPath(':docker:gocd-server', Distro.debian.projectName(Distro.debian.getVersion('13')) as String)
 
 def dynamicProjectForPath(String parentPath, String subProjectName) {
   def subProjectPath = "$parentPath:$subProjectName"
   include subProjectPath
-  project(subProjectPath).projectDir = project(parentPath).projectDir
+
+  def subProjectDir = new File(findProject(parentPath).projectDir, subProjectName)
+  subProjectDir.mkdir()
+  project(subProjectPath).projectDir = subProjectDir
 }

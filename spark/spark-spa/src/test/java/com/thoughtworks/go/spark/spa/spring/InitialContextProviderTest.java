@@ -19,13 +19,13 @@ import com.thoughtworks.go.plugin.domain.analytics.AnalyticsPluginInfo;
 import com.thoughtworks.go.plugin.domain.analytics.Capabilities;
 import com.thoughtworks.go.plugin.domain.common.CombinedPluginInfo;
 import com.thoughtworks.go.plugin.domain.common.PluginConstants;
-import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.newsecurity.utils.SessionUtils;
 import com.thoughtworks.go.server.security.userdetail.GoUserPrincipal;
 import com.thoughtworks.go.server.service.*;
 import com.thoughtworks.go.server.service.plugins.builder.DefaultPluginInfoFinder;
 import com.thoughtworks.go.server.service.support.toggle.FeatureToggleService;
 import com.thoughtworks.go.server.service.support.toggle.Toggles;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.SparkController;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,35 +42,25 @@ import static org.mockito.Mockito.when;
 class InitialContextProviderTest {
 
     private InitialContextProvider initialContextProvider;
-    private RailsAssetsService railsAssetsService;
-    private WebpackAssetsService webpackAssetsService;
     private SecurityService securityService;
-    private VersionInfoService versionInfoService;
     private DefaultPluginInfoFinder pluginInfoFinder;
-    private FeatureToggleService featureToggleService;
-    private MaintenanceModeService maintenanceModeService;
-    private ServerConfigService serverConfigService;
 
     @BeforeEach
     void setup() {
-        railsAssetsService = mock(RailsAssetsService.class);
-        webpackAssetsService = mock(WebpackAssetsService.class);
         securityService = mock(SecurityService.class);
-        versionInfoService = mock(VersionInfoService.class);
         pluginInfoFinder = mock(DefaultPluginInfoFinder.class);
-        featureToggleService = mock(FeatureToggleService.class);
-        maintenanceModeService = mock(MaintenanceModeService.class);
-        serverConfigService = mock(ServerConfigService.class);
-        Toggles.initializeWith(featureToggleService);
-        initialContextProvider = new InitialContextProvider(railsAssetsService, webpackAssetsService, securityService,
-                versionInfoService, pluginInfoFinder, maintenanceModeService, serverConfigService);
+        MaintenanceModeService maintenanceModeService = mock(MaintenanceModeService.class);
+        ServerConfigService serverConfigService = mock(ServerConfigService.class);
+        Toggles.initializeWith(mock(FeatureToggleService.class));
+        initialContextProvider = new InitialContextProvider(mock(RailsAssetsService.class), mock(WebpackAssetsService.class), securityService,
+            pluginInfoFinder, maintenanceModeService, serverConfigService);
         SessionUtils.setCurrentUser(new GoUserPrincipal("bob", "Bob"));
     }
 
     @Test
     void shouldShowAnalyticsDashboard() {
         Map<String, Object> modelMap = new HashMap<>();
-        when(securityService.isUserAdmin(any(Username.class))).thenReturn(true);
+        when(securityService.isUserAdmin(any())).thenReturn(true);
         CombinedPluginInfo combinedPluginInfo = new CombinedPluginInfo(analyticsPluginInfo());
         when(pluginInfoFinder.allPluginInfos(PluginConstants.ANALYTICS_EXTENSION)).thenReturn(List.of(combinedPluginInfo));
         Map<String, Object> contect = initialContextProvider.getContext(modelMap, dummySparkController.getClass(), "viewName");
@@ -80,7 +70,7 @@ class InitialContextProviderTest {
     @Test
     void shouldNotShowAnalyticsDashboardWhenUserIsNotAdmin() {
         Map<String, Object> modelMap = new HashMap<>();
-        when(securityService.isUserAdmin(any(Username.class))).thenReturn(false);
+        when(securityService.isUserAdmin(any())).thenReturn(false);
         CombinedPluginInfo combinedPluginInfo = new CombinedPluginInfo(analyticsPluginInfo());
         when(pluginInfoFinder.allPluginInfos(PluginConstants.ANALYTICS_EXTENSION)).thenReturn(List.of(combinedPluginInfo));
         Map<String, Object> contect = initialContextProvider.getContext(modelMap, dummySparkController.getClass(), "viewName");
@@ -90,10 +80,18 @@ class InitialContextProviderTest {
     @Test
     void shouldNotShowAnalyticsDashboardPluginIsNotPresent() {
         Map<String, Object> modelMap = new HashMap<>();
-        when(securityService.isUserAdmin(any(Username.class))).thenReturn(true);
+        when(securityService.isUserAdmin(any())).thenReturn(true);
         when(pluginInfoFinder.allPluginInfos(PluginConstants.ANALYTICS_EXTENSION)).thenReturn(List.of(new CombinedPluginInfo()));
         Map<String, Object> contect = initialContextProvider.getContext(modelMap, dummySparkController.getClass(), "viewName");
         assertThat(contect.get("showAnalyticsDashboard")).isEqualTo(false);
+    }
+
+    @Test
+    public void shouldConvertToSnakeCase() {
+        assertThat(InitialContextProvider.camelCaseToSnakeCase("camelCase")).isEqualTo("camel_case");
+        assertThat(InitialContextProvider.camelCaseToSnakeCase("PascalCase")).isEqualTo("pascal_case");
+        assertThat(InitialContextProvider.camelCaseToSnakeCase("camel")).isEqualTo("camel");
+        assertThat(InitialContextProvider.camelCaseToSnakeCase("camelCaseForALongString")).isEqualTo("camel_case_for_a_long_string");
     }
 
     private AnalyticsPluginInfo analyticsPluginInfo() {
@@ -105,14 +103,14 @@ class InitialContextProviderTest {
         return analyticsPluginInfo;
     }
 
-    private SparkController dummySparkController = new SparkController() {
+    private final SparkController dummySparkController = new SparkController() {
         @Override
         public String controllerBasePath() {
             return null;
         }
 
         @Override
-        public void setupRoutes() {
+        public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
 
         }
     };

@@ -61,7 +61,7 @@ public class ElasticAgentInformationMigratorImpl implements ElasticAgentInformat
     @Override
     public Result run(GoPluginDescriptor pluginDescriptor, Map<String, List<String>> extensionsInfoFromThePlugin) {
         final boolean migrationResult = migrate(pluginDescriptor);
-        return new PluginPostLoadHook.Result(!migrationResult, !migrationResult ? pluginDescriptor.getStatus().getMessages().get(0) : "Success");
+        return new PluginPostLoadHook.Result(!migrationResult, !migrationResult ? pluginDescriptor.getStatus().getMessages().getFirst() : "Success");
     }
 
     private boolean migrate(GoPluginDescriptor pluginDescriptor) {
@@ -75,7 +75,7 @@ public class ElasticAgentInformationMigratorImpl implements ElasticAgentInformat
         LOG.debug("Migrating elastic agent configurations for plugin with id: '{}'", pluginId);
         Plugin plugin = pluginSqlMapDao.findPlugin(pluginId);
         String pluginConfiguration = plugin.getConfiguration();
-        Map<String, String> pluginSettings = pluginConfiguration == null ? new HashMap<>() : JsonHelper.<HashMap<String, String>>fromJson(pluginConfiguration, HashMap.class);
+        Map<String, String> pluginSettings = pluginConfiguration == null ? new HashMap<>() : JsonHelper.<HashMap<String, String>>fromJsonExposeOnly(pluginConfiguration, HashMap.class);
         ReplaceElasticAgentInformationCommand command = new ReplaceElasticAgentInformationCommand(clusterProfilesService, elasticProfileService, elasticAgentExtension, pluginDescriptor, pluginSettings);
 
         boolean updated = update(command, pluginDescriptor);
@@ -100,7 +100,7 @@ public class ElasticAgentInformationMigratorImpl implements ElasticAgentInformat
             goConfigService.updateConfig(command);
             return true;
         } catch (Exception e) {
-            LOG.error(String.format("Failed migrating elastic agent information for plugin with id '%s'", pluginDescriptor.id()), e);
+            LOG.error("Failed migrating elastic agent information for plugin with id '{}'", pluginDescriptor.id(), e);
 
             String pluginId = pluginDescriptor.id();
             String pluginAPIRequest = "cd.go.elastic-agent.migrate-config";

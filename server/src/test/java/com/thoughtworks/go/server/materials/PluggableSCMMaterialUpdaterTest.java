@@ -1,0 +1,110 @@
+/*
+ * Copyright Thoughtworks, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.thoughtworks.go.server.materials;
+
+import com.thoughtworks.go.config.materials.PluggableSCMMaterial;
+import com.thoughtworks.go.domain.MaterialInstance;
+import com.thoughtworks.go.domain.materials.Modifications;
+import com.thoughtworks.go.domain.packagerepository.ConfigurationPropertyMother;
+import com.thoughtworks.go.helper.MaterialsMother;
+import com.thoughtworks.go.server.persistence.MaterialRepository;
+import com.thoughtworks.go.server.transaction.TransactionTemplate;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionCallback;
+
+import java.io.File;
+
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+public class PluggableSCMMaterialUpdaterTest {
+    @Mock
+    MaterialRepository materialRepository;
+    @Mock
+    ScmMaterialUpdater scmMaterialUpdater;
+    @Mock
+    private TransactionTemplate transactionTemplate;
+    private PluggableSCMMaterialUpdater materialUpdater;
+
+    @BeforeEach
+    public void setup() {
+        transactionTemplate = new TransactionTemplate(null) {
+            @Override
+            public <T> T execute(TransactionCallback<T> action) {
+                return action.doInTransaction(null);
+            }
+
+            @Override
+            public Object executeWithExceptionHandling(com.thoughtworks.go.server.transaction.TransactionCallback action) {
+                return super.executeWithExceptionHandling(action);
+            }
+
+            @Override
+            public <T extends Exception> Object transactionSurrounding(TransactionSurrounding<T> surrounding) throws T {
+                return super.transactionSurrounding(surrounding);
+            }
+        };
+        materialUpdater = new PluggableSCMMaterialUpdater(materialRepository, scmMaterialUpdater, transactionTemplate);
+    }
+
+    @Test
+    public void shouldUpdateToNewMaterialInstanceWhenConfigHas_Changed() {
+        PluggableSCMMaterial material = MaterialsMother.pluggableSCMMaterial();
+        MaterialInstance materialInstance = material.createMaterialInstance();
+        materialInstance.setId(1);
+
+        material.getScmConfig().getConfiguration().add(ConfigurationPropertyMother.create("key2", false, "value2"));
+        MaterialInstance newMaterialInstance = material.createMaterialInstance();
+        newMaterialInstance.setId(1);
+        File file = new File("random");
+
+        Modifications modifications = new Modifications();
+        when(materialRepository.find(anyLong())).thenReturn(materialInstance);
+
+        materialUpdater.insertLatestOrNewModifications(material, materialInstance, file, modifications);
+
+        verify(materialRepository).saveOrUpdate(newMaterialInstance);
+        verify(scmMaterialUpdater).insertLatestOrNewModifications(material, materialInstance, file, modifications);
+    }
+
+    @Test
+    public void shouldNotUpdateMaterialInstanceWhenConfigHas_NOT_Changed() {
+        PluggableSCMMaterial material = MaterialsMother.pluggableSCMMaterial();
+        MaterialInstance materialInstance = material.createMaterialInstance();
+
+        File file = new File("random");
+        Modifications modifications = new Modifications();
+
+        materialUpdater.insertLatestOrNewModifications(material, materialInstance, file, modifications);
+
+        verify(materialRepository, never()).saveOrUpdate(any());
+        verify(scmMaterialUpdater).insertLatestOrNewModifications(material, materialInstance, file, modifications);
+    }
+
+    @Test
+    public void shouldDelegateToSCMUpdaterToAddNewMaterial() {
+        PluggableSCMMaterial material = MaterialsMother.pluggableSCMMaterial();
+        File file = new File("random");
+
+        materialUpdater.addNewMaterialWithModifications(material, file);
+
+        verify(scmMaterialUpdater).addNewMaterialWithModifications(material, file);
+    }
+}

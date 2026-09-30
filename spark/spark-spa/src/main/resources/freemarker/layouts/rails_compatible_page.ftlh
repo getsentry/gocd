@@ -12,7 +12,7 @@
  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  See the License for the specific language governing permissions and
  limitations under the License.
-  -->
+ -->
 <!DOCTYPE html>
 <html class="no-js">
 <head>
@@ -45,9 +45,8 @@
 
 <body id="${controllerName}-page"
       data-controller-name="${controllerName}"
-      data-current-gocd-version="${currentGoCDVersion}"
       data-is-user-admin="${securityService.isUserAdmin(currentUser)?c}"
-      data-can-user-view-admin="${securityService.canViewAdminPage(currentUser)?c}"
+      data-can-user-view-admin="${securityService.canViewSomeAdminPage(currentUser)?c}"
       data-is-user-group-admin="${securityService.isUserGroupAdmin(currentUser)?c}"
       data-can-user-view-templates="${securityService.isAuthorizedToViewTemplates(currentUser)?c}"
       data-show-analytics-dashboard="${showAnalyticsDashboard?c}"

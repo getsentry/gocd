@@ -26,6 +26,7 @@ import uk.org.webcompere.systemstubs.properties.SystemProperties;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,8 +46,8 @@ public class LockfileTest {
     }
 
     @AfterEach
-    public void tearDown() {
-        FileUtils.deleteQuietly(LOCK_FILE);
+    public void tearDown() throws IOException {
+        Files.deleteIfExists(LOCK_FILE.toPath());
     }
 
     @Test
@@ -82,11 +83,11 @@ public class LockfileTest {
     @Test
     public void shouldSpawnTouchLoopOnSet() throws IOException {
         Lockfile lockfile = mock(Lockfile.class);
-        doCallRealMethod().when(lockfile).setHooks();
+        doCallRealMethod().when(lockfile).createLock();
         doNothing().when(lockfile).touch();
-        doNothing().when(lockfile).spawnTouchLoop();
-        lockfile.setHooks();
-        verify(lockfile).spawnTouchLoop();
+        doNothing().when(lockfile).spawnTouchLoopIfNecessary();
+        lockfile.createLock();
+        verify(lockfile).spawnTouchLoopIfNecessary();
     }
 
     @Test
@@ -105,7 +106,7 @@ public class LockfileTest {
         Lockfile lockfile = spy(new Lockfile(mockfile));
         when(mockfile.exists()).thenReturn(false);
         when(mockfile.getAbsolutePath()).thenReturn("/abcd/dummyFile");
-        doThrow(new IOException("dummy")).when(lockfile).setHooks();
+        doThrow(new IOException("dummy")).when(lockfile).createLock();
         assertThat(lockfile.tryLock()).isFalse();
         verify(mockfile).exists();
     }

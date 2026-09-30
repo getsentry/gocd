@@ -21,7 +21,7 @@ import com.thoughtworks.go.plugin.access.pluggabletask.TaskExtension;
 import com.thoughtworks.go.plugin.infra.PluginRequestProcessorRegistry;
 import com.thoughtworks.go.util.command.*;
 import com.thoughtworks.go.work.DefaultGoPublisher;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.apache.commons.lang3.SystemUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,7 +78,7 @@ public abstract class BaseCommandBuilder extends Builder {
             }
         } catch (CommandLineException ex) {
             LOG.warn("exec error");
-            LOG.warn("Could not execute command: " + commandLine.toStringForDisplay());
+            LOG.warn("Could not execute command: {}", commandLine.toStringForDisplay());
             throw ex;
         }
     }
@@ -110,6 +110,6 @@ public abstract class BaseCommandBuilder extends Builder {
     }
 
     private String translateToWindowsPath(String command) {
-        return StringUtils.replace(command, "/", "\\");
+        return Strings.CS.replace(command, "/", "\\");
     }
 }

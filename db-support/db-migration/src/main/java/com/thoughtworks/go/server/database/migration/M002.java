@@ -32,8 +32,10 @@ public class M002 {
     private static final Gson GSON = new Gson();
 
     static Migration ensureFilterStateIsNotNull() {
-        return (cxn) -> {
-            if (!required(cxn)) return;
+        return cxn -> {
+            if (!required(cxn)) {
+                return;
+            }
 
             try (Statement s = cxn.createStatement()) {
                 try (ResultSet rs = s.executeQuery("SELECT id, filters FROM PIPELINESELECTIONS WHERE version = 1")) {
@@ -73,6 +75,7 @@ public class M002 {
         }
     }
 
+    @SuppressWarnings("unused")
     private static class Filter {
         String name;
         String type;

@@ -34,11 +34,9 @@ import com.thoughtworks.go.util.command.EnvironmentVariableContext;
 import com.thoughtworks.go.util.json.JsonHelper;
 
 import java.io.File;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.util.command.EnvironmentVariableContext.escapeEnvironmentVariable;
 import static java.lang.String.format;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
@@ -90,7 +88,7 @@ public class PluggableSCMMaterial extends AbstractMaterial implements SecretPara
 
     @Override
     public MaterialInstance createMaterialInstance() {
-        return new PluggableSCMMaterialInstance(JsonHelper.toJsonString(this), UUID.randomUUID().toString());
+        return new PluggableSCMMaterialInstance(JsonHelper.toJsonExposeOnly(this), UUID.randomUUID().toString());
     }
 
     public SCM getScmConfig() {
@@ -187,17 +185,17 @@ public class PluggableSCMMaterial extends AbstractMaterial implements SecretPara
     }
 
     private boolean nameIsEmpty() {
-        return name == null || name.isBlank();
+        return name == null || name.isEmpty();
     }
 
     private boolean scmNameIsEmpty() {
-        return (scmConfig == null || scmConfig.getName() == null || scmConfig.getName().isEmpty());
+        return scmConfig == null || scmConfig.getName() == null || scmConfig.getName().isEmpty();
     }
 
     @Override
     public CaseInsensitiveString getName() {
         if (nameIsEmpty() && !scmNameIsEmpty()) {
-            return new CaseInsensitiveString(scmConfig.getName());
+            return cis(scmConfig.getName());
         } else {
             return name;
         }
@@ -217,7 +215,7 @@ public class PluggableSCMMaterial extends AbstractMaterial implements SecretPara
     @Override
     public String getDisplayName() {
         CaseInsensitiveString name = getName();
-        return (name == null || name.isBlank()) ? getUriForDisplay() : name.toString();
+        return name == null || name.isEmpty() ? getUriForDisplay() : name.toString();
     }
 
     @Override
@@ -255,7 +253,7 @@ public class PluggableSCMMaterial extends AbstractMaterial implements SecretPara
         if (modifications.isEmpty()) {
             return new NullRevision();
         }
-        Modification modification = modifications.get(modifications.size() - 1);
+        Modification modification = modifications.getLast();
         return new PluggableSCMMaterialRevision(modification.getRevision(), modification.getModifiedTime());
     }
 
@@ -287,12 +285,15 @@ public class PluggableSCMMaterial extends AbstractMaterial implements SecretPara
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         PluggableSCMMaterial that = (PluggableSCMMaterial) o;
-
-        return this.getFingerprint() != null ? this.getFingerprint().equals(that.getFingerprint()) : that.getFingerprint() == null;
+        return Objects.equals(this.getFingerprint(), that.getFingerprint());
     }
 
     @Override

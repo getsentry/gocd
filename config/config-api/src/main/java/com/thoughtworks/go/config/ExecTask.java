@@ -20,13 +20,14 @@ import com.thoughtworks.go.domain.config.Arguments;
 import com.thoughtworks.go.util.CommandUtils;
 import com.thoughtworks.go.util.FilenameUtil;
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.TestOnly;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 /**
  * This was copied from the ExecBuilder class in ccmain. Look for references there.
@@ -69,11 +70,11 @@ public class ExecTask extends AbstractTask implements CommandTask {
 
     @Override
     public String describe() {
-        if (null != argList && !argList.isEmpty()) {
+        if (argList != null && !argList.isEmpty()) {
             return CommandUtils.shellJoin(ArrayUtils.insert(0, argList.toStringArray(), command));
         }
 
-        if (null != args && !"".equals(args)) {
+        if (args != null && !args.isEmpty()) {
             return command + " " + args;
         }
 
@@ -104,7 +105,7 @@ public class ExecTask extends AbstractTask implements CommandTask {
         if (attributeMap.containsKey(ARG_LIST_STRING)) {
             clearCurrentArgsAndArgList();
             String value = (String) attributeMap.get(ARG_LIST_STRING);
-            if (!StringUtils.isBlank(value)) {
+            if (!isBlank(value)) {
                 String[] arguments = value.split("\\R");
                 for (String arg : arguments) {
                     argList.add(new Argument(arg));
@@ -130,13 +131,13 @@ public class ExecTask extends AbstractTask implements CommandTask {
 
     public void setArgs(String val) {
         clearCurrentArgsAndArgList();
-        if (!StringUtils.isBlank(val)) {
+        if (!isBlank(val)) {
             this.args = val;
         }
     }
 
     public void setWorkingDirectory(String newWorkingDir) {
-        workingDirectory = StringUtils.isBlank(newWorkingDir) ? null : newWorkingDir;
+        workingDirectory = isBlank(newWorkingDir) ? null : newWorkingDir;
     }
 
     private void clearCurrentArgsAndArgList() {
@@ -172,7 +173,7 @@ public class ExecTask extends AbstractTask implements CommandTask {
     }
 
     private void validateCommand() {
-        if (StringUtils.isBlank(command)) {
+        if (isBlank(command)) {
             errors.add(COMMAND, "Command cannot be empty");
         }
     }
@@ -226,22 +227,12 @@ public class ExecTask extends AbstractTask implements CommandTask {
 
         ExecTask execTask = (ExecTask) o;
 
-        if (!Objects.equals(timeout, execTask.timeout)) {
-            return false;
-        }
-        if (args != null ? !args.equals(execTask.args) : execTask.args != null) {
-            return false;
-        }
-        if (argList != null ? !argList.equals(execTask.argList) : execTask.argList != null) {
-            return false;
-        }
-        if (command != null ? !command.equals(execTask.command) : execTask.command != null) {
-            return false;
-        }
-        if (workingDirectory != null ? !workingDirectory.equals(execTask.workingDirectory) : execTask.workingDirectory != null) {
-            return false;
-        }
-        return super.equals(execTask);
+        return Objects.equals(timeout, execTask.timeout) &&
+            Objects.equals(args, execTask.args) &&
+            Objects.equals(argList, execTask.argList) &&
+            Objects.equals(command, execTask.command) &&
+            Objects.equals(workingDirectory, execTask.workingDirectory) &&
+            super.equals(execTask);
     }
 
     @Override
@@ -250,7 +241,7 @@ public class ExecTask extends AbstractTask implements CommandTask {
         result = command.hashCode();
         result = 31 * result + (args != null ? args.hashCode() : 0);
         result = 31 * result + (workingDirectory != null ? workingDirectory.hashCode() : 0);
-        result = 31 * result + (int) (timeout ^ (timeout >>> 32));
+        result = 31 * result + timeout.hashCode();
         return result;
     }
 

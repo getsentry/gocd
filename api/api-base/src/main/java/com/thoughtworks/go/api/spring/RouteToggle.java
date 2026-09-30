@@ -19,8 +19,8 @@ package com.thoughtworks.go.api.spring;
 import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.server.service.support.toggle.FeatureToggleService;
 import com.thoughtworks.go.spark.spring.RouteEntry;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.http.client.utils.URIBuilder;
+import org.springframework.util.StringUtils;
 
 import java.net.URISyntaxException;
 
@@ -34,16 +34,16 @@ class RouteToggle {
         this.prefix = normalize(prefix);
         this.version = version;
         this.descend = descend;
-        if (StringUtils.isBlank((toggleName))) {
-            this.toggleName = version.toString() + "_" + prefix.replaceAll("/", "_");
+        if (toggleName == null || toggleName.isBlank()) {
+            this.toggleName = version.toString() + "_" + prefix.replace('/', '_');
         } else {
             this.toggleName = toggleName;
         }
     }
 
     boolean matches(RouteEntry entry) {
-        return entry.getAcceptedType().equals(version.mimeType()) &&
-                this.withinPath(entry.getPath());
+        return entry.acceptedType().equals(version.mimeType()) &&
+                this.withinPath(entry.path());
     }
 
     boolean isToggleOn(FeatureToggleService s) {
@@ -56,7 +56,7 @@ class RouteToggle {
 
     private String normalize(String path) {
         try {
-            return new URIBuilder().setPath(path).build().normalize().getPath().replaceAll("/$", "");
+            return StringUtils.trimTrailingCharacter(new URIBuilder().setPath(path).build().normalize().getPath(), '/');
         } catch (URISyntaxException e) {
             return path;
         }

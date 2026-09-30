@@ -15,14 +15,13 @@
  */
 package com.thoughtworks.go.plugin.access.common.handler;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.thoughtworks.go.plugin.api.config.Configuration;
 import com.thoughtworks.go.plugin.api.config.Property;
 import com.thoughtworks.go.plugin.api.response.Result;
 import com.thoughtworks.go.plugin.api.response.validation.ValidationError;
 import com.thoughtworks.go.plugin.api.response.validation.ValidationResult;
+import com.thoughtworks.go.util.json.JsonHelper;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -32,10 +31,7 @@ import java.util.Map;
 import static java.lang.String.format;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 
-
 public class JSONResultMessageHandler {
-
-    private static final Gson GSON = new GsonBuilder().create();
 
     public Map<String, Object> configurationToMap(Configuration configuration) {
         Map<String, Object> configuredValuesForRepo = new LinkedHashMap<>();
@@ -51,11 +47,13 @@ public class JSONResultMessageHandler {
         try {
             ValidationResult validationResult = new ValidationResult();
 
-            if (isEmpty(responseBody)) return validationResult;
+            if (isEmpty(responseBody)) {
+                return validationResult;
+            }
 
             List<Map<String, Object>> errors;
             try {
-                errors = GSON.fromJson(responseBody, new TypeToken<List<Map<String, Object>>>() {}.getType());
+                errors = JsonHelper.fromJson(responseBody, new TypeToken<List<Map<String, Object>>>() {}.getType());
             } catch (Exception e) {
                 throw new RuntimeException("Validation errors should be returned as list of errors, with each error represented as a map");
             }
@@ -95,7 +93,7 @@ public class JSONResultMessageHandler {
 
             Map<String, Object> map;
             try {
-                map = GSON.fromJson(responseBody, new TypeToken<Map<String, Object>>() {}.getType());
+                map = JsonHelper.fromJson(responseBody, new TypeToken<Map<String, Object>>() {}.getType());
             } catch (Exception e) {
                 throw new RuntimeException("Check connection result should be returned as map, with status represented as string and messages represented as list");
             }

@@ -17,13 +17,14 @@ package com.thoughtworks.go.apiv2.compare;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv2.compare.representers.ComparisonRepresenter;
 import com.thoughtworks.go.config.exceptions.UnprocessableEntityException;
 import com.thoughtworks.go.domain.MaterialRevision;
 import com.thoughtworks.go.server.service.ChangesetService;
 import com.thoughtworks.go.server.service.PipelineService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,14 +40,14 @@ import static spark.Spark.*;
 @Component
 public class CompareControllerV2 extends ApiController implements SparkSpringController {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final ChangesetService changesetService;
     private final PipelineService pipelineService;
 
     @Autowired
-    public CompareControllerV2(ApiAuthenticationHelper apiAuthenticationHelper, ChangesetService changesetService, PipelineService pipelineService) {
+    public CompareControllerV2(ApiAuthorizationHelper apiAuthorizationHelper, ChangesetService changesetService, PipelineService pipelineService) {
         super(ApiVersion.v2);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.changesetService = changesetService;
         this.pipelineService = pipelineService;
     }
@@ -57,7 +58,7 @@ public class CompareControllerV2 extends ApiController implements SparkSpringCon
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
@@ -65,8 +66,8 @@ public class CompareControllerV2 extends ApiController implements SparkSpringCon
             before("/*", mimeType, this::setContentType);
             before("/*", mimeType, this::verifyContentType);
 
-            before("", mimeType, this.apiAuthenticationHelper::checkPipelineViewPermissionsAnd403);
-            before("/*", mimeType, this.apiAuthenticationHelper::checkPipelineViewPermissionsAnd403);
+            before("", mimeType, this.apiAuthorizationHelper::checkPipelineViewPermissionsAnd403);
+            before("/*", mimeType, this.apiAuthorizationHelper::checkPipelineViewPermissionsAnd403);
 
             get("", mimeType, this::index);
         });
@@ -74,8 +75,8 @@ public class CompareControllerV2 extends ApiController implements SparkSpringCon
 
     public String index(Request request, Response response) throws IOException {
         String pipelineName = request.params("pipeline_name");
-        Integer fromCounter = getCounterValue(request, "from_counter");
-        Integer toCounter = getCounterValue(request, "to_counter");
+        int fromCounter = getCounterValue(request, "from_counter");
+        int toCounter = getCounterValue(request, "to_counter");
         HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
 
         boolean isBisect = pipelineService.isPipelineBisect(pipelineName, fromCounter, toCounter);
@@ -88,7 +89,7 @@ public class CompareControllerV2 extends ApiController implements SparkSpringCon
         }
     }
 
-    private Integer getCounterValue(Request request, String counterString) {
+    private int getCounterValue(Request request, String counterString) {
         try {
             int counter = Integer.parseInt(request.params(counterString), 10);
             if (counter < 1) {

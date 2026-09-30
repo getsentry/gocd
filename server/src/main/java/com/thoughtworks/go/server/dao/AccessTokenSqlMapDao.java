@@ -111,7 +111,7 @@ public class AccessTokenSqlMapDao extends HibernateDaoSupport implements AccessT
                 .stream()
                 .flatMap(username -> findAllTokensForUser(username, AccessTokenFilter.all).stream())
                 .forEach(accessToken -> {
-                    accessToken.revokeBecauseOfUserDelete(byWhom, clock.currentTimestamp());
+                    accessToken.revokeBecauseOfUserDelete(byWhom, clock.currentSqlTimestamp());
                     currentSession.saveOrUpdate(accessToken);
                 });
             return Boolean.TRUE;
@@ -134,7 +134,6 @@ public class AccessTokenSqlMapDao extends HibernateDaoSupport implements AccessT
                 .add(Restrictions.eq("deletedBecauseUserDeleted", false))
                 .setCacheable(true)
                 .uniqueResult());
-
     }
 
     @Override
@@ -152,5 +151,4 @@ public class AccessTokenSqlMapDao extends HibernateDaoSupport implements AccessT
             return Boolean.TRUE;
         });
     }
-
 }

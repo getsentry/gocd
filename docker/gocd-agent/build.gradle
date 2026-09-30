@@ -1,13 +1,3 @@
-import com.thoughtworks.go.build.docker.BuildDockerImageTask
-import com.thoughtworks.go.build.docker.Distro
-import com.thoughtworks.go.build.docker.DistroVersion
-import com.thoughtworks.go.build.docker.ImageType
-import groovy.json.JsonOutput
-import io.github.resilience4j.retry.Retry
-import io.github.resilience4j.retry.RetryConfig
-
-import java.time.Duration
-
 /*
  * Copyright Thoughtworks, Inc.
  *
@@ -24,113 +14,98 @@ import java.time.Duration
  * limitations under the License.
  */
 
+import com.thoughtworks.go.build.docker.BuildDockerImageTask
+import com.thoughtworks.go.build.docker.Distro
+import com.thoughtworks.go.build.docker.ImageType
+import groovy.json.JsonOutput
+import io.github.resilience4j.retry.Retry
+import io.github.resilience4j.retry.RetryConfig
+
+import java.time.Duration
+
+buildscript {
+  dependencies {
+    classpath rootProject.deps.resilience4jRetry
+  }
+}
+
 plugins {
   id 'base'
 }
 
+def distributionsDir = layout.buildDirectory.dir("distributions")
+
 subprojects {
   apply plugin: 'base'
-  project.layout.buildDirectory = parent.layout.buildDirectory.dir(project.name).get()
+  layout.buildDirectory = parent.layout.buildDirectory.dir(project.name)
+  def (distro, distroVersion) = Distro.fromProjectName(project.name)
 
-  // detect the distro name and version from the project name.
-  // For e.g. `ubuntu-20.04` will map to `Distro.ubuntu` and version `20.04` as returned by `Distro.ubuntu.supportedVersions`
-  def distroName = project.name.split('-').first()
-  Distro distro = Distro.valueOf(distroName)
-
-  if (!project.name.startsWith("${distro.name()}-")) {
-    throw new GradleException("Did you initialize the project ${project.path} with the wrong distro(${distro.name()})?".toString())
-  }
-
-  def distroVersionOnProject = project.name.replaceFirst("${distro.name()}-", "")
-  DistroVersion distroVersion = distro.getVersion(distroVersionOnProject)
-
-  tasks.create("docker", BuildDockerImageTask.class) { BuildDockerImageTask task ->
-    task.dependsOn ':docker:initializeBuildx'
-    assemble.dependsOn(task)
-
-    if (project.hasProperty('dockerBuildLocalZip')) {
-      task.dependsOn ':installers:agentGenericZip'
-      task.artifactZip = rootProject.project(':installers').tasks.getByName('agentGenericZip').outputs.files.singleFile
-    } else if (project.hasProperty('dockerbuildAgentZipLocation')) {
-      task.artifactZip = project.file(project.dockerbuildAgentZipLocation)
-    } else {
-      task.doFirst {
-        throw new GradleException("You must specify either -PdockerBuildLocalZip or -PdockerbuildAgentZipLocation=/path/to/agent.zip")
-      }
-    }
-
-    task.description = "Generate the dockerfile for GoCD agent running on ${distro.name()} v${distroVersion.version}"
-    task.group = BasePlugin.BUILD_GROUP
-
+  def docker = tasks.register("docker", BuildDockerImageTask.class) { BuildDockerImageTask task ->
+    task.configureFor(ImageType.agent)
     task.distro = distro
     task.distroVersion = distroVersion
-    task.tiniVersion = project.versions.tini
-    task.imageType = ImageType.agent
-    task.outputDir = parent.layout.buildDirectory.dir("docker").get()
+    task.distributionDir = distributionsDir
+
+    def licenseSourceFile = rootProject.file("LICENSE")
 
     task.templateHelper = {
-      project.delete(project.fileTree(task.gitRepoDirectory).include("*"))
+      deleteGitRepoDirectoryContents()
 
-      project.copy {
-        from rootProject.file("LICENSE")
-        into task.gitRepoDirectory
+      fileOps.copy {
+        from licenseSourceFile
+        into gitRepoDirectory
       }
 
-      task.writeTemplateToFile("README.md.ftl", project.file("${task.gitRepoDirectory}/README.md"))
+      task.writeTemplateToFile("README.md.ftl", "README.md")
 
       [
         'agent-bootstrapper-logback-include.xml',
         'agent-launcher-logback-include.xml',
         'agent-logback-include.xml',
       ].forEach { eachFile ->
-        project.file("${task.gitRepoDirectory}/${eachFile}").bytes = BuildDockerImageTask.class.getResource("/gocd-docker-agent/${eachFile}").bytes
+        task.resolveGitRepoFileFor(eachFile).bytes = BuildDockerImageTask.class.getResource("/gocd-docker-agent/${eachFile}").bytes
       }
 
       [
         'docker-entrypoint.sh',
       ].forEach { eachFile ->
-        def file = project.file("${task.gitRepoDirectory}/${eachFile}")
-
+        def file = task.resolveGitRepoFileFor(eachFile)
         file.bytes = BuildDockerImageTask.class.getResource("/gocd-docker-agent/${eachFile}").bytes
         file.setExecutable(true, false)
       }
 
       if (distro == Distro.docker) {
-        def file = project.file("${task.gitRepoDirectory}/run-docker-daemon.sh")
+        def file = task.resolveGitRepoFileFor("run-docker-daemon.sh")
         file.bytes = BuildDockerImageTask.class.getResource("/gocd-docker-agent/run-docker-daemon.sh").bytes
         file.setExecutable(true, false)
 
-        file = project.file("${task.gitRepoDirectory}/dockerd-sudo")
+        file = task.resolveGitRepoFileFor("dockerd-sudo")
         file.bytes = BuildDockerImageTask.class.getResource("/gocd-docker-agent/dockerd-sudo").bytes
       }
     }
 
     // test image
     task.verifyHelper = {
-      def cleanContainer = { OutputStream errorStream = System.err ->
-        execOperations.exec {
-          workingDir = project.rootProject.projectDir
-          commandLine = ["docker", "rm", "--force", docker.dockerImageName]
-          standardOutput = System.out
-          errorOutput = errorStream
+      def cleanContainer = { OutputStream errorStreamOverride ->
+        execOps.exec {
+          commandLine = ["docker", "rm", "--force", "--volumes", docker.dockerImageName]
+          standardOutput = OutputStream.nullOutputStream()
+          if (errorStreamOverride) errorOutput = errorStreamOverride
         }
       }
 
       cleanContainer.call(OutputStream.nullOutputStream()) // Clean-up after any previous aborted runs
 
       // daemonize the container
-      execOperations.exec {
+      execOps.exec {
         def additionalFlags = distro == Distro.docker ? ["--privileged"] : []
-        workingDir = project.rootProject.projectDir
         commandLine = ["docker", "run", "-e", "GO_SERVER_URL=http://localhost:8153/go", "-d", "--name", docker.dockerImageName] + additionalFlags + [docker.imageNameWithTag] as List<String>
-        standardOutput = System.out
-        errorOutput = System.err
       }
 
       def start = System.currentTimeMillis()
       try {
         Retry.of("wait-for-container-to-start",
-          RetryConfig.custom().maxAttempts(40).waitDuration(Duration.ofMillis(500)).failAfterMaxAttempts(true).build()
+          RetryConfig.custom().maxAttempts(60).waitDuration(Duration.ofMillis(500)).failAfterMaxAttempts(true).build()
         ).executeRunnable {
           task.verifyProcessInContainerStarted(
             "lib/agent-bootstrapper.jar -serverUrl http://localhost:8153/go",
@@ -139,11 +114,9 @@ subprojects {
         }
 
         distro.additionalVerifyCommands.each { command ->
-          execOperations.exec {
-            workingDir = project.rootProject.projectDir
+          execOps.exec {
             commandLine = ["docker", "exec", docker.dockerImageName] + command
-            standardOutput = System.out
-            errorOutput = System.err
+            errorOutput = standardOutput // Docker is noisy on STDERR when pulling images via these exec commands
           }
         }
       } finally {
@@ -153,14 +126,20 @@ subprojects {
       }
     }
   }
+  assemble.dependsOn(docker)
 }
 
-task generateManifest() {
+tasks.register('generateManifest') {
+  def dockerTasks = subprojects.tasks*.named('docker') as Collection<TaskProvider<? extends BuildDockerImageTask>>
+  dependsOn(dockerTasks)
+  def manifest = distributionsDir.map { it.file("manifest.json") }
+  outputs.file(manifest)
+
   doLast {
     def meta = []
-    subprojects.tasks*.getByName('docker').forEach { BuildDockerImageTask dockerTask ->
+    dockerTasks.collect { it.get() }.each { dockerTask ->
       meta << [
-        file     : "${dockerTask.imageTarFile.name}",
+        file     : "${dockerTask.imageOciTarFile.name}",
         format   : 'oci',
         imageName: dockerTask.dockerImageName,
         tag      : dockerTask.imageTag,
@@ -168,13 +147,13 @@ task generateManifest() {
       ]
     }
 
-    def jsonFile = layout.buildDirectory.file("docker/manifest.json").get().asFile
-    project.mkdir(jsonFile.parentFile)
+    def jsonFile = manifest.get().asFile
+    jsonFile.parentFile.mkdirs()
     jsonFile.withWriter("utf-8") { Writer out ->
       out << JsonOutput.toJson(meta)
     }
   }
 }
 
-assemble.dependsOn(subprojects.tasks*.getByName('assemble'))
+assemble.dependsOn(subprojects.tasks*.named('assemble'))
 assemble.dependsOn(generateManifest)

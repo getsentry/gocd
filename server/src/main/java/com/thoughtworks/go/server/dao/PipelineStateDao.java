@@ -19,8 +19,8 @@ import com.thoughtworks.go.domain.Pipeline;
 import com.thoughtworks.go.domain.PipelineState;
 import com.thoughtworks.go.domain.Stage;
 import com.thoughtworks.go.domain.StageIdentifier;
-import com.thoughtworks.go.server.cache.CacheKeyGenerator;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.CacheKeyGenerator;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.database.Database;
 import com.thoughtworks.go.server.domain.StageStatusListener;
 import com.thoughtworks.go.server.transaction.AfterCompletionCallback;
@@ -34,6 +34,7 @@ import org.hibernate.SessionFactory;
 import org.hibernate.criterion.Projections;
 import org.hibernate.criterion.PropertyProjection;
 import org.hibernate.criterion.Restrictions;
+import org.jetbrains.annotations.VisibleForTesting;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.TransactionStatus;
@@ -170,6 +171,7 @@ public class PipelineStateDao extends SqlMapClientDaoSupport implements StageSta
         }
     }
 
+    @VisibleForTesting
     String pipelineLockStateCacheKey(String pipelineName) {
         return cacheKeyGenerator.generate("lockedPipeline", pipelineName.toLowerCase());
     }

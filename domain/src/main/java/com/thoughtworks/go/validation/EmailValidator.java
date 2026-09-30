@@ -16,11 +16,15 @@
 package com.thoughtworks.go.validation;
 
 import com.thoughtworks.go.domain.materials.ValidationBean;
-import org.apache.commons.lang3.StringUtils;
+
+import java.util.regex.Pattern;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 public class EmailValidator extends Validator<String> {
 
     public static final String EMAIL_ERROR_MESSAGE = "Invalid email address.";
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(".*@" + HostNameValidator.HOSTNAME_PATTERN);
 
     public EmailValidator() {
         super(EMAIL_ERROR_MESSAGE);
@@ -28,10 +32,10 @@ public class EmailValidator extends Validator<String> {
 
     @Override
     public ValidationBean validate(String address) {
-        if (StringUtils.isBlank(address)) {
+        if (isBlank(address)) {
             return ValidationBean.valid();
         }
-        if (address.matches(".*@" + HostnameValidator.HOSTNAME_PATTERN)) {
+        if (EMAIL_PATTERN.matcher(address).matches()) {
             return ValidationBean.valid();
         }
         return ValidationBean.notValid(EMAIL_ERROR_MESSAGE);

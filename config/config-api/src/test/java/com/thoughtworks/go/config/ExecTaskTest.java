@@ -22,10 +22,12 @@ import com.thoughtworks.go.helper.GoConfigMother;
 import com.thoughtworks.go.helper.StageConfigMother;
 import org.junit.jupiter.api.Test;
 
+import java.io.File;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -50,8 +52,8 @@ public class ExecTaskTest {
         ExecTask execTask = new ExecTask("arg1 arg2", new Arguments(new Argument("arg1"), new Argument("arg2")));
         execTask.validate(ConfigSaveValidationContext.forChain(new BasicCruiseConfig()));
         assertThat(execTask.errors().isEmpty()).isFalse();
-        assertThat(execTask.errors().on(ExecTask.ARGS)).isEqualTo(ExecTask.EXEC_CONFIG_ERROR);
-        assertThat(execTask.errors().on(ExecTask.ARG_LIST_STRING)).isEqualTo(ExecTask.EXEC_CONFIG_ERROR);
+        assertThat(execTask.errors().firstErrorOn(ExecTask.ARGS)).isEqualTo(ExecTask.EXEC_CONFIG_ERROR);
+        assertThat(execTask.errors().firstErrorOn(ExecTask.ARG_LIST_STRING)).isEqualTo(ExecTask.EXEC_CONFIG_ERROR);
     }
 
     @Test
@@ -60,7 +62,7 @@ public class ExecTaskTest {
 
         execTask.validate(ConfigSaveValidationContext.forChain(new BasicCruiseConfig()));
 
-        assertThat(execTask.errors().on(ExecTask.ARG_LIST_STRING)).isEqualTo("Invalid argument, cannot be null.");
+        assertThat(execTask.errors().firstErrorOn(ExecTask.ARG_LIST_STRING)).isEqualTo("Invalid argument, cannot be null.");
     }
 
 
@@ -78,16 +80,16 @@ public class ExecTaskTest {
     public void shouldValidateWorkingDirectory() {
         ExecTask task = new ExecTask("ls", "-l", "../../../assertTaskInvalid");
         CruiseConfig config = GoConfigMother.configWithPipelines("pipeline");
-        PipelineConfig pipeline = config.pipelineConfigByName(new CaseInsensitiveString("pipeline"));
-        StageConfig stage = pipeline.get(0);
-        JobConfig job = stage.getJobs().get(0);
+        PipelineConfig pipeline = config.pipelineConfigByName(cis("pipeline"));
+        StageConfig stage = pipeline.getFirst();
+        JobConfig job = stage.getJobs().getFirst();
         job.addTask(task);
 
         List<ConfigErrors> errors = config.validateAfterPreprocess();
         assertThat(errors.size()).isEqualTo(1);
         String message = "The path of the working directory for the custom command in job 'job' in stage 'stage' of pipeline 'pipeline' is outside the agent sandbox. It must be relative to the directory where the agent checks out materials.";
-        assertThat(errors.get(0).firstError()).isEqualTo(message);
-        assertThat(task.errors().on(ExecTask.WORKING_DIR)).isEqualTo(message);
+        assertThat(errors.getFirst().firstError()).isEqualTo(message);
+        assertThat(task.errors().firstErrorOn(ExecTask.WORKING_DIR)).isEqualTo(message);
     }
 
     @Test
@@ -96,7 +98,7 @@ public class ExecTaskTest {
         exec.setConfigAttributes(Map.of(ExecTask.COMMAND, "ls", ExecTask.ARGS, "-la", ExecTask.WORKING_DIR, "my_dir"));
         assertThat(exec.command()).isEqualTo("ls");
         assertThat(exec.getArgs()).isEqualTo("-la");
-        assertThat(exec.getArgListString()).isEqualTo("");
+        assertThat(exec.getArgListString()).isEmpty();
         assertThat(exec.workingDirectory()).isEqualTo("my_dir");
 
         Map<String, Object> attributes = new HashMap<>();
@@ -105,7 +107,7 @@ public class ExecTaskTest {
         attributes.put(ExecTask.WORKING_DIR, null);
         exec.setConfigAttributes(attributes);
         assertThat(exec.command()).isNull();
-        assertThat(exec.getArgs()).isEqualTo("");
+        assertThat(exec.getArgs()).isEmpty();
         assertThat(exec.workingDirectory()).isNull();
 
         Map<String, String> attributes1 = new HashMap<>();
@@ -146,8 +148,8 @@ public class ExecTaskTest {
     public void shouldNullOutWorkingDirectoryIfGivenBlank() {
         ExecTask exec = new ExecTask("ls", "-la", "foo");
         exec.setConfigAttributes(Map.of(ExecTask.COMMAND, "", ExecTask.ARGS, "", ExecTask.WORKING_DIR, ""));
-        assertThat(exec.command()).isEqualTo("");
-        assertThat(exec.getArgs()).isEqualTo("");
+        assertThat(exec.command()).isEmpty();
+        assertThat(exec.getArgs()).isEmpty();
         assertThat(exec.workingDirectory()).isNull();
     }
 
@@ -173,25 +175,43 @@ public class ExecTaskTest {
     }
 
     @Test
+    public void validateTask_shouldValidateThatCommandIsRequired() {
+        ExecTask execTask = new ExecTask();
+
+        execTask.validateTask(null);
+
+        assertThat(execTask.errors().isEmpty()).isFalse();
+        assertThat(execTask.errors().firstErrorOn(ExecTask.COMMAND)).isEqualTo("Command cannot be empty");
+    }
+
+    @Test
     public void shouldErrorOutForTemplates_WhenItHasATaskWithInvalidWorkingDirectory() {
         CruiseConfig cruiseConfig = GoConfigMother.configWithPipelines("some_pipeline");
         StageConfig templateStage = StageConfigMother.stageWithTasks("templateStage");
         ExecTask execTask = new ExecTask("ls", "-la", "/");
-        templateStage.getJobs().first().addTask(execTask);
-        PipelineTemplateConfig template = new PipelineTemplateConfig(new CaseInsensitiveString("template_name"), templateStage);
+        templateStage.getJobs().getFirst().addTask(execTask);
+        PipelineTemplateConfig template = new PipelineTemplateConfig(cis("template_name"), templateStage);
         cruiseConfig.addTemplate(template);
 
         try {
-            execTask.validateTask(ConfigSaveValidationContext.forChain(cruiseConfig, template, templateStage, templateStage.getJobs().first()));
+            execTask.validateTask(ConfigSaveValidationContext.forChain(cruiseConfig, template, templateStage, templateStage.getJobs().getFirst()));
             assertThat(execTask.errors().isEmpty()).isFalse();
-            assertThat(execTask.errors().on(ExecTask.WORKING_DIR)).isEqualTo("The path of the working directory for the custom command in job 'job' in stage 'templateStage' of template 'template_name' is outside the agent sandbox. It must be relative to the directory where the agent checks out materials.");
+            assertThat(execTask.errors().firstErrorOn(ExecTask.WORKING_DIR)).isEqualTo("The path of the working directory for the custom command in job 'job' in stage 'templateStage' of template 'template_name' is outside the agent sandbox. It must be relative to the directory where the agent checks out materials.");
         } catch (Exception e) {
             fail("should not have failed. Exception: " + e.getMessage());
         }
     }
 
     @Test
-    public void shouldReturnCommandTaskAttributes(){
+    public void shouldUseConfiguredWorkingDirectory() {
+        File absoluteFile = new File("test").getAbsoluteFile();
+        ExecTask task = new ExecTask("command", "arguments", absoluteFile.getAbsolutePath());
+
+        assertThat(task.workingDirectory()).isEqualTo(absoluteFile.getPath());
+    }
+
+    @Test
+    public void shouldReturnCommandTaskAttributes() {
         ExecTask task = new ExecTask("ls", "-laht", "src/build");
         assertThat(task.command()).isEqualTo("ls");
         assertThat(task.arguments()).isEqualTo("-laht");
@@ -199,43 +219,43 @@ public class ExecTaskTest {
     }
 
     @Test
-    public void shouldReturnCommandArgumentList(){
-        ExecTask task = new ExecTask("./bn", new Arguments(new Argument("clean"), new Argument("compile"), new Argument("\"buildfile\"")), "src/build" );
+    public void shouldReturnCommandArgumentList() {
+        ExecTask task = new ExecTask("./bn", new Arguments(new Argument("clean"), new Argument("compile"), new Argument("\"buildfile\"")), "src/build");
         assertThat(task.arguments()).isEqualTo("clean compile \"buildfile\"");
     }
 
     @Test
-    public void shouldReturnEmptyCommandArguments(){
-        ExecTask task = new ExecTask("./bn", new Arguments(), "src/build" );
-        assertThat(task.arguments()).isEqualTo("");
+    public void shouldReturnEmptyCommandArguments() {
+        ExecTask task = new ExecTask("./bn", new Arguments(), "src/build");
+        assertThat(task.arguments()).isEmpty();
     }
 
     @Test
     public void shouldBeSameIfCommandMatches() {
         ExecTask task = new ExecTask("ls", new Arguments());
 
-        assertEquals(task, new ExecTask("ls", new Arguments()));
+        assertEquals(new ExecTask("ls", new Arguments()), task);
     }
 
     @Test
     public void shouldUnEqualIfCommandsDontMatch() {
         ExecTask task = new ExecTask("ls", new Arguments());
 
-        assertNotEquals(task, new ExecTask("rm", new Arguments()));
+        assertNotEquals(new ExecTask("rm", new Arguments()), task);
     }
 
     @Test
     public void shouldUnEqualIfCommandIsNull() {
         ExecTask task = new ExecTask(null, new Arguments());
 
-        assertNotEquals(task, new ExecTask("rm", new Arguments()));
+        assertNotEquals(new ExecTask("rm", new Arguments()), task);
     }
 
     @Test
     public void shouldUnEqualIfOtherTaskCommandIsNull() {
         ExecTask task = new ExecTask("ls", new Arguments());
 
-        assertNotEquals(task, new ExecTask(null, new Arguments()));
+        assertNotEquals(new ExecTask(null, new Arguments()), task);
     }
 
     @Test

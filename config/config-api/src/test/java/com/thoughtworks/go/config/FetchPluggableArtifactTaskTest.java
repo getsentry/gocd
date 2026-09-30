@@ -35,7 +35,6 @@ import com.thoughtworks.go.plugin.domain.common.PluggableInstanceSettings;
 import com.thoughtworks.go.plugin.domain.common.PluginConfiguration;
 import com.thoughtworks.go.security.CryptoException;
 import com.thoughtworks.go.security.GoCipher;
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,6 +44,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.domain.packagerepository.ConfigurationPropertyMother.create;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -61,25 +61,25 @@ class FetchPluggableArtifactTaskTest {
     void setUp() {
         config = GoConfigMother.configWithPipelines("random_pipeline", "uppest_lookalike", "uppest_stream", "upstreams_peer", "upstream", "downstream", "dummy");
 
-        PipelineConfig randomPipeline = config.pipelineConfigByName(new CaseInsensitiveString("random_pipeline"));
+        PipelineConfig randomPipeline = config.pipelineConfigByName(cis("random_pipeline"));
         randomPipeline.add(StageConfigMother.stageConfig("random-stage1", new JobConfigs(new JobConfig("random-job1"))));
 
-        PipelineConfig uppestLookalike = config.pipelineConfigByName(new CaseInsensitiveString("uppest_lookalike"));
+        PipelineConfig uppestLookalike = config.pipelineConfigByName(cis("uppest_lookalike"));
         uppestLookalike.add(StageConfigMother.stageConfig("uppest-stage1", new JobConfigs(new JobConfig("uppest-job1"))));
 
-        uppestStream = config.pipelineConfigByName(new CaseInsensitiveString("uppest_stream"));
+        uppestStream = config.pipelineConfigByName(cis("uppest_stream"));
         uppestStream.add(StageConfigMother.stageConfig("uppest-stage1", new JobConfigs(new JobConfig("uppest-job1"))));
         uppestStream.add(StageConfigMother.stageConfig("uppest-stage2", new JobConfigs(new JobConfig("uppest-job2"))));
         uppestStream.add(StageConfigMother.stageConfig("uppest-stage3", new JobConfigs(new JobConfig("uppest-job3"))));
 
-        upstream = config.pipelineConfigByName(new CaseInsensitiveString("upstream"));
+        upstream = config.pipelineConfigByName(cis("upstream"));
         upstream.setMaterialConfigs(new MaterialConfigs(MaterialConfigsMother.dependencyMaterialConfig("uppest_stream", "uppest-stage2")));
         upstream.add(StageConfigMother.stageConfig("up-stage1", new JobConfigs(new JobConfig("up-job1"))));
         upstream.add(StageConfigMother.stageConfig("up-stage2", new JobConfigs(new JobConfig("up-job2"))));
 
-        downstream = config.pipelineConfigByName(new CaseInsensitiveString("downstream"));
+        downstream = config.pipelineConfigByName(cis("downstream"));
         downstream.setMaterialConfigs(new MaterialConfigs(MaterialConfigsMother.dependencyMaterialConfig("upstream", "up-stage1")));
-        downstream.get(0).getJobs().get(0).addTask(new FetchPluggableArtifactTask(new CaseInsensitiveString("foo"), new CaseInsensitiveString("bar"), new CaseInsensitiveString("baz"), "s3"));
+        downstream.getFirst().getJobs().getFirst().addTask(new FetchPluggableArtifactTask(cis("foo"), cis("bar"), cis("baz"), "s3"));
 
         artifactPluginInfo = mock(ArtifactPluginInfo.class);
         PluginDescriptor pluginDescriptor = mock(PluginDescriptor.class);
@@ -98,13 +98,13 @@ class FetchPluggableArtifactTaskTest {
         uppestStream.setOrigin(new RepoConfigOrigin());
         downstream.setOrigin(new FileConfigOrigin());
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("uppest_stream/upstream"), new CaseInsensitiveString("uppest-stage2"), new CaseInsensitiveString("uppest-job2"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("uppest_stream/upstream"), cis("uppest-stage2"), cis("uppest-job2"), "s3");
 
-        StageConfig stage = downstream.getStage(new CaseInsensitiveString("stage"));
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, stage, stage.getJobs().first()));
+        StageConfig stage = downstream.getStage(cis("stage"));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, stage, stage.getJobs().getFirst()));
 
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(FetchTask.ARTIFACT_ORIGIN)).startsWith("\"downstream :: stage :: job\" tries to fetch artifact from job \"uppest_stream :: uppest-stage2 :: uppest-job2\" which is defined in");
+        assertThat(task.errors().firstErrorOn(FetchTask.ARTIFACT_ORIGIN)).startsWith("\"downstream :: stage :: job\" tries to fetch artifact from job \"uppest_stream :: uppest-stage2 :: uppest-job2\" which is defined in");
     }
 
     @Test
@@ -114,9 +114,9 @@ class FetchPluggableArtifactTaskTest {
         uppestStream.setOrigin(new FileConfigOrigin());
         downstream.setOrigin(new RepoConfigOrigin());
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("uppest_stream/upstream"), new CaseInsensitiveString("uppest-stage2"), new CaseInsensitiveString("uppest-job2"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("uppest_stream/upstream"), cis("uppest-stage2"), cis("uppest-job2"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage"))));
 
         assertThat(task.errors().isEmpty()).isTrue();
     }
@@ -129,9 +129,9 @@ class FetchPluggableArtifactTaskTest {
         downstream.setOrigin(new RepoConfigOrigin());
         config.setArtifactStores(new ArtifactStores(new ArtifactStore("s3", "foo.plugin")));
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("uppest_stream/upstream"), new CaseInsensitiveString("uppest-stage2"), new CaseInsensitiveString("uppest-job2"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("uppest_stream/upstream"), cis("uppest-stage2"), cis("uppest-job2"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage"))));
 
         assertThat(task.errors().isEmpty()).isTrue();
     }
@@ -144,96 +144,96 @@ class FetchPluggableArtifactTaskTest {
         uppestStream.setOrigin(new FileConfigOrigin());
         downstream.setOrigin(new FileConfigOrigin());
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("uppest_stream/upstream"), new CaseInsensitiveString("uppest-stage2"), new CaseInsensitiveString("uppest-job2"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("uppest_stream/upstream"), cis("uppest-stage2"), cis("uppest-job2"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage"))));
 
         assertThat(task.errors().isEmpty()).isTrue();
     }
 
     @Test
     void validate_shouldNotTryAndValidateWhenWithinTemplate() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("dummy"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("dummy"), cis("stage"), cis("job"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new TemplatesConfig(), downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new TemplatesConfig(), downstream.getStage(cis("stage"))));
 
         assertThat(task.errors().isEmpty()).isTrue();
     }
 
     @Test
     void validate_shouldValidatePresenceOfartifactId() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("dummy"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("dummy"), cis("stage"), cis("job"), "");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage"))));
 
-        assertThat(task.errors().on("artifactId").isEmpty()).isFalse();
-        assertThat(task.errors().on("artifactId")).isEqualTo("Artifact Id cannot be blank.");
+        assertThat(task.errors().firstErrorOn("artifactId").isEmpty()).isFalse();
+        assertThat(task.errors().firstErrorOn("artifactId")).isEqualTo("Artifact Id cannot be blank.");
     }
 
     @Test
     void validate_shouldValidateNullartifactId() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("dummy"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), null);
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("dummy"), cis("stage"), cis("job"), null);
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage"))));
 
-        assertThat(task.errors().on("artifactId").isEmpty()).isFalse();
-        assertThat(task.errors().on("artifactId")).isEqualTo("Artifact Id cannot be blank.");
+        assertThat(task.errors().firstErrorOn("artifactId").isEmpty()).isFalse();
+        assertThat(task.errors().firstErrorOn("artifactId")).isEqualTo("Artifact Id cannot be blank.");
     }
 
     @Test
     void validate_shouldPopulateErrorIfArtifactIsNotPresentInConfig() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("dummy"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("dummy"), cis("stage"), cis("job"), "s3");
         config.setArtifactStores(new ArtifactStores());
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage"))));
 
-        assertThat(task.errors().on("artifactId").isEmpty()).isFalse();
-        assertThat(task.errors().on("artifactId")).isEqualTo("Pluggable artifact with id `s3` does not exist in [dummy/stage/job].");
+        assertThat(task.errors().firstErrorOn("artifactId").isEmpty()).isFalse();
+        assertThat(task.errors().firstErrorOn("artifactId")).isEqualTo("Pluggable artifact with id `s3` does not exist in [dummy/stage/job].");
     }
 
     @Test
     void validate_shouldValidateFetchPluggableArtifactConfigurationUniqueness() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("dummy"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3", create("Foo", false, "Bar"), create("Foo", false, "Bar"));
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("dummy"), cis("stage"), cis("job"), "s3", create("Foo", false, "Bar"), create("Foo", false, "Bar"));
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new TemplatesConfig(), downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new TemplatesConfig(), downstream.getStage(cis("stage"))));
 
         assertThat(task.getConfiguration().hasErrors()).isTrue();
-        assertThat(task.getConfiguration().get(0).errors().on("configurationKey")).isEqualTo("Duplicate key 'Foo' found for Fetch pluggable artifact");
-        assertThat(task.getConfiguration().get(1).errors().on("configurationKey")).isEqualTo("Duplicate key 'Foo' found for Fetch pluggable artifact");
+        assertThat(task.getConfiguration().getFirst().errors().firstErrorOn("configurationKey")).isEqualTo("Duplicate key 'Foo' found for Fetch pluggable artifact");
+        assertThat(task.getConfiguration().getLast().errors().firstErrorOn("configurationKey")).isEqualTo("Duplicate key 'Foo' found for Fetch pluggable artifact");
     }
 
     @Test
     void shouldPopulateErrorsIfFetchArtifactFromPipelineThatIsNotDependency() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("dummy"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("dummy"), cis("stage"), cis("job"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage"))));
 
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(FetchTask.PIPELINE_NAME)).isEqualTo("Pipeline \"downstream\" tries to fetch artifact from pipeline "
+        assertThat(task.errors().firstErrorOn(FetchTask.PIPELINE_NAME)).isEqualTo("Pipeline \"downstream\" tries to fetch artifact from pipeline "
                 + "\"dummy\" which is not an upstream pipeline");
-        assertThat(downstream.errors().on("base")).isEqualTo("Pipeline \"downstream\" tries to fetch artifact from pipeline \"dummy\" which is not an upstream pipeline");
+        assertThat(downstream.errors().firstErrorOn("base")).isEqualTo("Pipeline \"downstream\" tries to fetch artifact from pipeline \"dummy\" which is not an upstream pipeline");
     }
 
     @Test
     void validate_shouldValidateBlankStageAndJobWhenWithinTemplate() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("dummy"), new CaseInsensitiveString(""), new CaseInsensitiveString(""), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("dummy"), cis(""), cis(""), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new TemplatesConfig(), downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new TemplatesConfig(), downstream.getStage(cis("stage"))));
 
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(FetchTask.STAGE)).isEqualTo("Stage is a required field.");
-        assertThat(task.errors().on(FetchTask.JOB)).isEqualTo("Job is a required field.");
+        assertThat(task.errors().firstErrorOn(FetchTask.STAGE)).isEqualTo("Stage is a required field.");
+        assertThat(task.errors().firstErrorOn(FetchTask.JOB)).isEqualTo("Job is a required field.");
     }
 
     @Test
     void shouldPopulateErrorsIfFetchArtifactDoesNotHaveStageAndOrJobDefined() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString(""), new CaseInsensitiveString(""), new CaseInsensitiveString(""), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis(""), cis(""), cis(""), "s3");
 
         task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, new StageConfig(), new JobConfig()));
 
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(FetchTask.STAGE)).isEqualTo("Stage is a required field.");
-        assertThat(task.errors().on(FetchTask.JOB)).isEqualTo("Job is a required field.");
+        assertThat(task.errors().firstErrorOn(FetchTask.STAGE)).isEqualTo("Stage is a required field.");
+        assertThat(task.errors().firstErrorOn(FetchTask.JOB)).isEqualTo("Job is a required field.");
     }
 
     @Test
@@ -241,9 +241,9 @@ class FetchPluggableArtifactTaskTest {
         uppestStream.getStage("uppest-stage2").jobConfigByConfigName("uppest-job2").artifactTypeConfigs()
                 .add(new PluggableArtifactConfig("s3", "cd.go.s3"));
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("uppest_stream/upstream"), new CaseInsensitiveString("uppest-stage2"), new CaseInsensitiveString("uppest-job2"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("uppest_stream/upstream"), cis("uppest-stage2"), cis("uppest-job2"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage"))));
 
         assertThat(task.errors().isEmpty()).isTrue();
     }
@@ -253,9 +253,9 @@ class FetchPluggableArtifactTaskTest {
         uppestStream.getStage("uppest-stage1").jobConfigByConfigName("uppest-job1").artifactTypeConfigs()
                 .add(new PluggableArtifactConfig("s3", "cd.go.s3"));
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("uppest_stream/upstream"), new CaseInsensitiveString("uppest-stage1"), new CaseInsensitiveString("uppest-job1"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("uppest_stream/upstream"), cis("uppest-stage1"), cis("uppest-job1"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage"))));
 
         assertThat(task.errors().isEmpty()).isTrue();
     }
@@ -264,35 +264,35 @@ class FetchPluggableArtifactTaskTest {
     void should_NOT_BeValidWhenFetchArtifactIsFromAnyAncestorStage_s_successorStage_onTheUpstreamPipeline() {
         uppestStream.getStage("uppest-stage3").jobConfigByConfigName("uppest-job3").artifactTypeConfigs()
                 .add(new PluggableArtifactConfig("s3", "cd.go.s3"));
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("uppest_stream/upstream"), new CaseInsensitiveString("uppest-stage3"), new CaseInsensitiveString("uppest-job3"), "s3");
-        StageConfig stage = downstream.getStage(new CaseInsensitiveString("stage"));
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("uppest_stream/upstream"), cis("uppest-stage3"), cis("uppest-job3"), "s3");
+        StageConfig stage = downstream.getStage(cis("stage"));
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, stage, stage.getJobs().first()));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, stage, stage.getJobs().getFirst()));
 
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(FetchTask.STAGE)).isEqualTo("\"downstream :: stage :: job\" tries to fetch artifact from stage \"uppest_stream :: uppest-stage3\" which does not complete before \"downstream\" pipeline's dependencies.");
+        assertThat(task.errors().firstErrorOn(FetchTask.STAGE)).isEqualTo("\"downstream :: stage :: job\" tries to fetch artifact from stage \"uppest_stream :: uppest-stage3\" which does not complete before \"downstream\" pipeline's dependencies.");
     }
 
     @Test
     void should_NOT_BeValidWhen_pathFromAncestor_isInvalid_becauseRefferedPipelineIsNotAnAncestor() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("random_pipeline/upstream"), new CaseInsensitiveString("random-stage1"), new CaseInsensitiveString("random-job1"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("random_pipeline/upstream"), cis("random-stage1"), cis("random-job1"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage"))));
 
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(FetchTask.PIPELINE_NAME)).isEqualTo("Pipeline named 'random_pipeline' exists, but is not an ancestor of 'downstream' as declared in 'random_pipeline/upstream'.");
-        assertThat(downstream.errors().on("base")).isEqualTo("Pipeline named 'random_pipeline' exists, but is not an ancestor of 'downstream' as declared in 'random_pipeline/upstream'.");
+        assertThat(task.errors().firstErrorOn(FetchTask.PIPELINE_NAME)).isEqualTo("Pipeline named 'random_pipeline' exists, but is not an ancestor of 'downstream' as declared in 'random_pipeline/upstream'.");
+        assertThat(downstream.errors().firstErrorOn("base")).isEqualTo("Pipeline named 'random_pipeline' exists, but is not an ancestor of 'downstream' as declared in 'random_pipeline/upstream'.");
     }
 
     @Test
     void should_NOT_BeValidWhen_NO_pathFromAncestorIsGiven_butAncestorPipelineIsBeingFetchedFrom() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(null, new CaseInsensitiveString("uppest-stage3"), new CaseInsensitiveString("uppest-job3"), "s3");
-        StageConfig stage = downstream.getStage(new CaseInsensitiveString("stage"));
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(null, cis("uppest-stage3"), cis("uppest-job3"), "s3");
+        StageConfig stage = downstream.getStage(cis("stage"));
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, stage, stage.getJobs().get(0)));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, stage, stage.getJobs().getFirst()));
 
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(FetchTask.STAGE)).isEqualTo("\"downstream :: stage :: job\" tries to fetch artifact from stage \"downstream :: uppest-stage3\" which does not exist.");
+        assertThat(task.errors().firstErrorOn(FetchTask.STAGE)).isEqualTo("\"downstream :: stage :: job\" tries to fetch artifact from stage \"downstream :: uppest-stage3\" which does not exist.");
     }
 
     @Test
@@ -300,19 +300,19 @@ class FetchPluggableArtifactTaskTest {
         uppestStream.getStage("uppest-stage1").jobConfigByConfigName("uppest-job1").artifactTypeConfigs()
                 .add(new PluggableArtifactConfig("s3", "cd.go.s3"));
 
-        PipelineConfig upstreamsPeer = config.pipelineConfigByName(new CaseInsensitiveString("upstreams_peer"));
+        PipelineConfig upstreamsPeer = config.pipelineConfigByName(cis("upstreams_peer"));
         upstreamsPeer.setMaterialConfigs(new MaterialConfigs(MaterialConfigsMother.dependencyMaterialConfig("uppest_stream", "uppest-stage1")));
         upstreamsPeer.add(StageConfigMother.stageConfig("peer-stage", new JobConfigs(new JobConfig("peer-job"))));
 
-        downstream = config.pipelineConfigByName(new CaseInsensitiveString("downstream"));
+        downstream = config.pipelineConfigByName(cis("downstream"));
         downstream.setMaterialConfigs(new MaterialConfigs(MaterialConfigsMother.dependencyMaterialConfig("upstream", "up-stage1"), MaterialConfigsMother.dependencyMaterialConfig("upstreams_peer", "peer-stage")));
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("uppest_stream/upstream"), new CaseInsensitiveString("uppest-stage1"), new CaseInsensitiveString("uppest-job1"), "s3");
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage"))));
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("uppest_stream/upstream"), cis("uppest-stage1"), cis("uppest-job1"), "s3");
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage"))));
         assertThat(task.errors().isEmpty()).isTrue();
 
-        task = new FetchPluggableArtifactTask(new CaseInsensitiveString("uppest_stream/upstreams_peer"), new CaseInsensitiveString("uppest-stage1"), new CaseInsensitiveString("uppest-job1"), "s3");
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage"))));
+        task = new FetchPluggableArtifactTask(cis("uppest_stream/upstreams_peer"), cis("uppest-stage1"), cis("uppest-job1"), "s3");
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage"))));
         assertThat(task.errors().isEmpty()).isTrue();
     }
 
@@ -320,94 +320,94 @@ class FetchPluggableArtifactTaskTest {
     void should_NOT_BeValidWhen_ImmediateParentDeclaredInPathFromAncestor_isNotAParentPipeline() {
         uppestStream.getStage("uppest-stage1").jobConfigByConfigName("uppest-job1").artifactTypeConfigs()
                 .add(new PluggableArtifactConfig("s3", "cd.go.s3"));
-        PipelineConfig upstreamsPeer = config.pipelineConfigByName(new CaseInsensitiveString("upstreams_peer"));
+        PipelineConfig upstreamsPeer = config.pipelineConfigByName(cis("upstreams_peer"));
         upstreamsPeer.setMaterialConfigs(new MaterialConfigs(MaterialConfigsMother.dependencyMaterialConfig("uppest_stream", "uppest-stage1")));
         upstreamsPeer.add(StageConfigMother.stageConfig("peer-stage", new JobConfigs(new JobConfig("peer-job"))));
 
-        downstream = config.pipelineConfigByName(new CaseInsensitiveString("downstream"));
+        downstream = config.pipelineConfigByName(cis("downstream"));
         downstream.setMaterialConfigs(new MaterialConfigs(MaterialConfigsMother.dependencyMaterialConfig("upstream", "up-stage1"), MaterialConfigsMother.dependencyMaterialConfig("upstreams_peer", "peer-stage")));
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("upstream/uppest_stream"), new CaseInsensitiveString("up-stage1"), new CaseInsensitiveString("up-job1"), "s3");
-        StageConfig stage = downstream.getStage(new CaseInsensitiveString("stage"));
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, stage, stage.getJobs().get(0)));
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("upstream/uppest_stream"), cis("up-stage1"), cis("up-job1"), "s3");
+        StageConfig stage = downstream.getStage(cis("stage"));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, stage, stage.getJobs().getFirst()));
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(FetchTask.PIPELINE_NAME)).isEqualTo("Pipeline named 'uppest_stream' exists, but is not an ancestor of 'downstream' as declared in 'upstream/uppest_stream'.");
-        assertThat(downstream.errors().on("base")).isEqualTo("Pipeline named 'uppest_stream' exists, but is not an ancestor of 'downstream' as declared in 'upstream/uppest_stream'.");
+        assertThat(task.errors().firstErrorOn(FetchTask.PIPELINE_NAME)).isEqualTo("Pipeline named 'uppest_stream' exists, but is not an ancestor of 'downstream' as declared in 'upstream/uppest_stream'.");
+        assertThat(downstream.errors().firstErrorOn("base")).isEqualTo("Pipeline named 'uppest_stream' exists, but is not an ancestor of 'downstream' as declared in 'upstream/uppest_stream'.");
     }
 
     @Test
     void should_NOT_BeValidWhen_ImmediateParentDeclaredInPathFromAncestor_isNotAParentPipeline_PipelineConfigValidationContext() {
-        PipelineConfig upstreamsPeer = config.pipelineConfigByName(new CaseInsensitiveString("upstreams_peer"));
+        PipelineConfig upstreamsPeer = config.pipelineConfigByName(cis("upstreams_peer"));
         upstreamsPeer.setMaterialConfigs(new MaterialConfigs(MaterialConfigsMother.dependencyMaterialConfig("uppest_stream", "uppest-stage1")));
         upstreamsPeer.add(StageConfigMother.stageConfig("peer-stage", new JobConfigs(new JobConfig("peer-job"))));
 
-        downstream = config.pipelineConfigByName(new CaseInsensitiveString("downstream"));
+        downstream = config.pipelineConfigByName(cis("downstream"));
         downstream.setMaterialConfigs(new MaterialConfigs(MaterialConfigsMother.dependencyMaterialConfig("upstream", "up-stage1"), MaterialConfigsMother.dependencyMaterialConfig("upstreams_peer", "peer-stage")));
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("upstream/uppest_stream"), new CaseInsensitiveString("up-stage1"), new CaseInsensitiveString("up-job1"), "s3");
-        StageConfig stage = downstream.getStage(new CaseInsensitiveString("stage"));
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("upstream/uppest_stream"), cis("up-stage1"), cis("up-job1"), "s3");
+        StageConfig stage = downstream.getStage(cis("stage"));
 
-        task.validateTree(PipelineConfigSaveValidationContext.forChain(true, "group", config, downstream, stage, stage.getJobs().get(0)));
+        task.validateTree(PipelineConfigSaveValidationContext.forChain(true, "group", config, downstream, stage, stage.getJobs().getFirst()));
 
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(FetchTask.PIPELINE_NAME)).isEqualTo("Pipeline named 'uppest_stream' exists, but is not an ancestor of 'downstream' as declared in 'upstream/uppest_stream'.");
-        assertThat(downstream.errors().on("base")).isEqualTo("Pipeline named 'uppest_stream' exists, but is not an ancestor of 'downstream' as declared in 'upstream/uppest_stream'.");
+        assertThat(task.errors().firstErrorOn(FetchTask.PIPELINE_NAME)).isEqualTo("Pipeline named 'uppest_stream' exists, but is not an ancestor of 'downstream' as declared in 'upstream/uppest_stream'.");
+        assertThat(downstream.errors().firstErrorOn("base")).isEqualTo("Pipeline named 'uppest_stream' exists, but is not an ancestor of 'downstream' as declared in 'upstream/uppest_stream'.");
     }
 
     @Test
     void should_NOT_BeValidWhen_stageMayNotHaveRunViaTheGivenPath_evenThoughItMayHaveActuallyRunAccordingToAnAlternatePath() {
         uppestStream.getStage("uppest-stage1").jobConfigByConfigName("uppest-job1").artifactTypeConfigs()
                 .add(new PluggableArtifactConfig("s3", "cd.go.s3"));
-        PipelineConfig upstreamsPeer = config.pipelineConfigByName(new CaseInsensitiveString("upstreams_peer"));
+        PipelineConfig upstreamsPeer = config.pipelineConfigByName(cis("upstreams_peer"));
         upstreamsPeer.setMaterialConfigs(new MaterialConfigs(MaterialConfigsMother.dependencyMaterialConfig("uppest_stream", "uppest-stage1")));
         upstreamsPeer.add(StageConfigMother.stageConfig("peer-stage", new JobConfigs(new JobConfig("peer-job"))));
 
-        downstream = config.pipelineConfigByName(new CaseInsensitiveString("downstream"));
+        downstream = config.pipelineConfigByName(cis("downstream"));
         downstream.setMaterialConfigs(new MaterialConfigs(MaterialConfigsMother.dependencyMaterialConfig("upstream", "up-stage1"), MaterialConfigsMother.dependencyMaterialConfig("upstreams_peer", "peer-stage")));
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("uppest_stream/upstreams_peer"), new CaseInsensitiveString("uppest-stage1"), new CaseInsensitiveString("uppest-job1"), "s3");
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage")), downstream.getStage(new CaseInsensitiveString("stage")).getJobs().first()));
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("uppest_stream/upstreams_peer"), cis("uppest-stage1"), cis("uppest-job1"), "s3");
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage")), downstream.getStage(cis("stage")).getJobs().getFirst()));
 
         assertThat(task.errors().isEmpty()).isTrue();
 
-        task = new FetchPluggableArtifactTask(new CaseInsensitiveString("uppest_stream/upstreams_peer"), new CaseInsensitiveString("uppest-stage2"), new CaseInsensitiveString("uppest-job2"), "s3");
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage")), downstream.getStage(new CaseInsensitiveString("stage")).getJobs().first()));
+        task = new FetchPluggableArtifactTask(cis("uppest_stream/upstreams_peer"), cis("uppest-stage2"), cis("uppest-job2"), "s3");
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage")), downstream.getStage(cis("stage")).getJobs().getFirst()));
 
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(FetchTask.STAGE)).isEqualTo("\"downstream :: stage :: job\" tries to fetch artifact from stage \"uppest_stream :: uppest-stage2\" which does not complete before \"downstream\" pipeline's dependencies.");
+        assertThat(task.errors().firstErrorOn(FetchTask.STAGE)).isEqualTo("\"downstream :: stage :: job\" tries to fetch artifact from stage \"uppest_stream :: uppest-stage2\" which does not complete before \"downstream\" pipeline's dependencies.");
     }
 
     @Test
     void shouldFailWhenFetchArtifactIsFromAnyStage_AFTER_theDependencyStageOnTheUpstreamPipeline() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("upstream"), new CaseInsensitiveString("up-stage2"), new CaseInsensitiveString("up-job2"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("upstream"), cis("up-stage2"), cis("up-job2"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage")), downstream.getStage(new CaseInsensitiveString("stage")).getJobs().first()));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage")), downstream.getStage(cis("stage")).getJobs().getFirst()));
 
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(FetchTask.STAGE)).isEqualTo("\"downstream :: stage :: job\" tries to fetch artifact from stage \"upstream :: up-stage2\" which does not complete before \"downstream\" pipeline's dependencies.");
+        assertThat(task.errors().firstErrorOn(FetchTask.STAGE)).isEqualTo("\"downstream :: stage :: job\" tries to fetch artifact from stage \"upstream :: up-stage2\" which does not complete before \"downstream\" pipeline's dependencies.");
     }
 
     @Test
     void shouldPopulateErrorIfFetchArtifactFromDependentPipelineButStageDoesNotExist() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("upstream"), new CaseInsensitiveString("stage-does-not-exist"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("upstream"), cis("stage-does-not-exist"), cis("job"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(new CaseInsensitiveString("stage")), downstream.getStage(
-                new CaseInsensitiveString("stage")), downstream.getStage(new CaseInsensitiveString("stage")).getJobs().get(0)));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, downstream.getStage(cis("stage")), downstream.getStage(
+                cis("stage")), downstream.getStage(cis("stage")).getJobs().getFirst()));
 
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(FetchTask.STAGE)).isEqualTo("\"downstream :: stage :: job\" tries to fetch artifact from stage "
+        assertThat(task.errors().firstErrorOn(FetchTask.STAGE)).isEqualTo("\"downstream :: stage :: job\" tries to fetch artifact from stage "
                 + "\"upstream :: stage-does-not-exist\" which does not exist.");
     }
 
     @Test
     void shouldPopulateErrorIfFetchArtifactFromDependentPipelineButJobNotExist() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("upstream"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job-does-not-exist"), "s3");
-        StageConfig stage = downstream.getStage(new CaseInsensitiveString("stage"));
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("upstream"), cis("stage"), cis("job-does-not-exist"), "s3");
+        StageConfig stage = downstream.getStage(cis("stage"));
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, stage, stage.getJobs().first()));
+        task.validate(ConfigSaveValidationContext.forChain(config, new BasicPipelineConfigs(), downstream, stage, stage.getJobs().getFirst()));
 
         assertThat(task.errors().isEmpty()).isFalse();
-        assertThat(task.errors().on(FetchTask.JOB)).isEqualTo("\"downstream :: stage :: job\" tries to fetch artifact from job "
+        assertThat(task.errors().firstErrorOn(FetchTask.JOB)).isEqualTo("\"downstream :: stage :: job\" tries to fetch artifact from job "
                 + "\"upstream :: stage :: job-does-not-exist\" which does not exist.");
     }
 
@@ -416,9 +416,9 @@ class FetchPluggableArtifactTaskTest {
         upstream.getStage("up-stage1").jobConfigByConfigName("up-job1").artifactTypeConfigs()
                 .add(new PluggableArtifactConfig("s3", "cd.go.s3"));
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("upstream"), new CaseInsensitiveString("up-stage1"), new CaseInsensitiveString("up-job1"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("upstream"), cis("up-stage1"), cis("up-job1"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, downstream, downstream.getStage(new CaseInsensitiveString("stage"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, downstream, downstream.getStage(cis("stage"))));
 
         assertThat(task.errors().isEmpty()).isTrue();
     }
@@ -428,9 +428,9 @@ class FetchPluggableArtifactTaskTest {
         upstream.getStage("stage").jobConfigByConfigName("job").artifactTypeConfigs()
                 .add(new PluggableArtifactConfig("s3", "cd.go.s3"));
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("upstream"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("upstream"), cis("stage"), cis("job"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, upstream, upstream.getStage(new CaseInsensitiveString("up-stage1"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, upstream, upstream.getStage(cis("up-stage1"))));
 
         assertThat(task.errors().isEmpty()).isTrue();
     }
@@ -440,25 +440,25 @@ class FetchPluggableArtifactTaskTest {
         upstream.getStage("stage").jobConfigByConfigName("job").artifactTypeConfigs()
                 .add(new PluggableArtifactConfig("s3", "cd.go.s3"));
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("stage"), cis("job"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, upstream, upstream.getStage(new CaseInsensitiveString("up-stage1"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, upstream, upstream.getStage(cis("up-stage1"))));
 
         assertThat(task.errors().isEmpty()).isTrue();
     }
 
     @Test
     void validate_shouldSkipValidationOfPluggableArtifact_IsWithinTemplate() {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("stage"), cis("job"), "s3");
 
-        task.validate(ConfigSaveValidationContext.forChain(config, new TemplatesConfig(), upstream.getStage(new CaseInsensitiveString("up-stage1"))));
+        task.validate(ConfigSaveValidationContext.forChain(config, new TemplatesConfig(), upstream.getStage(cis("up-stage1"))));
 
         assertThat(task.errors().isEmpty()).isTrue();
     }
 
     @Test
     void encryptSecureProperties_shouldLeaveUserEnteredValuesAsIs() throws CryptoException {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("stage"), cis("job"), "s3");
 
         List<ConfigurationProperty> configurationProperties = new ArrayList<>();
         configurationProperties.add(ConfigurationPropertyMother.create("plain", false, "plain"));
@@ -472,7 +472,7 @@ class FetchPluggableArtifactTaskTest {
 
     @Test
     void encryptSecureProperties_shouldLeaveUserEnteredValuesAsIsIfPipelineIsNotInConfig() throws CryptoException {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("pipeline"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("pipeline"), cis("stage"), cis("job"), "s3");
 
         List<ConfigurationProperty> configurationProperties = new ArrayList<>();
         configurationProperties.add(ConfigurationPropertyMother.create("plain", false, "plain"));
@@ -487,7 +487,7 @@ class FetchPluggableArtifactTaskTest {
 
     @Test
     void encryptSecureProperties_shouldLeaveUserEnteredValuesAsIsIfStageDoesNotExist() throws CryptoException {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("pipeline"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("pipeline"), cis("stage"), cis("job"), "s3");
 
         List<ConfigurationProperty> configurationProperties = new ArrayList<>();
         configurationProperties.add(ConfigurationPropertyMother.create("plain", false, "plain"));
@@ -505,7 +505,7 @@ class FetchPluggableArtifactTaskTest {
 
     @Test
     void encryptSecureProperties_shouldLeaveUserEnteredValuesAsIsIfJobDoesNotExist() throws CryptoException {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("pipeline"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("pipeline"), cis("stage"), cis("job"), "s3");
 
         List<ConfigurationProperty> configurationProperties = new ArrayList<>();
         configurationProperties.add(ConfigurationPropertyMother.create("plain", false, "plain"));
@@ -523,7 +523,7 @@ class FetchPluggableArtifactTaskTest {
 
     @Test
     void encryptSecureProperties_shouldLeaveUserEnteredValuesAsIsIfArtifactDoesNotExist() throws CryptoException {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("pipeline"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("pipeline"), cis("stage"), cis("job"), "s3");
 
         List<ConfigurationProperty> configurationProperties = new ArrayList<>();
         configurationProperties.add(ConfigurationPropertyMother.create("plain", false, "plain"));
@@ -541,7 +541,7 @@ class FetchPluggableArtifactTaskTest {
 
     @Test
     void encryptSecureProperties_shouldLeaveUserEnteredValuesAsIsIfArtifactStoreIsMissing() throws CryptoException {
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("pipeline"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("pipeline"), cis("stage"), cis("job"), "s3");
 
         List<ConfigurationProperty> configurationProperties = new ArrayList<>();
         configurationProperties.add(ConfigurationPropertyMother.create("plain", false, "plain"));
@@ -562,7 +562,7 @@ class FetchPluggableArtifactTaskTest {
     @Test
     void encryptSecureProperties_shouldLeaveUserEnteredValuesAsIsIfPluginIsMissing() throws CryptoException {
         ArtifactMetadataStore.instance().remove("cd.go.s3");
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("pipeline"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("pipeline"), cis("stage"), cis("job"), "s3");
 
         List<ConfigurationProperty> configurationProperties = new ArrayList<>();
         configurationProperties.add(ConfigurationPropertyMother.create("plain", false, "plain"));
@@ -599,7 +599,7 @@ class FetchPluggableArtifactTaskTest {
         cruiseConfig.getArtifactStores().add(new ArtifactStore("aws", artifactPluginInfo.getDescriptor().id()));
 
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("pipeline"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("pipeline"), cis("stage"), cis("job"), "s3");
 
         List<ConfigurationProperty> configurationProperties = new ArrayList<>();
         configurationProperties.add(new ConfigurationProperty(new ConfigurationKey("plain"), new ConfigurationValue("plain")));
@@ -636,8 +636,8 @@ class FetchPluggableArtifactTaskTest {
         cruiseConfig.addPipelineWithoutValidation("foo", pipelineConfig);
         cruiseConfig.getArtifactStores().add(new ArtifactStore("aws", artifactPluginInfo.getDescriptor().id()));
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("#{pipeline}"), new CaseInsensitiveString("#{stage}"), new CaseInsensitiveString("#{job}"), "#{artifactId}");
-        FetchPluggableArtifactTask preprocessedTask = new FetchPluggableArtifactTask(new CaseInsensitiveString("pipeline"), new CaseInsensitiveString("stage"), new CaseInsensitiveString("job"), "s3");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("#{pipeline}"), cis("#{stage}"), cis("#{job}"), "#{artifactId}");
+        FetchPluggableArtifactTask preprocessedTask = new FetchPluggableArtifactTask(cis("pipeline"), cis("stage"), cis("job"), "s3");
 
         List<ConfigurationProperty> configurationProperties = new ArrayList<>();
         configurationProperties.add(new ConfigurationProperty(new ConfigurationKey("plain"), new ConfigurationValue("plain")));
@@ -652,7 +652,7 @@ class FetchPluggableArtifactTaskTest {
 
         task.addConfigurations(configurationProperties);
         PipelineConfig pipelineWhichHasTheFetchTask = PipelineConfigMother.createPipelineConfigWithStage("p2", "anotherStage");
-        pipelineWhichHasTheFetchTask.first().getJobs().first().addTask(task);
+        pipelineWhichHasTheFetchTask.getFirst().getJobs().getFirst().addTask(task);
         pipelineWhichHasTheFetchTask.setParams(new ParamsConfig(new ParamConfig("pipeline", "pipeline"), new ParamConfig("stage", "stage"), new ParamConfig("job", "job"), new ParamConfig("artifactId", "s3")));
         task.encryptSecureProperties(cruiseConfig, pipelineWhichHasTheFetchTask, preprocessedTask);
 
@@ -667,11 +667,11 @@ class FetchPluggableArtifactTaskTest {
         configAttrs.put(FetchPluggableArtifactTask.CONFIGURATION, Map.of("NAME", "gocd.zip"));
         configAttrs.put("pluginId", "cd.go.artifact.s3");
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("#{pipeline}"), new CaseInsensitiveString("#{stage}"), new CaseInsensitiveString("#{job}"), "#{artifactId}");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("#{pipeline}"), cis("#{stage}"), cis("#{job}"), "#{artifactId}");
         task.setFetchTaskAttributes(configAttrs);
 
-        Assertions.assertThat(task.getArtifactId()).isEqualTo("installers");
-        Assertions.assertThat(task.getConfiguration())
+        assertThat(task.getArtifactId()).isEqualTo("installers");
+        assertThat(task.getConfiguration())
                 .hasSize(1)
                 .contains(new ConfigurationProperty(new ConfigurationKey("NAME"), new ConfigurationValue("gocd.zip")));
     }
@@ -684,11 +684,11 @@ class FetchPluggableArtifactTaskTest {
             Map.of("NAME", Map.of("value", new GoCipher().encrypt("gocd.zip"), "isSecure", "true"))
         );
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("#{pipeline}"), new CaseInsensitiveString("#{stage}"), new CaseInsensitiveString("#{job}"), "#{artifactId}");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("#{pipeline}"), cis("#{stage}"), cis("#{job}"), "#{artifactId}");
         task.setFetchTaskAttributes(configAttrs);
 
-        Assertions.assertThat(task.getArtifactId()).isEqualTo("installers");
-        Assertions.assertThat(task.getConfiguration())
+        assertThat(task.getArtifactId()).isEqualTo("installers");
+        assertThat(task.getConfiguration())
                 .hasSize(1)
                 .contains(new ConfigurationProperty(new ConfigurationKey("NAME"), new EncryptedConfigurationValue(new GoCipher().encrypt("gocd.zip"))));
     }
@@ -699,10 +699,10 @@ class FetchPluggableArtifactTaskTest {
         configAttrs.put(FetchPluggableArtifactTask.ARTIFACT_ID, "");
         configAttrs.put(FetchPluggableArtifactTask.CONFIGURATION, Map.of("NAME", "gocd.zip"));
 
-        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(new CaseInsensitiveString("#{pipeline}"), new CaseInsensitiveString("#{stage}"), new CaseInsensitiveString("#{job}"), "#{artifactId}");
+        FetchPluggableArtifactTask task = new FetchPluggableArtifactTask(cis("#{pipeline}"), cis("#{stage}"), cis("#{job}"), "#{artifactId}");
         task.setFetchTaskAttributes(configAttrs);
 
-        Assertions.assertThat(task.getArtifactId()).isEmpty();
-        Assertions.assertThat(task.getConfiguration()).isEmpty();
+        assertThat(task.getArtifactId()).isEmpty();
+        assertThat(task.getConfiguration()).isEmpty();
     }
 }

@@ -19,13 +19,14 @@ package com.thoughtworks.go.apiv1.internalscms;
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.apiv1.internalscms.representers.SCMRepresenter;
 import com.thoughtworks.go.apiv1.internalscms.representers.VerifyConnectionResultRepresenter;
 import com.thoughtworks.go.domain.scm.SCM;
 import com.thoughtworks.go.server.service.materials.PluggableScmService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,14 +41,14 @@ import static spark.Spark.*;
 @Component
 public class InternalSCMsControllerV1 extends ApiController implements SparkSpringController {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private PluggableScmService pluggableScmService;
 
     @Autowired
-    public InternalSCMsControllerV1(ApiAuthenticationHelper apiAuthenticationHelper,
+    public InternalSCMsControllerV1(ApiAuthorizationHelper apiAuthorizationHelper,
                                     PluggableScmService pluggableScmService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.pluggableScmService = pluggableScmService;
     }
 
@@ -57,10 +58,10 @@ public class InternalSCMsControllerV1 extends ApiController implements SparkSpri
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before(Routes.SCM.VERIFY_CONNECTION, mimeType, this::setContentType);
-            before(Routes.SCM.VERIFY_CONNECTION, mimeType, this.apiAuthenticationHelper::checkAdminUserOrGroupAdminUserAnd403);
+            before(Routes.SCM.VERIFY_CONNECTION, mimeType, this.apiAuthorizationHelper::checkAnyPipelineGroupAdminUserAnd403);
 
             post(Routes.SCM.VERIFY_CONNECTION, mimeType, this::verifyConnection);
         });
