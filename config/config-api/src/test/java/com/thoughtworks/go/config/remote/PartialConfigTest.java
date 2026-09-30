@@ -25,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.dependencyMaterialConfig;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -50,7 +51,7 @@ class PartialConfigTest {
 
         assertTrue(partial.hasErrors());
         assertEquals(1, partial.errors().size());
-        assertEquals("Not allowed to refer to pipeline group 'first'. Check the 'Rules' of this config repository.", partial.errors().on("pipeline_group"));
+        assertEquals("Not allowed to refer to pipeline group 'first'. Check the 'Rules' of this config repository.", partial.errors().firstErrorOn("pipeline_group"));
     }
 
     @Test
@@ -67,7 +68,7 @@ class PartialConfigTest {
 
         assertTrue(partial.hasErrors());
         assertEquals(1, partial.errors().size());
-        assertEquals("Not allowed to refer to pipeline group 'first'. Check the 'Rules' of this config repository.", partial.errors().on("pipeline_group"));
+        assertEquals("Not allowed to refer to pipeline group 'first'. Check the 'Rules' of this config repository.", partial.errors().firstErrorOn("pipeline_group"));
     }
 
     @Test
@@ -75,8 +76,8 @@ class PartialConfigTest {
         configRepo.getRules().add(new Allow("refer", "environment", "prod"));
 
         EnvironmentsConfig allEnvs = new EnvironmentsConfig();
-        CaseInsensitiveString prodEnv = new CaseInsensitiveString("prod");
-        CaseInsensitiveString uatEnv = new CaseInsensitiveString("uat");
+        CaseInsensitiveString prodEnv = cis("prod");
+        CaseInsensitiveString uatEnv = cis("uat");
         allEnvs.add(new BasicEnvironmentConfig(uatEnv));
         allEnvs.add(new BasicEnvironmentConfig(prodEnv));
         partial.setEnvironments(allEnvs);
@@ -87,7 +88,7 @@ class PartialConfigTest {
         assertTrue(partial.hasErrors());
         assertEquals(1, partial.errors().size());
 
-        assertEquals("Not allowed to refer to environment 'uat'. Check the 'Rules' of this config repository.", partial.errors().on("environment"));
+        assertEquals("Not allowed to refer to environment 'uat'. Check the 'Rules' of this config repository.", partial.errors().firstErrorOn("environment"));
     }
 
     @Test
@@ -104,7 +105,7 @@ class PartialConfigTest {
 
         assertTrue(partial.hasErrors());
         assertEquals(1, partial.errors().size());
-        assertEquals("Not allowed to refer to pipeline 'deploy'. Check the 'Rules' of this config repository.", partial.errors().on("pipeline"));
+        assertEquals("Not allowed to refer to pipeline 'deploy'. Check the 'Rules' of this config repository.", partial.errors().firstErrorOn("pipeline"));
     }
 
     @Test

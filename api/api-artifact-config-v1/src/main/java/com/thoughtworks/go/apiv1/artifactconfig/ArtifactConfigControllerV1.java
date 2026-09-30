@@ -20,7 +20,7 @@ import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.CrudController;
 import com.thoughtworks.go.api.base.OutputWriter;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.api.util.MessageJson;
 import com.thoughtworks.go.apiv1.artifactconfig.represernter.ArtifactConfigRepresenter;
@@ -30,10 +30,11 @@ import com.thoughtworks.go.config.exceptions.EntityType;
 import com.thoughtworks.go.config.exceptions.GoConfigInvalidException;
 import com.thoughtworks.go.server.service.EntityHashingService;
 import com.thoughtworks.go.server.service.ServerConfigService;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
-import org.apache.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import spark.Request;
 import spark.Response;
@@ -48,14 +49,14 @@ import static spark.Spark.*;
 @Component
 public class ArtifactConfigControllerV1 extends ApiController implements SparkSpringController, CrudController<ArtifactConfig> {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private ServerConfigService serverConfigService;
     private EntityHashingService entityHashingService;
 
     @Autowired
-    public ArtifactConfigControllerV1(ApiAuthenticationHelper apiAuthenticationHelper, EntityHashingService entityHashingService, ServerConfigService serverConfigService) {
+    public ArtifactConfigControllerV1(ApiAuthorizationHelper apiAuthorizationHelper, EntityHashingService entityHashingService, ServerConfigService serverConfigService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.serverConfigService = serverConfigService;
         this.entityHashingService = entityHashingService;
     }
@@ -66,11 +67,11 @@ public class ArtifactConfigControllerV1 extends ApiController implements SparkSp
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
-            before("", mimeType, this.apiAuthenticationHelper::checkAdminUserAnd403);
+            before("", mimeType, this.apiAuthorizationHelper::checkAdminUserAnd403);
 
             get("", mimeType, this::show);
             put("", mimeType, this::update);
@@ -87,7 +88,7 @@ public class ArtifactConfigControllerV1 extends ApiController implements SparkSp
         try {
             serverConfigService.updateArtifactConfig(modifiedArtifactConfig);
         } catch (GoConfigInvalidException e) {
-            response.status(HttpStatus.SC_UNPROCESSABLE_ENTITY);
+            response.status(HttpStatus.UNPROCESSABLE_ENTITY.value());
             String errorMessage = entityConfigValidationFailed(modifiedArtifactConfig.getClass().getAnnotation(ConfigTag.class).value(), e.getAllErrorMessages());
             return MessageJson.create(errorMessage, jsonWriter(modifiedArtifactConfig));
         }
@@ -102,6 +103,7 @@ public class ArtifactConfigControllerV1 extends ApiController implements SparkSp
     }
 
 
+    @Override
     public Consumer<OutputWriter> jsonWriter(ArtifactConfig artifactConfig) {
         return outputWriter -> ArtifactConfigRepresenter.toJSON(outputWriter, artifactConfig);
     }

@@ -23,38 +23,33 @@ configurations {
 }
 
 dependencies {
-  implementation project(path: ':server', configuration: 'runtimeElements')
-  implementation project(':api').subprojects.collect { project(path: it.path, configuration: 'runtimeElements') }
-  implementation project(':spark').subprojects.collect { project(path: it.path, configuration: 'runtimeElements') }
-  implementation project.deps.jetty
-  implementation project.deps.jettyJmx
-  implementation project.deps.jettyServlets
-  implementation project.deps.jettyUtil
-  implementation project.deps.jettyDeploy
-  implementation(project.deps.jettyWebsocket) {
-    exclude(module: 'jetty-annotations')
-  }
+  testFixturesImplementation project(':server')
+  testFixturesImplementation project(':base')
+  testFixturesRuntimeOnly findProject(':api').subprojects.collect { project(it.path) }
+  testFixturesRuntimeOnly findProject(':spark').subprojects.collect { project(it.path) }
+  testFixturesRuntimeOnly rootProject.deps.jetty
+  testFixturesRuntimeOnly rootProject.deps.jettyJmx
+  testFixturesRuntimeOnly rootProject.deps.jettyServlets
+  testFixturesRuntimeOnly rootProject.deps.jettyUtil
+  testFixturesRuntimeOnly rootProject.deps.jettyDeploy
+  testFixturesRuntimeOnly rootProject.deps.jettyWebsocket
 
-  implementation(project.deps.jgitServer) {
+  testFixturesRuntimeOnly(rootProject.deps.jgitServer) {
     exclude(module: 'jsch')
     exclude(module: 'jzlib')
   }
-  implementation project(path: ':jetty', configuration: 'runtimeElements')
-  implementation project.deps.servletApi
-  implementation project.deps.jruby
-  implementation project.deps.rack
-  implementation project.deps.bouncyCastle
-  implementation project.deps.slf4jApi
-  runtimeOnly project.deps.logback
+  testFixturesRuntimeOnly project(':jetty')
+  testFixturesImplementation rootProject.deps.servletApi
+  testFixturesImplementation rootProject.deps.slf4jApi
 
   copyOnly project(path: ':tw-go-plugins', configuration: 'pluginsZipConfig')
-  copyOnly project(path: ':plugin-infra:go-plugin-activator', configuration: 'runtimeElements')
+  copyOnly project(':plugin-infra:go-plugin-activator')
 }
 
 def generatedResourcesOutput = file("resources-generated")
 
 sourceSets {
-  main {
+  testFixtures {
     resources {
       output.dir generatedResourcesOutput, builtBy: 'generateResources'
       srcDirs += generatedResourcesOutput
@@ -66,19 +61,18 @@ clean {
   delete(generatedResourcesOutput)
 }
 
-task generateResources(type: Copy) {
+tasks.register('generateResources', Copy) {
+  dependsOn configurations.copyOnly
   outputs.dir(generatedResourcesOutput)
 
   into generatedResourcesOutput
-  from(project.configurations.copyOnly) {
+  from({ configurations.copyOnly }) {
     rename "(.*)-${project.version}.(jar|zip)", '$1.$2'
   }
 }
+checkLicenseTestFixtures.dependsOn generateResources
+processTestFixturesResources.dependsOn generateResources
 
-processResources {
-  dependsOn generateResources
-}
-
-task prepare {
+tasks.register('prepare') {
   dependsOn generateResources
 }

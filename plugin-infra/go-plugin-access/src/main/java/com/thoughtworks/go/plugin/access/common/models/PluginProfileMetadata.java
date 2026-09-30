@@ -48,16 +48,17 @@ public class PluginProfileMetadata {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof PluginProfileMetadata that)) return false;
-
-        if (required != that.required) return false;
-        return secure == that.secure;
+        if (this == o) {
+            return true;
+        }
+        return o instanceof PluginProfileMetadata that &&
+            required == that.required &&
+            secure == that.secure;
     }
 
     @Override
     public int hashCode() {
-        int result = (required ? 1 : 0);
+        int result = required ? 1 : 0;
         result = 31 * result + (secure ? 1 : 0);
         return result;
     }

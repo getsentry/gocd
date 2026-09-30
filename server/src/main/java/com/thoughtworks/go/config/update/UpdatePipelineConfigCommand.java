@@ -35,7 +35,8 @@ public class UpdatePipelineConfigCommand extends PipelineConfigCommand {
     private final Username currentUser;
     private final String digest;
     private final LocalizedOperationResult result;
-    public String existingGroupName;
+
+    private String existingGroupName;
 
     public UpdatePipelineConfigCommand(GoConfigService goConfigService, EntityHashingService entityHashingService, PipelineConfig pipelineConfig, String newGroupName,
                                        Username currentUser, String digest, LocalizedOperationResult result, ExternalArtifactsService externalArtifactsService) {
@@ -83,11 +84,12 @@ public class UpdatePipelineConfigCommand extends PipelineConfigCommand {
     }
 
     private boolean canAccessGroups() {
-        if (!existingGroupName.equalsIgnoreCase(newGroupName) && goConfigService.groups().hasGroup(newGroupName)) {
-            if (!goConfigService.isUserAdminOfGroup(currentUser.getUsername(), newGroupName)) {
-                result.forbidden(EntityType.PipelineGroup.forbiddenToEdit(newGroupName, currentUser.getUsername()), forbidden());
-                return false;
-            }
+        if (!existingGroupName.equalsIgnoreCase(newGroupName)
+            && goConfigService.groups().hasGroup(newGroupName)
+            && !goConfigService.isUserAdminOfGroup(currentUser.getUsername(), newGroupName)) {
+
+            result.forbidden(EntityType.PipelineGroup.forbiddenToEdit(newGroupName, currentUser.getUsername()), forbidden());
+            return false;
         }
 
         return true;

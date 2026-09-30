@@ -10,6 +10,7 @@ This is the main repository for [GoCD](https://gocd.org) - a continuous delivery
 
 - To quickly build your first pipeline while learning key GoCD concepts, visit our [Test Drive GoCD](https://www.gocd.org/test-drive-gocd.html).
 - To download GoCD, visit the [downloads page](https://www.gocd.org/download/).
+- For more detailed user help, [read our docs](https://docs.gocd.org).
 
 ## Security
 
@@ -27,6 +28,14 @@ Here is the guide to [setup your development environment](https://developer.gocd
 
 We'd love it if you contributed to GoCD. For information on contributing to this project, please see our [contributor's guide](https://gocd.org/contribute).
 A lot of useful information like links to user documentation, design documentation, mailing lists etc. can be found in the [resources](https://gocd.org/community/resources.html) section.
+
+## Powered By
+
+These organisations kindly provide resources that support the development of GoCD.
+
+<a href="https://www.thoughtworks.com/insights/topic/open-source"><img src="https://www.thoughtworks.com/etc.clientlibs/thoughtworks/clientlibs/clientlib-site/resources/images/thoughtworks-logo.svg" alt="Thoughtworks logo." height="45" margin="25"/></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<a href="https://jb.gg/OpenSource"><img src="https://resources.jetbrains.com/storage/products/company/brand/logos/jetbrains.svg" alt="JetBrains logo. Copyright © JetBrains s.r.o. JetBrains and the JetBrains logo are trwademarks of JetBrains s.r.o." height="50"/></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<a href="https://www.tanukisoftware.com/en/products"><img src="https://www.tanukisoftware.com/common/images/tanukiLogoLight.png" alt="Tanuki Software logo" height="45" margin="25"/></a>
 
 ## License
 

@@ -15,7 +15,7 @@
  */
 package com.thoughtworks.go.server.transaction;
 
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import org.springframework.transaction.TransactionStatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,7 +41,7 @@ class TransactionCacheAssertionUtil {
             }
         });
 
-        assertThat((Object) goCache.get("loser")).isEqualTo("boozer");
+        assertThat(goCache.<Object>get("loser")).isEqualTo("boozer");
         assertThat(cachedValueBeforeAndAfter[0]).isEqualTo("boozer");
         return cachedValueBeforeAndAfter[1];
     }

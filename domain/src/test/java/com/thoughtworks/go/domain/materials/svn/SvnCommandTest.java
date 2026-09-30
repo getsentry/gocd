@@ -143,7 +143,7 @@ public class SvnCommandTest {
         subversion = new SvnCommand(null, testRepo.end2endRepositoryUrl() + "/unit-reports", "user", "pass", false);
         List<Modification> list = subversion.modificationsSince(new SubversionRevision(0));
 
-        Modification modification = list.get(0);
+        Modification modification = list.getFirst();
         assertThat(modification.getModifiedFiles().size()).isEqualTo(3);
         for (ModifiedFile file : modification.getModifiedFiles()) {
             assertThat(file.getFileName().startsWith("/unit-reports")).isTrue();
@@ -156,7 +156,7 @@ public class SvnCommandTest {
         subversion = new SvnCommand(null, testRepo.end2endRepositoryUrl(), "user", "pass", false);
         List<Modification> list = subversion.modificationsSince(new SubversionRevision(0));
 
-        Modification modification = list.get(list.size() - 1);
+        Modification modification = list.getLast();
         assertThat(modification.getModifiedFiles().size()).isEqualTo(7);
     }
 
@@ -188,7 +188,7 @@ public class SvnCommandTest {
     void shouldGetLatestModificationFromSubversion() {
         final List<Modification> materialRevisions = subversion.latestModification();
         assertThat(materialRevisions.size()).isEqualTo(1);
-        final Modification modification = materialRevisions.get(0);
+        final Modification modification = materialRevisions.getFirst();
         assertThat(modification.getComment()).isEqualTo("Added simple build shell to dump the environment to console.");
         assertThat(modification.getModifiedFiles().size()).isEqualTo(1);
     }
@@ -435,9 +435,9 @@ public class SvnCommandTest {
         String filename = "司徒空在此.scn";
         testRepo.checkInOneFile(filename, message);
 
-        Modification modification = subversion.latestModification().get(0);
+        Modification modification = subversion.latestModification().getFirst();
         assertThat(modification.getComment()).isEqualTo(message);
-        assertThat(modification.getModifiedFiles().get(0).getFileName()).contains(filename);
+        assertThat(modification.getModifiedFiles().getFirst().getFileName()).contains(filename);
     }
 
     @Test
@@ -499,10 +499,10 @@ public class SvnCommandTest {
         svnMaterials.add(svnMaterial);
         final SvnCommand spy = spy(subversion);
         doAnswer(invocation -> {
-            final CommandLine commandLine = (CommandLine) invocation.getArguments()[0];
+            final CommandLine commandLine = invocation.getArgument(0);
             assertThat(commandLine.toString()).contains("svn info --xml --username user --password ****** http://localhost/svn/project1");
             return consoleResult;
-        }).when(spy).executeCommand(any(CommandLine.class));
+        }).when(spy).executeCommand(any());
         final Map<String, String> urlToRemoteUUIDMap = spy.createUrlToRemoteUUIDMap(svnMaterials);
         assertThat(urlToRemoteUUIDMap.size()).isEqualTo(1);
         assertThat(urlToRemoteUUIDMap.get("http://localhost/svn/project1")).isEqualTo("b51fe673-20c0-4205-a07b-5deb54bb09f3");
@@ -521,13 +521,13 @@ public class SvnCommandTest {
         doAnswer(invocation -> {
             final ConsoleResult consoleResult = mock(ConsoleResult.class);
             when(consoleResult.outputAsString()).thenReturn(svnInfoOutput);
-            final CommandLine commandLine = (CommandLine) invocation.getArguments()[0];
+            final CommandLine commandLine = invocation.getArgument(0);
             if (commandLine.toString().contains("http://localhost/svn/project1")) {
                 return consoleResult;
             } else {
                 throw new RuntimeException("Some thing crapped out");
             }
-        }).when(spy).executeCommand(any(CommandLine.class));
+        }).when(spy).executeCommand(any());
 
         Map<String, String> urlToRemoteUUIDMap = null;
         try {
@@ -538,7 +538,7 @@ public class SvnCommandTest {
 
         assertThat(urlToRemoteUUIDMap.size()).isEqualTo(1);
         assertThat(urlToRemoteUUIDMap.get("http://localhost/svn/project1")).isEqualTo("b51fe673-20c0-4205-a07b-5deb54bb09f3");
-        verify(spy, times(2)).executeCommand(any(CommandLine.class));
+        verify(spy, times(2)).executeCommand(any());
     }
 
     @Test
@@ -559,7 +559,7 @@ public class SvnCommandTest {
             public Object answer(InvocationOnMock invocation) {
                 final ConsoleResult consoleResult = mock(ConsoleResult.class);
                 when(consoleResult.outputAsString()).thenReturn(svnInfoOutput);
-                verifyCommandLine((CommandLine) invocation.getArguments()[0]);
+                verifyCommandLine(invocation.getArgument(0));
                 return consoleResult;
             }
 
@@ -577,7 +577,7 @@ public class SvnCommandTest {
                     assertThat(commandString).doesNotContainPattern("password");
                 }
             }
-        }).when(spy).executeCommand(any(CommandLine.class));
+        }).when(spy).executeCommand(any());
 
         spy.createUrlToRemoteUUIDMap(svnMaterials);
 

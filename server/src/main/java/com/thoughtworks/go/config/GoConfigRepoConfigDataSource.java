@@ -36,10 +36,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static java.util.Collections.synchronizedSet;
 
@@ -53,9 +53,8 @@ public class GoConfigRepoConfigDataSource implements ChangedRepoConfigWatchListL
     private final GoConfigPluginService configPluginService;
     private final GoConfigWatchList configWatchList;
     private final ConfigReposMaterialParseResultManager configReposMaterialParseResultManager;
-    private final GoConfigService goConfigService;
 
-    private final List<PartialConfigUpdateCompletedListener> listeners = new ArrayList<>();
+    private final List<PartialConfigUpdateCompletedListener> listeners = new CopyOnWriteArrayList<>();
     private final Set<ConfigRepoConfig> modifiedConfigRepoConfigsAwaitingParse = synchronizedSet(new HashSet<>());
 
     @Autowired
@@ -66,16 +65,15 @@ public class GoConfigRepoConfigDataSource implements ChangedRepoConfigWatchListL
         this.configPluginService = configPluginService;
         this.serverHealthService = healthService;
         this.configWatchList = configWatchList;
-        this.goConfigService = goConfigService;
 
         this.configWatchList.registerListener(this);
-        this.goConfigService.register(new EntityConfigChangedListener<ConfigRepoConfig>() {
+        goConfigService.register(new EntityConfigChangedListener<ConfigRepoConfig>() {
             @Override
             public void onEntityConfigChange(ConfigRepoConfig entity) {
                 onConfigRepoConfigChange(entity);
             }
         });
-        configReposMaterialParseResultManager.attachConfigUpdateListeners(this.goConfigService);
+        configReposMaterialParseResultManager.attachConfigUpdateListeners(goConfigService);
     }
 
     public boolean hasListener(PartialConfigUpdateCompletedListener listener) {
@@ -89,8 +87,9 @@ public class GoConfigRepoConfigDataSource implements ChangedRepoConfigWatchListL
     @TestOnly
     public boolean latestParseHasFailedForMaterial(MaterialConfig material) {
         PartialConfigParseResult result = getLastParseResult(material);
-        if (result == null)
+        if (result == null) {
             return false;
+        }
         return !result.isSuccessful();
     }
 
@@ -100,10 +99,12 @@ public class GoConfigRepoConfigDataSource implements ChangedRepoConfigWatchListL
 
     public PartialConfig latestPartialConfigForMaterial(MaterialConfig material) throws Exception {
         PartialConfigParseResult result = getLastParseResult(material);
-        if (result == null)
+        if (result == null) {
             return null;
-        if (!result.isSuccessful())
+        }
+        if (!result.isSuccessful()) {
             throw result.getLastFailure();
+        }
 
         return result.lastGoodPartialConfig();
     }
@@ -215,13 +216,14 @@ public class GoConfigRepoConfigDataSource implements ChangedRepoConfigWatchListL
 
     public String getRevisionAtLastAttempt(MaterialConfig material) {
         PartialConfigParseResult result = getLastParseResult(material);
-        if (result == null || result.getLatestParsedModification() == null)
+        if (result == null || result.getLatestParsedModification() == null) {
             return null;
+        }
 
         return result.getLatestParsedModification().getRevision();
     }
 
-    private class LoadContext implements PartialConfigLoadContext {
+    private static class LoadContext implements PartialConfigLoadContext {
         private final ConfigRepoConfig repoConfig;
 
         public LoadContext(ConfigRepoConfig repoConfig) {

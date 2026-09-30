@@ -42,9 +42,10 @@ import java.util.List;
 
 public class TfsSDKCommand extends AbstractTfsCommand {
 
+    private final SystemEnvironment systemEnvironment;
+
     private GoTfsVersionControlClient client;
     private TFSTeamProjectCollection collection;
-    private SystemEnvironment systemEnvironment;
 
     public TfsSDKCommand(String materialFingerprint, CommandArgument url, String domain, String userName, String password, String workspace, String projectPath) {
         super(materialFingerprint, url, domain, userName, password, workspace, projectPath);
@@ -87,7 +88,7 @@ public class TfsSDKCommand extends AbstractTfsCommand {
     protected void retrieveFiles(File workDir, Revision revision) {
         LOGGER.debug("[TFS SDK] Getting Files for TFS workspace {} for user {} ", getWorkspace(), getUserName());
         GoTfsWorkspace workspace = client.queryWorkspace(getWorkspace(), getUserName());
-        ItemSpec spec = new ItemSpec(FileUtil.getCanonicalPath(workDir), RecursionType.FULL);
+        ItemSpec spec = new ItemSpec(getCanonicalPath(workDir), RecursionType.FULL);
         VersionSpec versionSpec = getVersionSpec(revision);
         GetRequest request = new GetRequest(spec, versionSpec);
         if (FileUtil.isFolderEmpty(workDir)) {
@@ -160,10 +161,10 @@ public class TfsSDKCommand extends AbstractTfsCommand {
 
     private void mapWorkingDirectory(GoTfsWorkspace workspace, File workDir) {
         LOGGER.debug("[TFS SDK] Mapping Folder: {}, Workspace: {}, Username: {}", workDir, getWorkspace(), getUserName());
-        if (!workspace.isLocalPathMapped(FileUtil.getCanonicalPath(workDir))) {
+        if (!workspace.isLocalPathMapped(getCanonicalPath(workDir))) {
             WorkingFolder workingFolder = new WorkingFolder(
                     getProjectPath(),
-                    FileUtil.getCanonicalPath(workDir));
+                    getCanonicalPath(workDir));
             workspace.createWorkingFolder(workingFolder);
         }
     }
@@ -190,23 +191,31 @@ public class TfsSDKCommand extends AbstractTfsCommand {
     }
 
     private void closeCollection() {
-        try {
-            if (collection != null) {
+        if (collection != null) {
+            try {
                 collection.close();
-                collection = null;
+            } catch (Exception ignore) {
             }
-        } catch (Exception e) {
+            collection = null;
         }
     }
 
     private void closeClient() {
-        try {
-            if (client != null) {
+        if (client != null) {
+            try {
                 client.close();
-                client = null;
+            } catch (Exception ignore) {
             }
-        } catch (Exception e) {
+            client = null;
+        }
 
+    }
+
+    private static String getCanonicalPath(File workDir) {
+        try {
+            return workDir.getCanonicalPath();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 }

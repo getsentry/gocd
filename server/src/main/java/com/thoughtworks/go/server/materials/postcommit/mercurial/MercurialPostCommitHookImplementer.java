@@ -19,11 +19,12 @@ import com.thoughtworks.go.config.materials.mercurial.HgMaterial;
 import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.server.materials.postcommit.PostCommitHookImplementer;
 import com.thoughtworks.go.server.materials.postcommit.UrlMatchers;
-import org.apache.commons.lang3.StringUtils;
 
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 public class MercurialPostCommitHookImplementer implements PostCommitHookImplementer {
 
@@ -32,20 +33,18 @@ public class MercurialPostCommitHookImplementer implements PostCommitHookImpleme
 
     @Override
     public Set<Material> prune(Set<Material> materials, Map<String, String> params) {
-        HashSet<Material> prunedCollection = new HashSet<>();
+        Set<Material> prunedCollection = new HashSet<>();
         if (params.containsKey(REPO_URL_PARAM_KEY)) {
             String paramRepoUrl = params.get(REPO_URL_PARAM_KEY);
-            if (StringUtils.isNotBlank(paramRepoUrl)) {
+            if (isNotBlank(paramRepoUrl)) {
                 for (Material material : materials) {
-                    if (material instanceof HgMaterial && isUrlEqual(paramRepoUrl, (HgMaterial) material)) {
+                    if (material instanceof HgMaterial hgMaterial && isUrlEqual(paramRepoUrl, hgMaterial)) {
                         prunedCollection.add(material);
                     }
                 }
             }
-            return prunedCollection;
-        } else {
-            return prunedCollection;
         }
+        return prunedCollection;
     }
 
     boolean isUrlEqual(String paramRepoUrl, HgMaterial material) {

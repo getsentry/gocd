@@ -15,10 +15,10 @@
  */
 package com.thoughtworks.go.config.update;
 
-import com.thoughtworks.go.config.BasicCruiseConfig;
 import com.thoughtworks.go.config.CruiseConfig;
 import com.thoughtworks.go.config.PipelineConfig;
 import com.thoughtworks.go.config.PipelineConfigs;
+import com.thoughtworks.go.config.Validatable;
 import com.thoughtworks.go.config.commands.EntityConfigUpdateCommand;
 import com.thoughtworks.go.config.exceptions.EntityType;
 import com.thoughtworks.go.domain.packagerepository.PackageRepositories;
@@ -38,9 +38,9 @@ import static com.thoughtworks.go.serverhealth.HealthStateType.forbidden;
 public class DeletePackageRepositoryCommand implements EntityConfigUpdateCommand<PackageRepository> {
     private final GoConfigService goConfigService;
     private final PackageRepository repository;
-    private PackageRepository existingPackageRepository;
     private final Username username;
     private final HttpLocalizedOperationResult result;
+    private PackageRepository existingPackageRepository;
 
     public DeletePackageRepositoryCommand(GoConfigService goConfigService, PackageRepository repository, Username username, HttpLocalizedOperationResult result) {
         this.goConfigService = goConfigService;
@@ -51,7 +51,7 @@ public class DeletePackageRepositoryCommand implements EntityConfigUpdateCommand
 
     @Override
     public void update(CruiseConfig modifiedConfig) {
-        existingPackageRepository = modifiedConfig.getPackageRepositories().find(repository.getRepoId());
+        existingPackageRepository = modifiedConfig.getPackageRepositories().findByRepoIdOrBomb(repository.getId());
         PackageRepositories packageRepositories = modifiedConfig.getPackageRepositories();
         packageRepositories.removePackageRepository(this.repository.getId());
         modifiedConfig.setPackageRepositories(packageRepositories);
@@ -81,7 +81,7 @@ public class DeletePackageRepositoryCommand implements EntityConfigUpdateCommand
 
     @Override
     public void clearErrors() {
-        BasicCruiseConfig.clearErrors(this.repository);
+        Validatable.clearErrors(this.repository);
     }
 
     @Override

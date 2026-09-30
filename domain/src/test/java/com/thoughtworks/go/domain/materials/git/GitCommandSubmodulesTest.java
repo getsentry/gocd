@@ -20,8 +20,8 @@ import com.thoughtworks.go.config.materials.git.GitMaterialConfig;
 import com.thoughtworks.go.domain.materials.Modification;
 import com.thoughtworks.go.domain.materials.mercurial.StringRevision;
 import com.thoughtworks.go.helper.GitRepoContainingSubmodule;
-import com.thoughtworks.go.mail.SysOutStreamConsumer;
-import com.thoughtworks.go.util.FileUtil;
+import com.thoughtworks.go.helper.TestRepo;
+import com.thoughtworks.go.util.SysOutStreamConsumer;
 import com.thoughtworks.go.util.command.ConsoleResult;
 import com.thoughtworks.go.util.command.InMemoryStreamConsumer;
 import org.apache.commons.io.FileUtils;
@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -74,7 +75,7 @@ public class GitCommandSubmodulesTest extends GitCommandIntegrationTestBase {
             .getMessage();
 
         final String expectedError = format("[Cc]lone of '%s' into submodule path '((.*)[\\/])?sub1' failed",
-            quote(FileUtil.toFileURI(submoduleFolder.getAbsolutePath()) + "/"));
+            quote(TestRepo.toFileURI(submoduleFolder.getAbsolutePath()) + "/"));
         assertTrue(compile(expectedError).matcher(message).find());
     }
 
@@ -89,7 +90,7 @@ public class GitCommandSubmodulesTest extends GitCommandIntegrationTestBase {
         gitWithSubmodule.updateSubmoduleWithInit(outputStreamConsumer, false);
         List<String> folders = gitWithSubmodule.submoduleFolders();
         assertEquals(1, folders.size());
-        assertEquals("sub1", folders.get(0));
+        assertEquals("sub1", folders.getFirst());
     }
 
     @Test
@@ -121,7 +122,7 @@ public class GitCommandSubmodulesTest extends GitCommandIntegrationTestBase {
         gitWithSubmodule.updateSubmoduleWithInit(outputStreamConsumer, false);
         List<String> folders = gitWithSubmodule.submoduleFolders();
         assertEquals(1, folders.size());
-        assertEquals("sub1", folders.get(0));
+        assertEquals("sub1", folders.getFirst());
     }
 
     @Test
@@ -137,7 +138,7 @@ public class GitCommandSubmodulesTest extends GitCommandIntegrationTestBase {
         Map<String, String> urls = gitWithSubmodule.submoduleUrls();
         assertEquals(1, urls.size());
         assertTrue(urls.containsKey("sub1"));
-        assertEquals(FileUtil.toFileURI(submodule), urls.get("sub1"));
+        assertEquals(TestRepo.toFileURI(submodule), urls.get("sub1"));
     }
 
     @Test
@@ -157,7 +158,7 @@ public class GitCommandSubmodulesTest extends GitCommandIntegrationTestBase {
         clonedCopy.clone(outputStreamConsumer, submoduleRepos.mainRepo().urlForCommandLine()); // Clone repository without submodules
         clonedCopy.resetWorkingDir(outputStreamConsumer, new StringRevision("HEAD"), false);  // Pull submodules to working copy - Pipeline counter 1
         File unversionedFile = new File(new File(cloneDirectory, submoduleDirectoryName), "unversioned_file.txt");
-        FileUtils.writeStringToFile(unversionedFile, "this is an unversioned file. lets see you deleting me.. come on.. I dare you!!!!", UTF_8);
+        Files.writeString(unversionedFile.toPath(), "this is an unversioned file. lets see you deleting me.. come on.. I dare you!!!!", UTF_8);
 
         clonedCopy.resetWorkingDir(outputStreamConsumer, new StringRevision("HEAD"), false); // Should clean unversioned file on next fetch - Pipeline counter 2
 
@@ -179,8 +180,8 @@ public class GitCommandSubmodulesTest extends GitCommandIntegrationTestBase {
         clonedCopy.resetWorkingDir(outputStreamConsumer, new StringRevision("HEAD"), false);
 
         /* Simulate a local modification of file inside submodule, on agent side. */
-        File fileInSubmodule = allFilesIn(new File(cloneDirectory, submoduleDirectoryName)).get(0);
-        FileUtils.writeStringToFile(fileInSubmodule, "Some other new content.", UTF_8);
+        File fileInSubmodule = allFilesIn(new File(cloneDirectory, submoduleDirectoryName)).getFirst();
+        Files.writeString(fileInSubmodule.toPath(), "Some other new content.", UTF_8);
 
         /* Commit a change to the file on the repo. */
         List<Modification> modifications = submoduleRepos.modifyOneFileInSubmoduleAndUpdateMainRepo(
@@ -188,9 +189,9 @@ public class GitCommandSubmodulesTest extends GitCommandIntegrationTestBase {
 
         /* Simulate start of a new build on agent. */
         clonedCopy.fetch(outputStreamConsumer);
-        clonedCopy.resetWorkingDir(outputStreamConsumer, new StringRevision(modifications.get(0).getRevision()), false);
+        clonedCopy.resetWorkingDir(outputStreamConsumer, new StringRevision(modifications.getFirst().getRevision()), false);
 
-        assertEquals("NEW CONTENT OF FILE", FileUtils.readFileToString(fileInSubmodule, UTF_8));
+        assertEquals("NEW CONTENT OF FILE", Files.readString(fileInSubmodule.toPath(), UTF_8));
     }
 
     @Test
@@ -221,7 +222,7 @@ public class GitCommandSubmodulesTest extends GitCommandIntegrationTestBase {
 
         File cloneDirectory = createTempWorkingDirectory();
         GitCommand clonedCopy = new GitCommand(null, cloneDirectory, GitMaterialConfig.DEFAULT_BRANCH, false, null);
-        clonedCopy.clone(outputStreamConsumer, FileUtil.toFileURI(repoContainingSubmodule.mainRepo().urlForCommandLine()), 1);
+        clonedCopy.clone(outputStreamConsumer, TestRepo.toFileURI(repoContainingSubmodule.mainRepo().urlForCommandLine()), 1);
         clonedCopy.fetchAndResetToHead(outputStreamConsumer, true);
         ConsoleResult consoleResult = git_C(new File(cloneDirectory, submoduleDirectoryName),
             "rev-list", "--count", "master");
@@ -239,7 +240,7 @@ public class GitCommandSubmodulesTest extends GitCommandIntegrationTestBase {
 
         File cloneDirectory = createTempWorkingDirectory();
         GitCommand clonedCopy = new GitCommand(null, cloneDirectory, GitMaterialConfig.DEFAULT_BRANCH, false, null);
-        clonedCopy.clone(outputStreamConsumer, FileUtil.toFileURI(repoContainingSubmodule.mainRepo().urlForCommandLine()), 1);
+        clonedCopy.clone(outputStreamConsumer, TestRepo.toFileURI(repoContainingSubmodule.mainRepo().urlForCommandLine()), 1);
         clonedCopy.fetchAndResetToHead(outputStreamConsumer, true);
         ConsoleResult consoleResult = git_C(new File(cloneDirectory, submoduleDirectoryName),
             "rev-list", "--count", "master");

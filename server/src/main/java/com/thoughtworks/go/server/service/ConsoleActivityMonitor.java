@@ -23,19 +23,20 @@ import com.thoughtworks.go.serverhealth.ServerHealthService;
 import com.thoughtworks.go.serverhealth.ServerHealthState;
 import com.thoughtworks.go.util.SystemEnvironment;
 import com.thoughtworks.go.util.TimeProvider;
-import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import javax.annotation.PostConstruct;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import static com.thoughtworks.go.serverhealth.HealthStateScope.forJob;
 import static java.lang.String.format;
-import static java.lang.String.valueOf;
 
 @Component
 public class ConsoleActivityMonitor {
@@ -45,10 +46,10 @@ public class ConsoleActivityMonitor {
     private final JobInstanceService jobInstanceService;
     private final ServerHealthService serverHealthService;
     private final GoConfigService goConfigService;
-    private ConsoleService consoleService;
+    private final ConsoleService consoleService;
     private final ConcurrentMap<JobIdentifier, Long> jobLastActivityMap;
     private final ConcurrentMap<JobIdentifier, Long> jobScheduledMap;
-    private final long warningThreshold;
+    private final Duration warningThreshold;
 
     @Autowired
     public ConsoleActivityMonitor(TimeProvider timeProvider, SystemEnvironment systemEnvironment, JobInstanceService jobInstanceService, ServerHealthService serverHealthService,
@@ -61,8 +62,12 @@ public class ConsoleActivityMonitor {
         this.jobLastActivityMap = new ConcurrentHashMap<>();
         this.jobScheduledMap = new ConcurrentHashMap<>();
         this.warningThreshold = systemEnvironment.getUnresponsiveJobWarningThreshold();
-        jobInstanceService.registerJobStateChangeListener(new ActiveJobListener(this));
-        jobInstanceService.registerJobStateChangeListener(new ScheduledJobListener(this));
+    }
+
+    @PostConstruct
+    public void init() {
+        jobInstanceService.registerJobStateChangeListener(new ActiveJobListener());
+        jobInstanceService.registerJobStateChangeListener(new ScheduledJobListener());
     }
 
     public void populateActivityMap() {
@@ -75,14 +80,14 @@ public class ConsoleActivityMonitor {
                 jobLastActivityMap.put(jobIdentifier, now);
             }
         }
-        LOGGER.info("Found '{}' building jobs. Added them with '{}' as the last heard time", jobLastActivityMap.size(), new DateTime(now));
-        LOGGER.info("Found '{}' scheduled jobs. Added them with '{}' as the last heard time", jobScheduledMap.size(), new DateTime(now));
+        LOGGER.info("Found '{}' building jobs. Added them with '{}' as the last heard time", jobLastActivityMap.size(), Instant.ofEpochMilli(now));
+        LOGGER.info("Found '{}' scheduled jobs. Added them with '{}' as the last heard time", jobScheduledMap.size(), Instant.ofEpochMilli(now));
     }
 
     public void consoleUpdatedFor(JobIdentifier jobIdentifier) {
         long now = timeProvider.currentTimeMillis();
         Long previously = jobLastActivityMap.replace(jobIdentifier, now);
-        if (previously != null && now - previously > warningThreshold) {
+        if (previously != null && Duration.ofMillis(now - previously).compareTo(warningThreshold) > 0) {
             removeHungJobWarning(jobIdentifier);
         }
     }
@@ -95,66 +100,61 @@ public class ConsoleActivityMonitor {
 
     private void checkForHungJobs(ScheduleService scheduleService, ConcurrentMap<JobIdentifier, Long> jobActivityMap, long currentTime, LogMessages messages) {
         for (Map.Entry<JobIdentifier, Long> jobTimeEntry : jobActivityMap.entrySet()) {
-            long difference = currentTime - jobTimeEntry.getValue();
+            Duration difference = Duration.ofMillis(currentTime - jobTimeEntry.getValue());
             JobIdentifier jobIdentifier = jobTimeEntry.getKey();
             if (shouldCancelHungJob(jobIdentifier, difference)) {
                 scheduleService.cancelJob(jobIdentifier);
-                try {
-                    consoleService.appendToConsoleLog(jobIdentifier, messages.consoleMessage(inMinutes(jobTerminationThreshold(jobIdentifier))));
-                } catch (Exception e) {
-                    LOGGER.error("Failed to update console log with reason for cancelling hung job '{}'", jobIdentifier.buildLocator(), e);
-                }
+                consoleService.appendToConsoleLogSafe(jobIdentifier, messages.consoleMessage(jobTerminationThreshold(jobIdentifier)));
                 jobActivityMap.remove(jobIdentifier);
                 removeHungJobWarning(jobIdentifier);
-                LOGGER.info("Cancelled hung job '{}' as it was hung for more than '{}' minutes", jobIdentifier.buildLocator(), inMinutes(difference));
-            } else if (difference > warningThreshold) {
-                LOGGER.info("Job '{}' hung for more than '{}' minutes", jobIdentifier.buildLocator(), inMinutes(difference));
+                LOGGER.info("Cancelled hung job '{}' as it was hung for more than '{}' minutes", jobIdentifier.toFullString(), difference.toMinutes());
+            } else if (difference.compareTo(warningThreshold) > 0) {
+                LOGGER.info("Job '{}' hung for more than '{}' minutes", jobIdentifier.toFullString(), difference.toMinutes());
                 removeHungJobWarning(jobIdentifier);
                 addJobHungWarning(jobIdentifier, difference, messages);
             }
         }
     }
 
-    private void addJobHungWarning(JobIdentifier jobIdentifier, long difference, LogMessages messages) {
+    private void addJobHungWarning(JobIdentifier jobIdentifier, Duration difference, LogMessages messages) {
         String namespacedJob = format("%s/%s/%s", jobIdentifier.getPipelineName(), jobIdentifier.getStageName(), jobIdentifier.getBuildName());
-        serverHealthService.update(ServerHealthState.warningWithHtml(
-                format("Job '%s' is not responding", namespacedJob),
-                messages.hungWarningMessage(jobIdentifier.buildLocator(), namespacedJob, inMinutes(difference)),
-                HealthStateType.general(forJob(jobIdentifier.getPipelineName(), jobIdentifier.getStageName(), jobIdentifier.getBuildName()))));
-    }
-
-    private String inMinutes(long difference) {
-        return valueOf(difference / 1000 / 60);
+        serverHealthService.update(ServerHealthState.warningUnsafeHtml(
+            format("Job '%s' is not responding", namespacedJob),
+            messages.hungWarningHtml(jobIdentifier.buildLocator(), namespacedJob, difference),
+            HealthStateType.general(forJob(jobIdentifier.getPipelineName(), jobIdentifier.getStageName(), jobIdentifier.getBuildName())))
+        );
     }
 
     private void removeHungJobWarning(JobIdentifier jobIdentifier) {
         serverHealthService.removeByScope(forJob(jobIdentifier.getPipelineName(), jobIdentifier.getStageName(), jobIdentifier.getBuildName()));
     }
 
-    private boolean shouldCancelHungJob(JobIdentifier jobIdentifier, long difference) {
-        return goConfigService.canCancelJobIfHung(jobIdentifier) && difference > jobTerminationThreshold(jobIdentifier);
+    private boolean shouldCancelHungJob(JobIdentifier jobIdentifier, Duration difference) {
+        return goConfigService.canCancelJobIfHung(jobIdentifier) && difference.compareTo(jobTerminationThreshold(jobIdentifier)) > 0;
     }
 
-    private long jobTerminationThreshold(JobIdentifier jobIdentifier) {
+    private Duration jobTerminationThreshold(JobIdentifier jobIdentifier) {
         return goConfigService.getUnresponsiveJobTerminationThreshold(jobIdentifier);
     }
 
     private interface LogMessages {
-        String consoleMessage(String difference);
+        String consoleMessage(Duration difference);
 
-        String hungWarningMessage(String buildLocator, String namespacedJob, String difference);
+        String hungWarningHtml(String buildLocator, String namespacedJob, Duration difference);
     }
 
     private LogMessages scheduledJobMessages() {
         return new LogMessages() {
             @Override
-            public String consoleMessage(String difference) {
-                return format("Go cancelled this job as it has not been assigned an agent for more than %s minute(s)", difference);
+            public String consoleMessage(Duration difference) {
+                return format("Go cancelled this job as it has not been assigned an agent for more than %s minute(s)", difference.toMinutes());
             }
 
             @Override
-            public String hungWarningMessage(String buildLocator, String namespacedJob, String difference) {
-                return format("Job <a href='/go/tab/build/detail/%s'>%s</a> is currently running but it has not been assigned an agent in the last %s minute(s). This job may be hung.", buildLocator, namespacedJob, difference);
+            public String hungWarningHtml(String buildLocator, String namespacedJob, Duration difference) {
+                return format("Job <a href='/go/tab/build/detail/%s'>%s</a> is currently running but it has not been assigned an agent in the last %s minute(s). This job may be hung.",
+                    buildLocator, namespacedJob, difference.toMinutes()
+                );
             }
         };
     }
@@ -162,53 +162,43 @@ public class ConsoleActivityMonitor {
     private LogMessages runningJobMessages() {
         return new LogMessages() {
             @Override
-            public String consoleMessage(String difference) {
-                return format("Go cancelled this job as it has not generated any console output for more than %s minute(s)", difference);
+            public String consoleMessage(Duration difference) {
+                return format("Go cancelled this job as it has not generated any console output for more than %s minute(s)", difference.toMinutes());
             }
 
             @Override
-            public String hungWarningMessage(String buildLocator, String namespacedJob, String difference) {
-                return format("Job <a href='/go/tab/build/detail/%s'>%s</a> is currently running but has not shown any console activity in the last %s minute(s). This job may be hung.", buildLocator, namespacedJob, difference);
+            public String hungWarningHtml(String buildLocator, String namespacedJob, Duration difference) {
+                return format("Job <a href='/go/tab/build/detail/%s'>%s</a> is currently running but has not shown any console activity in the last %s minute(s). This job may be hung.",
+                    buildLocator, namespacedJob, difference.toMinutes()
+                );
             }
         };
     }
 
-    static final class ScheduledJobListener implements JobStatusListener {
-        private final ConsoleActivityMonitor consoleActivityMonitor;
-
-        private ScheduledJobListener(ConsoleActivityMonitor consoleActivityMonitor) {
-            this.consoleActivityMonitor = consoleActivityMonitor;
-        }
-
+    final class ScheduledJobListener implements JobStatusListener {
         @Override
         public void jobStatusChanged(JobInstance job) {
             JobIdentifier identifier = job.getIdentifier();
             if (job.getState().isScheduled()) {
-                consoleActivityMonitor.jobScheduledMap.putIfAbsent(identifier, consoleActivityMonitor.timeProvider.currentTimeMillis());
+                jobScheduledMap.putIfAbsent(identifier, timeProvider.currentTimeMillis());
             } else if (job.getState().isActiveOnAgent() || job.isCompleted()) {
-                Long timestamp = consoleActivityMonitor.jobScheduledMap.remove(identifier);
+                Long timestamp = jobScheduledMap.remove(identifier);
                 if (timestamp != null) {
-                    consoleActivityMonitor.removeHungJobWarning(identifier);
+                    removeHungJobWarning(identifier);
                 }
             }
         }
     }
 
-    static final class ActiveJobListener implements JobStatusListener {
-        private final ConsoleActivityMonitor consoleActivityMonitor;
-
-        private ActiveJobListener(ConsoleActivityMonitor consoleActivityMonitor) {
-            this.consoleActivityMonitor = consoleActivityMonitor;
-        }
-
+    final class ActiveJobListener implements JobStatusListener {
         @Override
         public void jobStatusChanged(JobInstance job) {
             JobIdentifier identifier = job.getIdentifier();
             if (job.getState().isBuilding()) {
-                consoleActivityMonitor.jobLastActivityMap.putIfAbsent(identifier, consoleActivityMonitor.timeProvider.currentTimeMillis());
-            } else if (job.isCompleted() || job.isRescheduled()) {
-                consoleActivityMonitor.jobLastActivityMap.remove(identifier);
-                consoleActivityMonitor.removeHungJobWarning(identifier);
+                jobLastActivityMap.putIfAbsent(identifier, timeProvider.currentTimeMillis());
+            } else if (job.getState().isInactiveOnAgent()) {
+                jobLastActivityMap.remove(identifier);
+                removeHungJobWarning(identifier);
             }
         }
     }

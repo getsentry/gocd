@@ -15,14 +15,15 @@
  */
 
 import _ from "lodash";
-import path from "path";
+import TerserPlugin from "minimizer-webpack-plugin";
+import path from "node:path";
 import webpack from "webpack";
-import {loaders} from "./loaders";
+import {getBabelLoader} from "./loaders/babel-loader";
+import {getCssLoaders} from "./loaders/css-loader";
+import {getStaticAssetsLoader} from "./loaders/static-assets-loader";
+import {getTypescriptLoader} from "./loaders/ts-loader";
 import {plugins} from "./plugins";
 import {ConfigOptions, getEntries, getModules} from "./variables";
-
-const TerserPlugin = require("terser-webpack-plugin");
-const SpeedMeasurePlugin = require("speed-measure-webpack-plugin");
 
 function getConfigOptions(argv: any, env: any): ConfigOptions {
   const assetsDir              = path.join(__dirname, "..");
@@ -47,59 +48,61 @@ function getConfigOptions(argv: any, env: any): ConfigOptions {
   };
 }
 
-function getOptimization(configOptions: ConfigOptions): webpack.Options.Optimization {
-  return configOptions.production ? {
-    splitChunks: {
-      cacheGroups: {
-        vendor: {
-          name: "vendor-and-helpers.chunk",
-          chunks: "all",
-          minChunks: 2
-        }
-      }
-    },
-    minimizer: [
-      new TerserPlugin({
-        parallel: 4,
-      })
-    ]
-  } : {
-    splitChunks: {
-      chunks: "all",
-      minSize: 100_000
-    }
-  };
-}
-
 function configuration(env: any, argv: any): webpack.Configuration {
   env  = _.assign({}, env);
   argv = _.assign({}, argv);
 
   const configOptions = getConfigOptions(argv, env);
-  const optimization  = getOptimization(configOptions);
 
   return {
     entry: getEntries(configOptions),
     output: {
+      clean: true,
       path: configOptions.outputDir,
       publicPath: "/go/assets/webpack/",
       filename: configOptions.production ? "[name]-[contenthash].js" : "[name].js"
     },
-    cache: true,
+    cache: {
+      type: 'filesystem',
+      cacheDirectory: path.join(configOptions.cacheDir, "webpack-cache"),
+    },
     bail: !argv.watch,
     devtool: configOptions.production ? "source-map" : "eval-source-map",
-    optimization,
+    optimization: configOptions.production ? {
+      splitChunks: {
+        cacheGroups: {
+          vendor: {
+            name: "vendor-and-helpers.chunk",
+            chunks: "all",
+            minChunks: 2
+          }
+        }
+      },
+      minimizer: [
+        new TerserPlugin({
+          parallel: 4,
+        })
+      ]
+    } : {
+      splitChunks: {
+        chunks: "all",
+        minSize: 100_000
+      }
+    },
     resolve: {
       extensions: [".js", ".js.msx", ".msx", ".tsx", ".ts"],
       modules: getModules(configOptions),
     },
     module: {
-      rules: loaders(configOptions)
+      rules: [
+        getTypescriptLoader(configOptions),
+        getBabelLoader(configOptions),
+        getCssLoaders(configOptions),
+        getStaticAssetsLoader(configOptions)
+      ]
     },
     plugins: plugins(configOptions),
   };
 }
 
-const smp = new SpeedMeasurePlugin();
-
-export default smp.wrap(configuration);
+export default configuration;

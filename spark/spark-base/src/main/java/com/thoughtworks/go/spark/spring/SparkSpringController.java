@@ -15,7 +15,9 @@
  */
 package com.thoughtworks.go.spark.spring;
 
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
+
 public interface SparkSpringController {
 
-    void setupRoutes();
+    void setupRoutes(GlobalExceptionMapper exceptionMapper);
 }

@@ -20,11 +20,12 @@ import com.google.gson.annotations.SerializedName;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
 
 import java.util.HashSet;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @Getter
 @Setter
@@ -65,10 +66,11 @@ public class CREnvironmentVariable extends CRBase {
     }
 
     public String validateNameUniqueness(HashSet<String> keys) {
-        if (keys.contains(this.getName()))
+        if (keys.contains(this.getName())) {
             return String.format("Environment variable %s defined more than once", this.getName());
-        else
+        } else {
             keys.add(this.getName());
+        }
         return null;
     }
 
@@ -87,17 +89,19 @@ public class CREnvironmentVariable extends CRBase {
     }
 
     private void validateValue(ErrorCollection errors, String location) {
-        if (StringUtils.isBlank(value) && StringUtils.isBlank(encryptedValue))
+        if (isBlank(value) && isBlank(encryptedValue)) {
             errors.addError(location, "Environment variable value not set");
-        if (!StringUtils.isBlank(value) && !StringUtils.isBlank(encryptedValue))
+        }
+        if (!isBlank(value) && !isBlank(encryptedValue)) {
             errors.addError(location, "Environment variable value and encrypted_value is set. Only one field can be assigned.");
+        }
     }
 
     public boolean hasEncryptedValue() {
-        return !StringUtils.isBlank(encryptedValue);
+        return !isBlank(encryptedValue);
     }
 
     public boolean hasValue() {
-        return !StringUtils.isBlank(value);
+        return !isBlank(value);
     }
 }

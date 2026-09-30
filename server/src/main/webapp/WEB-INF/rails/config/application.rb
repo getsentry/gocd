@@ -1,11 +1,25 @@
+#
+# Copyright Thoughtworks, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
 require_relative "boot"
 
 require "rails"
-require "active_model/railtie"
 require "action_controller/railtie"
 require "action_view/railtie"
 require "sprockets/railtie"
-require "rails/test_unit/railtie"
 
 # Require the gems listed in Gemfile, including any gems
 # you've limited to :test, :development, or :production.
@@ -13,8 +27,17 @@ Bundler.require(*Rails.groups(assets: %w[development test]))
 
 module Go
   class Application < Rails::Application
-    config.load_defaults 7.0
-    require_relative "../lib/all_libs"
+    config.load_defaults 7.2
+
+    # Load extensions which cannot be auto-loaded
+    require_relative '../lib/extensions/case_insensitive_string'
+    require_relative '../lib/extensions/java_util_date'
+    require_relative '../lib/extensions/route_ext'
+
+    # Please, add to the `ignore` list any other `lib` subdirectories that do
+    # not contain `.rb` files, or that should not be reloaded or eager loaded.
+    # Common ones are `templates`, `generators`, or `middleware`, for example.
+    config.autoload_lib(ignore: %w[assets tasks extensions])
 
     # Configuration for the application, engines, and railties goes here.
     #

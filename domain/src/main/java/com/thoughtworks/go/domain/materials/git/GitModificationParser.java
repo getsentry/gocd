@@ -16,7 +16,7 @@
 package com.thoughtworks.go.domain.materials.git;
 
 import com.thoughtworks.go.domain.materials.Modification;
-import com.thoughtworks.go.util.DateUtils;
+import com.thoughtworks.go.util.Dates;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -60,13 +60,15 @@ public class GitModificationParser {
         }
         Matcher dateMatcher = DATE_PATTERN.matcher(line);
         if (dateMatcher.matches()) {
-            modifications.getLast().setModifiedTime(DateUtils.parseISO8601(dateMatcher.group(1)));
+            modifications.getLast().setModifiedTime(Dates.parseIso8601StrictOffset(dateMatcher.group(1)));
         }
         Matcher commentMatcher = COMMENT_PATTERN.matcher(line);
         if (commentMatcher.matches()) {
             Modification last = modifications.getLast();
             String comment = Optional.ofNullable(last.getComment()).orElse("");
-            if (!comment.isEmpty()) comment += "\n";
+            if (!comment.isEmpty()) {
+                comment += "\n";
+            }
             last.setComment(comment + commentMatcher.group(1));
        }
     }

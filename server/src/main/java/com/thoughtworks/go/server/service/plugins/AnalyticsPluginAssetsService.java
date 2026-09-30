@@ -19,13 +19,10 @@ import com.thoughtworks.go.plugin.access.analytics.AnalyticsExtension;
 import com.thoughtworks.go.plugin.access.analytics.AnalyticsMetadataLoader;
 import com.thoughtworks.go.plugin.access.analytics.AnalyticsMetadataStore;
 import com.thoughtworks.go.plugin.access.common.PluginMetadataChangeListener;
-import com.thoughtworks.go.util.ExceptionUtils;
 import com.thoughtworks.go.util.SystemEnvironment;
 import com.thoughtworks.go.util.ZipUtil;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +32,7 @@ import org.springframework.web.context.ServletContextAware;
 import javax.servlet.ServletContext;
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -42,8 +40,13 @@ import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Stream;
 import java.util.zip.ZipInputStream;
+
+import static com.thoughtworks.go.util.ExceptionUtils.bomb;
+import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @Service
 public class AnalyticsPluginAssetsService implements ServletContextAware, PluginMetadataChangeListener {
@@ -112,16 +115,18 @@ public class AnalyticsPluginAssetsService implements ServletContextAware, Plugin
         LOGGER.info("Caching static assets for plugin: {}", pluginId);
         String data = this.analyticsExtension.getStaticAssets(pluginId);
 
-        if (StringUtils.isBlank(data)) {
+        if (isBlank(data)) {
             LOGGER.info("No static assets found for plugin: {}", pluginId);
             return;
         }
 
         try {
             byte[] payload = Base64.getDecoder().decode(data.getBytes());
-            byte[] pluginEndpointJsContent = IOUtils.toByteArray(getClass().getResource("/" + PLUGIN_ENDPOINT_JS));
 
-            try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(payload))) {
+            try (InputStream pluginJsStream = Objects.requireNonNull(getClass().getResourceAsStream("/" + PLUGIN_ENDPOINT_JS));
+                 ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(payload))) {
+                byte[] pluginEndpointJsContent = pluginJsStream.readAllBytes();
+
                 String assetsHash = calculateHash(payload, pluginEndpointJsContent);
                 String pluginAssetsRoot = currentAssetPath(pluginId, assetsHash);
 
@@ -134,7 +139,7 @@ public class AnalyticsPluginAssetsService implements ServletContextAware, Plugin
             }
         } catch (Exception e) {
             LOGGER.error("Failed to extract static assets from plugin: {}", pluginId, e);
-            ExceptionUtils.bomb(e);
+            bomb(e);
         }
     }
 
@@ -148,7 +153,7 @@ public class AnalyticsPluginAssetsService implements ServletContextAware, Plugin
         try (Stream<Path> directoryStream = Files.list(externalAssetsPath)) {
             directoryStream.forEach(path -> {
                 try {
-                    Files.copy(path, Paths.get(pluginAssetsRoot, path.getFileName().toString()));
+                    Files.copy(path, Paths.get(pluginAssetsRoot, path.getFileName().toString()), REPLACE_EXISTING);
                 } catch (Exception e) {
                     LOGGER.error("Unable to copy analytics plugin external asset ({}) to plugin assets root.", path, e);
                     throw new RuntimeException(e);
@@ -175,7 +180,7 @@ public class AnalyticsPluginAssetsService implements ServletContextAware, Plugin
             return Hex.encodeHexString(md.digest());
         } catch (Exception e) {
             LOGGER.error("Error generating {} hash", HASH_ALGORITHM, e);
-            ExceptionUtils.bomb(e);
+            bomb(e);
         }
 
         return null;
@@ -188,7 +193,7 @@ public class AnalyticsPluginAssetsService implements ServletContextAware, Plugin
             pluginAssetPaths.remove(pluginId);
         } catch (Exception e) {
             LOGGER.error("Failed to delete cached static assets for plugin: {}", pluginId, e);
-            ExceptionUtils.bomb(e);
+            bomb(e);
         }
     }
 }

@@ -15,15 +15,16 @@
  */
 package com.thoughtworks.go.domain.feed.stage;
 
+import com.thoughtworks.go.config.Approval;
 import com.thoughtworks.go.domain.StageIdentifier;
 import com.thoughtworks.go.domain.StageResult;
 import com.thoughtworks.go.domain.feed.Author;
 import com.thoughtworks.go.domain.feed.FeedEntry;
-import com.thoughtworks.go.util.GoConstants;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Understands an atom feed entry
@@ -105,34 +106,20 @@ public class StageFeedEntry implements FeedEntry {
 
         StageFeedEntry that = (StageFeedEntry) o;
 
-        if (entryId != that.entryId) {
-            return false;
-        }
-        if (id != that.id) {
-            return false;
-        }
-        if (pipelineId != that.pipelineId) {
-            return false;
-        }
-        if (identifier != null ? !identifier.equals(that.identifier) : that.identifier != null) {
-            return false;
-        }
-        if (stageResult != that.stageResult) {
-            return false;
-        }
-        if (updateDate != null ? !updateDate.equals(that.updateDate) : that.updateDate != null) {
-            return false;
-        }
-
-        return true;
+        return entryId == that.entryId &&
+            id == that.id &&
+            pipelineId == that.pipelineId &&
+            Objects.equals(identifier, that.identifier) &&
+            stageResult == that.stageResult &&
+            Objects.equals(updateDate, that.updateDate);
     }
 
     @Override
     public int hashCode() {
-        int result = (int) (id ^ (id >>> 32));
-        result = 31 * result + (int) (pipelineId ^ (pipelineId >>> 32));
+        int result = Long.hashCode(id);
+        result = 31 * result + Long.hashCode(pipelineId);
         result = 31 * result + (identifier != null ? identifier.hashCode() : 0);
-        result = 31 * result + (int) (entryId ^ (entryId >>> 32));
+        result = 31 * result + Long.hashCode(entryId);
         result = 31 * result + (updateDate != null ? updateDate.hashCode() : 0);
         result = 31 * result + (stageResult != null ? stageResult.hashCode() : 0);
         return result;
@@ -161,7 +148,7 @@ public class StageFeedEntry implements FeedEntry {
     }
 
     public boolean isManuallyTriggered() {
-        return approvalType.equals(GoConstants.APPROVAL_MANUAL);
+        return Approval.TYPE_MANUAL.equals(approvalType);
     }
 
     public String getApprovedBy() {

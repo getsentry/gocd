@@ -17,7 +17,6 @@ package com.thoughtworks.go.agent.launcher;
 
 import com.thoughtworks.cruise.agent.common.launcher.AgentLaunchDescriptor;
 import com.thoughtworks.cruise.agent.common.launcher.AgentLauncher;
-import com.thoughtworks.go.CurrentGoCDVersion;
 import com.thoughtworks.go.agent.ServerUrlGenerator;
 import com.thoughtworks.go.agent.common.AgentBootstrapperArgs;
 import com.thoughtworks.go.agent.common.UrlConstructor;
@@ -42,17 +41,13 @@ import java.util.jar.JarEntry;
 @SuppressWarnings("unused")
 public class AgentLauncherImpl implements AgentLauncher {
 
-    public static final int UNKNOWN_EXCEPTION_OCCURRED = -273;
-
-    /* 50-60 for launcher error codes*/
-    public static final int LAUNCHER_NOT_UP_TO_DATE = 60;
-
-    public static final String GO_AGENT_BOOTSTRAP_CLASS = "Go-Agent-Bootstrap-Class";
-    public static final String AGENT_BOOTSTRAPPER_LOCK_FILE = ".agent-bootstrapper.running";
-    private final Lockfile lockFile = new Lockfile(new File(AGENT_BOOTSTRAPPER_LOCK_FILE));
+    static final String AGENT_BOOTSTRAPPER_LOCK_FILE = ".agent-bootstrapper.running";
 
     private static final Logger LOG = LoggerFactory.getLogger(AgentLauncherImpl.class);
+    private static final String JAR_ATTRIBUTE_GO_AGENT_BOOTSTRAP_CLASS = "Go-Agent-Bootstrap-Class";
+    private static final int UNKNOWN_EXCEPTION_OCCURRED = -273;
 
+    private final Lockfile lockFile = new Lockfile(new File(AGENT_BOOTSTRAPPER_LOCK_FILE));
     private final AgentProcessParentRunner agentProcessParentRunner;
 
     public AgentLauncherImpl() {
@@ -69,12 +64,13 @@ public class AgentLauncherImpl implements AgentLauncher {
         return logConfigurator.runWithLogger(() -> doLaunch(descriptor));
     }
 
-    private Integer doLaunch(AgentLaunchDescriptor descriptor) {
+    private int doLaunch(AgentLaunchDescriptor descriptor) {
         Thread shutdownHook = null;
         try {
             if (!lockFile.tryLock()) {
                 return IRRECOVERABLE_ERROR;
             }
+            LOG.info("Starting with launcher version {}", version());
 
             shutdownHook = registerShutdownHook();
 
@@ -85,13 +81,17 @@ public class AgentLauncherImpl implements AgentLauncher {
 
             ServerBinaryDownloader launcherDownloader = new ServerBinaryDownloader(urlGenerator, bootstrapperArgs);
             if (launcherDownloader.downloadIfNecessary(DownloadableFile.LAUNCHER)) {
-                return LAUNCHER_NOT_UP_TO_DATE;
+                LOG.info("Launcher not up to date - new version required.");
+                return NOT_UP_TO_DATE;
             }
+            LOG.info("Launcher version matches; checking agent version...");
 
             ServerBinaryDownloader agentDownloader = new ServerBinaryDownloader(urlGenerator, bootstrapperArgs);
             agentDownloader.downloadIfNecessary(DownloadableFile.AGENT);
 
-            return agentProcessParentRunner.run(getLauncherVersion(), launcherDownloader.getMd5(), urlGenerator, System.getenv(), context);
+            LOG.info("Launching agent process from jar...");
+
+            return agentProcessParentRunner.run(version(), launcherDownloader.getMd5(), urlGenerator, System.getenv(), context);
         } catch (Exception e) {
             LOG.error("Launch encountered an unknown exception", e);
             return UNKNOWN_EXCEPTION_OCCURRED;
@@ -112,12 +112,14 @@ public class AgentLauncherImpl implements AgentLauncher {
 
     private Thread registerShutdownHook() {
         Thread shutdownHook = new Thread(lockFile::delete);
+        shutdownHook.setName("AgentLauncherLockFileCleanup" + shutdownHook.getName());
         Runtime.getRuntime().addShutdownHook(shutdownHook);
         return shutdownHook;
     }
 
-    private String getLauncherVersion() {
-        return CurrentGoCDVersion.getInstance().fullVersion();
+    private String version() {
+        String version = getClass().getPackage().getImplementationVersion();
+        return version == null ? "UNKNOWN" : version;
     }
 
     public interface AgentProcessParentRunner {
@@ -127,7 +129,7 @@ public class AgentLauncherImpl implements AgentLauncher {
     private static class AgentJarBasedAgentParentRunner implements AgentProcessParentRunner {
         @Override
         public int run(String launcherVersion, String launcherMd5, ServerUrlGenerator urlGenerator, Map<String, String> environmentVariables, Map<String, String> context) {
-            String agentProcessParentClassName = JarUtil.getManifestKey(Downloader.AGENT_BINARY_JAR, GO_AGENT_BOOTSTRAP_CLASS);
+            String agentProcessParentClassName = JarUtil.getManifestKey(Downloader.AGENT_BINARY_JAR, JAR_ATTRIBUTE_GO_AGENT_BOOTSTRAP_CLASS);
             String tempDirSuffix = new BigInteger(64, new SecureRandom()).toString(16) + "-" + Downloader.AGENT_BINARY_JAR;
             File tempDir = new File(FileUtil.TMP_PARENT_DIR, "deps-" + tempDirSuffix);
             try {

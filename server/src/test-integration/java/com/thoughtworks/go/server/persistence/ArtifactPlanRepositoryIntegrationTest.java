@@ -21,7 +21,6 @@ import com.thoughtworks.go.helper.BuildPlanMother;
 import com.thoughtworks.go.helper.PipelineMother;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.dao.JobInstanceSqlMapDao;
-import com.thoughtworks.go.server.service.InstanceFactory;
 import com.thoughtworks.go.util.TimeProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,8 +32,8 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.util.List;
 
+import static com.thoughtworks.go.domain.buildcause.BuildCause.APPROVER_AUTOMATICALLY_TRIGGERED;
 import static com.thoughtworks.go.helper.ModificationsMother.modifySomeFiles;
-import static com.thoughtworks.go.util.GoConstants.DEFAULT_APPROVED_BY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ExtendWith(SpringExtension.class)
@@ -67,7 +66,7 @@ public class ArtifactPlanRepositoryIntegrationTest {
         dbHelper.onSetUp();
 
         PipelineConfig pipelineConfig = PipelineMother.withSingleStageWithMaterials(PIPELINE_NAME, STAGE_NAME, BuildPlanMother.withBuildPlans(JOB_NAME, OTHER_JOB_NAME));
-        DefaultSchedulingContext schedulingContext = new DefaultSchedulingContext(DEFAULT_APPROVED_BY);
+        DefaultSchedulingContext schedulingContext = new DefaultSchedulingContext(APPROVER_AUTOMATICALLY_TRIGGERED);
         Pipeline savedPipeline = instanceFactory.createPipelineInstance(pipelineConfig, modifySomeFiles(pipelineConfig), schedulingContext, "md5-test", new TimeProvider());
         dbHelper.savePipelineWithStagesAndMaterials(savedPipeline);
         Stage savedStage = savedPipeline.getFirstStage();
@@ -107,7 +106,7 @@ public class ArtifactPlanRepositoryIntegrationTest {
 
         // Assert
         assertThat(artifactPlanList.size()).isEqualTo(1);
-        assertThat(artifactPlanList.get(0)).isEqualTo(savedArtifactPlan);
+        assertThat(artifactPlanList.getFirst()).isEqualTo(savedArtifactPlan);
     }
 
     @Test
@@ -123,7 +122,7 @@ public class ArtifactPlanRepositoryIntegrationTest {
 
         // Assert
         assertThat(artifactPlanList.size()).isEqualTo(1);
-        assertThat(artifactPlanList.get(0)).isEqualTo(savedArtifactPlan);
+        assertThat(artifactPlanList.getFirst()).isEqualTo(savedArtifactPlan);
     }
 
     @Test
@@ -139,7 +138,7 @@ public class ArtifactPlanRepositoryIntegrationTest {
 
         // Assert
         assertThat(artifactPlanList.size()).isEqualTo(1);
-        ArtifactPlan loadedArtifactPlan = artifactPlanList.get(0);
+        ArtifactPlan loadedArtifactPlan = artifactPlanList.getFirst();
         assertThat(loadedArtifactPlan).isEqualTo(savedArtifactPlan);
     }
 
@@ -158,13 +157,13 @@ public class ArtifactPlanRepositoryIntegrationTest {
         // Assert
         List<ArtifactPlan> firstJobArtifactPlans = artifactPlanRepository.findByBuildId(firstJobInstance.getId());
         assertThat(firstJobArtifactPlans.size()).isEqualTo(1);
-        assertThat(firstJobArtifactPlans.get(0).getId()).isEqualTo(artifactPlanOfFirstJob.getId());
+        assertThat(firstJobArtifactPlans.getFirst().getId()).isEqualTo(artifactPlanOfFirstJob.getId());
         assertThat(firstJobArtifactPlans).contains(artifactPlanOfFirstJob);
         assertThat(artifactPlan.getId()).isNotNull();
 
         List<ArtifactPlan> secondJobArtifactPlans = artifactPlanRepository.findByBuildId(secondJobInstance.getId());
         assertThat(secondJobArtifactPlans.size()).isEqualTo(1);
-        assertThat(secondJobArtifactPlans.get(0).getId()).isEqualTo(artifactPlanOfSecondJob.getId());
+        assertThat(secondJobArtifactPlans.getFirst().getId()).isEqualTo(artifactPlanOfSecondJob.getId());
         assertThat(secondJobArtifactPlans).contains(artifactPlanOfSecondJob);
         assertThat(artifactPlan.getId()).isNotNull();
 

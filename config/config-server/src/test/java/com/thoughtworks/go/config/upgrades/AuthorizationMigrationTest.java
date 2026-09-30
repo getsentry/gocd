@@ -17,11 +17,11 @@ package com.thoughtworks.go.config.upgrades;
 
 import com.thoughtworks.go.config.*;
 import com.thoughtworks.go.util.ConfigElementImplementationRegistryMother;
-import com.thoughtworks.go.util.GoConstants;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 // test for 14.xsl
@@ -42,8 +42,9 @@ public class AuthorizationMigrationTest {
                       </authorization>
             """;
 
-    private static final String CONFIG_WITH_AUTH = ("""
-            <?xml version="1.0" encoding="utf-8"?><cruise xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="cruise-config.xsd" schemaVersion="13">
+    private static final String CONFIG_WITH_AUTH = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <cruise xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="cruise-config.xsd" schemaVersion="13">
               <server artifactsdir="other-artifacts">
                 <security>
                   <roles>
@@ -72,33 +73,34 @@ public class AuthorizationMigrationTest {
                   </stage>
                 </pipeline>
               </pipelines>
-            </cruise>""").formatted(OLD_AUTH);
+            </cruise>
+            """.formatted(OLD_AUTH);
 
     @Test
     public void shouldMigrateAuthToAuthorization() throws Exception {
         String newConfig = ConfigMigrator.migrate(CONFIG_WITH_AUTH).replace("\r\n", "\n");
-        assertThat(newConfig).contains(String.valueOf(GoConstants.CONFIG_SCHEMA_VERSION));
+        assertThat(newConfig).contains(String.valueOf(GoConfigSchema.VERSION));
         assertThat(newConfig).contains(NEW_AUTHORIZATION);
     }
 
     @Test
     public void shouldBeAbleToParseNewAuthorization() throws Exception {
-        AuthConfig config = new MagicalGoConfigXmlLoader(new ConfigCache(), ConfigElementImplementationRegistryMother.withNoPlugins()).fromXmlPartial(NEW_AUTHORIZATION, AuthConfig.class);
+        AuthConfig config = new MagicalGoConfigXmlLoader(ConfigElementImplementationRegistryMother.withNoPlugins()).fromXmlPartial(NEW_AUTHORIZATION, AuthConfig.class);
         assertThat(config.size()).isEqualTo(3);
     }
 
     @Test
     public void shouldBeAbleToParseNewConfig() {
         CruiseConfig newConfig = ConfigMigrator.loadWithMigration(CONFIG_WITH_AUTH).config;
-        assertThat(newConfig.stageConfigByName(new CaseInsensitiveString("pipeline1"), new CaseInsensitiveString("stage1")).getApproval().getAuthConfig().size()).isEqualTo(3);
+        assertThat(newConfig.stageConfigByName(cis("pipeline1"), cis("stage1")).getApproval().getAuthConfig().size()).isEqualTo(3);
     }
 
     @Test
     public void shouldBeAbleToWriteNewConfig() throws Exception {
         CruiseConfig newConfig = ConfigMigrator.loadWithMigration(CONFIG_WITH_AUTH).config;
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        new MagicalGoConfigXmlWriter(new ConfigCache(), ConfigElementImplementationRegistryMother.withNoPlugins()).write(newConfig, buffer, false);
+        new MagicalGoConfigXmlWriter(ConfigElementImplementationRegistryMother.withNoPlugins()).write(newConfig, buffer, false);
 
-        assertThat(new String(buffer.toByteArray()).replace("\r\n", "\n")).contains(NEW_AUTHORIZATION);
+        assertThat(buffer.toString().replace("\r\n", "\n")).contains(NEW_AUTHORIZATION);
     }
 }

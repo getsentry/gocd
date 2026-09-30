@@ -25,6 +25,7 @@ import com.thoughtworks.go.server.newsecurity.utils.SessionUtils;
 import com.thoughtworks.go.server.service.SecurityService;
 import com.thoughtworks.go.util.Clock;
 import com.thoughtworks.go.util.SystemEnvironment;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -88,7 +89,7 @@ public class AuthenticationController {
             } else {
                 SessionUtils.setAuthenticationTokenAfterRecreatingSession(authenticationToken, request);
             }
-            String redirectUrl = savedRequest == null ? "/go/pipelines" : savedRequest.getRedirectUrl();
+            String redirectUrl = savedRequest == null ? systemEnvironment.getLandingPage() : savedRequest.getRedirectUrl();
             return new RedirectView(redirectUrl, false);
 
         } catch (AuthenticationException e) {
@@ -106,14 +107,16 @@ public class AuthenticationController {
             return new RedirectView("/pipelines", true);
         }
 
-        final StringBuffer requestURL = request.getRequestURL();
-        requestURL.setLength(requestURL.length() - request.getRequestURI().length());
-
-        AuthorizationServerUrlResponse authorizationServerUrlResponse = webBasedPluginAuthenticationProvider.getAuthorizationServerUrl(pluginId, requestURL.toString());
+        AuthorizationServerUrlResponse authorizationServerUrlResponse = webBasedPluginAuthenticationProvider.getAuthorizationServerUrl(pluginId, () -> rootUrlFrom(request));
 
         SessionUtils.setPluginAuthSessionContext(request, pluginId, authorizationServerUrlResponse.getAuthSession());
 
         return new RedirectView(authorizationServerUrlResponse.getAuthorizationServerUrl(), false);
+    }
+
+    private static @NotNull String rootUrlFrom(HttpServletRequest request) {
+        StringBuffer rootUrlWithPath = request.getRequestURL();
+        return rootUrlWithPath.substring(0, rootUrlWithPath.length() - request.getRequestURI().length());
     }
 
     @RequestMapping(value = "/plugin/{pluginId}/authenticate")
@@ -123,7 +126,7 @@ public class AuthenticationController {
             return new RedirectView("/pipelines", true);
         }
 
-        LOGGER.debug("Requesting authentication for form auth.");
+        LOGGER.debug("Requesting authentication for plugin auth.");
         SavedRequest savedRequest = SessionUtils.savedRequest(request);
 
         try {
@@ -149,7 +152,7 @@ public class AuthenticationController {
 
         SessionUtils.removeAuthenticationError(request);
 
-        String redirectUrl = savedRequest == null ? "/go/pipelines" : savedRequest.getRedirectUrl();
+        String redirectUrl = savedRequest == null ? systemEnvironment.getLandingPage() : savedRequest.getRedirectUrl();
 
         return new RedirectView(redirectUrl, false);
     }

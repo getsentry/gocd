@@ -17,11 +17,10 @@
 package com.thoughtworks.go.apiv1.internalpipelinegroups
 
 import com.thoughtworks.go.api.SecurityTestTrait
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper
 import com.thoughtworks.go.apiv1.internalpipelinegroups.models.PipelineGroupsViewModel
 import com.thoughtworks.go.apiv1.internalpipelinegroups.representers.InternalPipelineGroupsRepresenter
 import com.thoughtworks.go.config.BasicCruiseConfig
-import com.thoughtworks.go.config.CaseInsensitiveString
 import com.thoughtworks.go.config.EnvironmentsConfig
 import com.thoughtworks.go.config.PipelineConfigs
 import com.thoughtworks.go.domain.PipelineGroups
@@ -31,7 +30,6 @@ import com.thoughtworks.go.server.service.PipelineConfigService
 import com.thoughtworks.go.spark.ControllerTrait
 import com.thoughtworks.go.spark.NormalUserSecurity
 import com.thoughtworks.go.spark.SecurityServiceTrait
-import com.thoughtworks.go.util.Node
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -52,12 +50,14 @@ class InternalPipelineGroupsControllerV1Test implements SecurityServiceTrait, Co
 
   @Override
   InternalPipelineGroupsControllerV1 createControllerInstance() {
-    new InternalPipelineGroupsControllerV1(new ApiAuthenticationHelper(securityService, goConfigService),
+    new InternalPipelineGroupsControllerV1(new ApiAuthorizationHelper(securityService, goConfigService),
       pipelineConfigService, environmentConfigService)
   }
 
   @Nested
   class Security implements SecurityTestTrait, NormalUserSecurity {
+    @Delegate SecurityServiceTrait s = InternalPipelineGroupsControllerV1Test.this
+    @Delegate ControllerTrait<InternalPipelineGroupsControllerV1> c = InternalPipelineGroupsControllerV1Test.this
 
     @Override
     String getControllerMethodUnderTest() {
@@ -72,16 +72,13 @@ class InternalPipelineGroupsControllerV1Test implements SecurityServiceTrait, Co
 
   @Nested
   class Index {
-    private Hashtable<CaseInsensitiveString, Node> hashtable
-
     @BeforeEach
     void setUp() {
       loginAsUser()
 
-      hashtable = new Hashtable<CaseInsensitiveString, Node>()
       def cruiseConfig = mock(BasicCruiseConfig.class)
       when(goConfigService.getCurrentConfig()).thenReturn(cruiseConfig)
-      when(cruiseConfig.getDependencyTable()).thenReturn(hashtable)
+      when(cruiseConfig.getDependencyTable()).thenReturn(Collections.emptyMap())
     }
 
     @Test

@@ -14,34 +14,32 @@
  * limitations under the License.
  */
 
+import com.thoughtworks.go.build.GoVersions
+
 description = 'GoCD Base'
 
-dependencies {
-  compileOnly project.deps.bouncyCastle
-  compileOnly project.deps.bouncyCastlePkix
-
-  api project.deps.commonsIO
-  api project.deps.commonsLang3
-  api(project.deps.apacheHttpComponents) {
-    exclude(module: 'commons-codec')
-    exclude(module: 'commons-logging')
+java {
+  // For use of the LogConfigurator or LogHelper
+  registerFeature('logging') {
+    usingSourceSet(sourceSets.create('logging'))
   }
-  api project.deps.jodaTime
-  api project.deps.slf4jJcl
-  compileOnly project.deps.logback
-  testImplementation project.deps.logback
+}
 
-  compileOnly project.deps.jetBrainsAnnotations
+CapabilitySupport.extendMain(project, 'logging')
 
-  testRuntimeOnly project.deps.bouncyCastle
-  testRuntimeOnly project.deps.bouncyCastlePkix
-  testImplementation project(path: ':test:test-utils', configuration: 'runtimeElements')
-  testImplementation project.deps.junit5Api
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
-  testImplementation project.deps.systemStubs
-  testImplementation project.deps.mockitoCore
-  testImplementation project.deps.assertJ
+dependencies {
+  api rootProject.deps.slf4jApi
+  loggingApi rootProject.deps.logback
+
+  compileOnly rootProject.deps.jetBrainsAnnotations
+
+  testImplementation rootProject.deps.junit5Api
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.junit5Params
+  testImplementation rootProject.deps.systemStubs
+  testImplementation rootProject.deps.mockitoCore
+  testImplementation rootProject.deps.assertJ
 }
 
 def generatedResourcesOutput = file("resources-generated")
@@ -60,36 +58,32 @@ clean {
   delete(generatedResourcesOutput)
 }
 
-task generateResources {
+tasks.register('generateResources', Copy) {
   inputs.dir(generatedResourcesInput)
   outputs.dir(generatedResourcesOutput)
 
+  def goVersions = rootProject.goVersions as GoVersions
   def props = [
-    'goVersion'    : rootProject.goVersion,
-    'distVersion'  : rootProject.distVersion,
-    'fullVersion'  : rootProject.fullVersion,
-    'gitRevision'  : rootProject.gitRevision,
+    'goVersion'    : goVersions.goVersion,
+    'distVersion'  : goVersions.distVersion,
+    'fullVersion'  : goVersions.fullVersion,
+    'gitRevision'  : goVersions.gitRevision,
   ]
-
   inputs.properties(props)
 
   doFirst {
-    project.delete(generatedResourcesOutput)
+    delete(generatedResourcesOutput)
     generatedResourcesOutput.mkdirs()
+  }
 
-    project.copy {
-      into generatedResourcesOutput
-      from(generatedResourcesInput) {
-        expand(props)
-      }
-    }
+  into generatedResourcesOutput
+  from(generatedResourcesInput) {
+    expand(props)
   }
 }
+checkLicenseMain.dependsOn generateResources
+processResources.dependsOn generateResources
 
-processResources {
-  dependsOn generateResources
-}
-
-task prepare {
+tasks.register('prepare') {
   dependsOn generateResources
 }

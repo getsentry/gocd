@@ -16,26 +16,22 @@
 package com.thoughtworks.go.server.service;
 
 import com.rits.cloning.Cloner;
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.CruiseConfig;
 import com.thoughtworks.go.config.exceptions.EntityType;
 import com.thoughtworks.go.config.exceptions.NotAuthorizedException;
 import com.thoughtworks.go.config.exceptions.RecordNotFoundException;
 import com.thoughtworks.go.domain.*;
-import com.thoughtworks.go.domain.activity.StageStatusCache;
 import com.thoughtworks.go.domain.feed.Author;
 import com.thoughtworks.go.domain.feed.FeedEntries;
 import com.thoughtworks.go.domain.feed.stage.StageFeedEntry;
-import com.thoughtworks.go.dto.DurationBean;
 import com.thoughtworks.go.i18n.LocalizedMessage;
 import com.thoughtworks.go.presentation.pipelinehistory.StageHistoryPage;
 import com.thoughtworks.go.presentation.pipelinehistory.StageInstanceModels;
-import com.thoughtworks.go.server.cache.CacheKeyGenerator;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.CacheKeyGenerator;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.FeedModifier;
 import com.thoughtworks.go.server.dao.PipelineDao;
 import com.thoughtworks.go.server.dao.StageDao;
-import com.thoughtworks.go.server.domain.StageIdentity;
 import com.thoughtworks.go.server.domain.StageStatusListener;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.messaging.StageStatusMessage;
@@ -52,6 +48,7 @@ import com.thoughtworks.go.server.util.Pagination;
 import com.thoughtworks.go.serverhealth.HealthStateScope;
 import com.thoughtworks.go.serverhealth.HealthStateType;
 import com.thoughtworks.go.util.ClonerFactory;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,11 +58,13 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallbackWithoutResult;
 import org.springframework.transaction.support.TransactionSynchronizationAdapter;
 
+import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.server.service.HistoryUtil.validateCursor;
 
 @Service
@@ -85,7 +84,6 @@ public class StageService implements StageFinder {
     private final TransactionSynchronizationManager transactionSynchronizationManager;
     private final List<StageStatusListener> stageStatusListeners;
     private final StageStatusTopic stageStatusTopic;
-    private final StageStatusCache stageStatusCache;
     private final Cloner cloner = ClonerFactory.instance();
     private final GoCache goCache;
 
@@ -93,7 +91,6 @@ public class StageService implements StageFinder {
     public StageService(StageDao stageDao,
                         JobInstanceService jobInstanceService,
                         StageStatusTopic stageStatusTopic,
-                        StageStatusCache stageStatusCache,
                         SecurityService securityService,
                         PipelineDao pipelineDao,
                         ChangesetService changesetService,
@@ -105,7 +102,6 @@ public class StageService implements StageFinder {
         this.stageDao = stageDao;
         this.jobInstanceService = jobInstanceService;
         this.stageStatusTopic = stageStatusTopic;
-        this.stageStatusCache = stageStatusCache;
         this.securityService = securityService;
         this.pipelineDao = pipelineDao;
         this.changesetService = changesetService;
@@ -114,7 +110,7 @@ public class StageService implements StageFinder {
         this.transactionSynchronizationManager = transactionSynchronizationManager;
         this.goCache = goCache;
         this.cacheKeyGenerator = new CacheKeyGenerator(getClass());
-        this.stageStatusListeners = new ArrayList<>(Arrays.asList(stageStatusListeners));
+        this.stageStatusListeners = new CopyOnWriteArrayList<>(stageStatusListeners);
     }
 
     public void addStageStatusListener(StageStatusListener listener) {
@@ -139,7 +135,7 @@ public class StageService implements StageFinder {
                                          String stageCounter,
                                          String username,
                                          OperationResult result) {
-        if (!goConfigService.currentCruiseConfig().hasPipelineNamed(new CaseInsensitiveString(pipelineName))) {
+        if (!goConfigService.currentCruiseConfig().hasPipelineNamed(cis(pipelineName))) {
             String message = String.format("Pipeline '%s' not found", pipelineName);
             result.notFound("Not Found", message, HealthStateType.general(HealthStateScope.GLOBAL));
             return null;
@@ -161,11 +157,11 @@ public class StageService implements StageFinder {
     }
 
     public Stage findStageWithIdentifier(String pipelineName,
-                                         Integer pipelineCounter,
+                                         int pipelineCounter,
                                          String stageName,
                                          String stageCounter,
                                          Username username) {
-        if (!goConfigService.hasPipelineNamed(new CaseInsensitiveString(pipelineName))) {
+        if (!goConfigService.hasPipelineNamed(cis(pipelineName))) {
             throw new RecordNotFoundException(EntityType.Pipeline, pipelineName);
         }
 
@@ -187,6 +183,7 @@ public class StageService implements StageFinder {
         return stageDao.findStageWithIdentifier(identifier);
     }
 
+    @SuppressWarnings("unused") // May be used by Rails code
     public StageSummaryModel findStageSummaryByIdentifier(StageIdentifier stageId,
                                                           Username username,
                                                           LocalizedOperationResult result) {
@@ -233,26 +230,18 @@ public class StageService implements StageFinder {
         });
     }
 
-    public DurationBean getBuildDuration(String pipelineName, String stageName, JobInstance job) {
-        return getDuration(pipelineName, stageName, job);
-    }
-
-    private DurationBean getDuration(String pipelineName, String stageName, JobInstance job) {
+    public Duration getBuildDuration(JobInstance job) {
         if (job.isCompleted()) {
             // Calculating duration is an expensive query; only do so when the stage is building.
-            return new DurationBean(job.getId(), 0L);
+            return Duration.ZERO;
         }
 
-        Long duration = stageDao.getDurationOfLastSuccessfulOnAgent(pipelineName, stageName, job);
-        return new DurationBean(job.getId(), duration == null ? 0L : duration);
+        Duration duration = stageDao.getDurationOfLastSuccessfulOnAgent(job);
+        return duration == null ? Duration.ZERO : duration;
     }
 
     public Stage mostRecentPassed(String pipelineName, String stageName) {
         return stageDao.mostRecentPassed(pipelineName, stageName);
-    }
-
-    public int getCount(String pipelineName, String stageName) {
-        return stageDao.getCount(pipelineName, stageName);
     }
 
     public Stage save(final Pipeline pipeline, final Stage stage) {
@@ -303,20 +292,9 @@ public class StageService implements StageFinder {
 
     //stage order definition: 1) if stage has been scheduled, copy existing order 2) if not, increase the max existing
     // stage order in current pipeline by 1, as current stage's order
-    private Integer resolveStageOrder(long pipelineId, String stageName) {
-        Integer order = getStageOrderInPipeline(pipelineId, stageName);
-        if (order == null) {
-            order = getMaxStageOrderInPipeline(pipelineId) + 1;
-        }
-        return order;
-    }
-
-    private Integer getStageOrderInPipeline(long pipelineId, String stageName) {
-        return stageDao.getStageOrderInPipeline(pipelineId, stageName);
-    }
-
-    private int getMaxStageOrderInPipeline(long pipelineId) {
-        return stageDao.getMaxStageOrder(pipelineId);
+    private int resolveStageOrder(long pipelineId, String stageName) {
+        Integer order = stageDao.getStageOrderInPipeline(pipelineId, stageName);
+        return order != null ? order : stageDao.getMaxStageOrder(pipelineId) + 1;
     }
 
     public void updateResult(final Stage stage) {
@@ -345,10 +323,6 @@ public class StageService implements StageFinder {
         });
     }
 
-    public Stage findLatestStage(String pipelineName, String stageName) {
-        return stageStatusCache.currentStage(new StageConfigIdentifier(pipelineName, stageName));
-    }
-
     public FeedEntries feed(String pipelineName, Username username) {
         String key = cacheKeyForLatestStageFeedForPipeline(pipelineName);
         List<StageFeedEntry> feedEntries = goCache.get(key);
@@ -366,7 +340,7 @@ public class StageService implements StageFinder {
     }
 
     public FeedEntries findStageFeedBy(String pipelineName,
-                                       Integer pipelineCounter,
+                                       @Nullable Integer pipelineCounter,
                                        FeedModifier feedModifier,
                                        Username username) {
         if (pipelineCounter != null) {
@@ -381,7 +355,7 @@ public class StageService implements StageFinder {
             synchronized (key) {
                 feedEntries = goCache.get(key);
                 if (feedEntries == null) {
-                    feedEntries = stageDao.findStageFeedBy(pipelineName, pipelineCounter, null, FEED_PAGE_SIZE);
+                    feedEntries = stageDao.findStageFeedBy(pipelineName, null, null, FEED_PAGE_SIZE);
                     populateAuthors(feedEntries, pipelineName, username);
                     goCache.put(key, feedEntries);
                 }
@@ -435,13 +409,14 @@ public class StageService implements StageFinder {
                 }
 
                 String pipelineForRev = rev.getPipelineId().getPipelineName();
-                if (!config.hasPipelineNamed(new CaseInsensitiveString(pipelineForRev))) {
+                if (!config.hasPipelineNamed(cis(pipelineForRev))) {
                     LOGGER.debug("pipeline not found: {}", pipelineForRev);
                 }
             }
         }
     }
 
+    @SuppressWarnings("unused") // May be used by rails code
     public StageSummaryModels findStageHistoryForChart(String pipelineName,
                                                        String stageName,
                                                        int pageNumber,
@@ -464,10 +439,12 @@ public class StageService implements StageFinder {
         return stageSummaryModels;
     }
 
+    @SuppressWarnings("unused") // May be used by rails code
     public StageHistoryPage findStageHistoryPage(Stage stage, int pageSize) {
         return stageDao.findStageHistoryPage(stage, pageSize);
     }
 
+    @SuppressWarnings("unused") // May be used by rails code
     public StageHistoryPage findStageHistoryPageByNumber(String pipelineName,
                                                          String stageName,
                                                          int pageNumber,
@@ -475,7 +452,7 @@ public class StageService implements StageFinder {
         return stageDao.findStageHistoryPageByNumber(pipelineName, stageName, pageNumber, pageSize);
     }
 
-    public StageInstanceModels findStageHistoryViaCursor(Username username, String pipelineName, String stageName, long afterCursor, long beforeCursor, Integer pageSize) {
+    public StageInstanceModels findStageHistoryViaCursor(Username username, String pipelineName, String stageName, long afterCursor, long beforeCursor, int pageSize) {
         checkForExistenceAndAccess(username, pipelineName);
         StageInstanceModels stageInstanceModels;
         if (validateCursor(afterCursor, "after")) {
@@ -494,7 +471,7 @@ public class StageService implements StageFinder {
     }
 
     private void checkForExistenceAndAccess(Username username, String pipelineName) {
-        if (!goConfigService.currentCruiseConfig().hasPipelineNamed(new CaseInsensitiveString(pipelineName))) {
+        if (!goConfigService.currentCruiseConfig().hasPipelineNamed(cis(pipelineName))) {
             throw new RecordNotFoundException(EntityType.Pipeline, pipelineName);
         }
         if (!securityService.hasViewPermissionForPipeline(username, pipelineName)) {
@@ -544,14 +521,6 @@ public class StageService implements StageFinder {
 
     public List<Stage> oldestStagesWithDeletableArtifacts() {
         return stageDao.oldestStagesHavingArtifacts();
-    }
-
-    public void markArtifactsDeletedFor(Stage stage) {
-        stageDao.markArtifactsDeletedFor(stage);
-    }
-
-    public List<StageIdentity> findLatestStageInstances() {
-        return stageDao.findLatestStageInstances();
     }
 
     public interface JobOperation {

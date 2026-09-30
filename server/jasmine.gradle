@@ -1,10 +1,3 @@
-import com.thoughtworks.go.build.Architecture
-import com.thoughtworks.go.build.DownloaderTask
-import com.thoughtworks.go.build.YarnRunTask
-import org.gradle.internal.os.OperatingSystem
-
-import java.util.regex.Pattern
-
 /*
  * Copyright Thoughtworks, Inc.
  *
@@ -21,124 +14,25 @@ import java.util.regex.Pattern
  * limitations under the License.
  */
 
-OperatingSystem currentOS = OperatingSystem.current()
-Architecture currentArch = Architecture.current()
+import com.thoughtworks.go.build.GoVersions
+import com.thoughtworks.go.build.YarnRunTask
 
-// Chrome:        See https://googlechromelabs.github.io/chrome-for-testing/ Must match version of Chrome on build host
-// Firefox/gecko: See https://github.com/mozilla/geckodriver/releases and review compatibility at
-//                https://firefox-source-docs.mozilla.org/testing/geckodriver/Support.html
-final Map<String, String> seleniumDrivers = [
-  chromedriver: '134.0.6998.88',
-  geckodriver : '0.36.0',
-]
-
-def execute = { String path, String... argv ->
-  try {
-    return providers.exec {
-      def pathVariable = 'PATH'
-      if (currentOS.isWindows()) {
-        // because windows PATH variable is case-insensitive :-/
-        pathVariable = environment.keySet().find { eachKey -> eachKey.toUpperCase().equals("PATH") }
-      }
-      environment[pathVariable] = path
-      executable = argv.head()
-
-      // java's ProcessBuilder does not lookup executables on `PATH` specified in the environment map
-      // it instead looks up executable on the PATH of the caller.
-      def executableName = currentOS.getExecutableName(executable)
-
-      for (String entryInPath : path.split(Pattern.quote(File.pathSeparator))) {
-        def candidateExecutable = new File(entryInPath, executableName)
-        if (candidateExecutable.isFile() && candidateExecutable.canExecute()) {
-          executable = candidateExecutable
-          break
-        }
-      }
-
-      commandLine(argv.tail())
-    }.standardOutput.asText.getOrElse("could not determine version!").trim()
-  } catch (Exception ignored) {
-    return "could not determine version!"
-  }
-}
-
-def browser = { ->
-  if (System.getenv('BROWSER')) {
-    return System.getenv('BROWSER')
-  }
-
-  return 'firefox'
-}
-
-def browserExecutable = { String path ->
+def logBrowserChosenByEnv = { String path ->
   def separator = "=" * 72
   println "Browser versions"
   println(separator)
-  switch (browser()) {
+  switch (System.getenv('BROWSER')) {
     case 'chrome':
-      println("       chrome: ${execute(path, "google-chrome", "--version")}")
-      println(" chromedriver: ${execute(path, "chromedriver", "--version").readLines().first()}")
+      println(" chromedriver: ${GoVersions.getToolVersion("chromedriver --version").readLines().first()}")
       return
     default:
-      println("     firefox: ${execute(path, "firefox", "--version")}")
-      println(" geckodriver: ${execute(path, "geckodriver", "--version").readLines().first()}")
+      println("     firefox: ${GoVersions.getToolVersion("firefox --version")}")
+      println(" geckodriver: ${GoVersions.getToolVersion("geckodriver --version").readLines().first()}")
       return
   }
 }
 
-def driverImpl = { ->
-  switch (browser()) {
-    case 'chrome':
-      return downloadChromeDriver
-    default:
-      return downloadGeckoDriver
-  }
-}
-
-task downloadGeckoDriver(type: DownloaderTask) { thisTask ->
-  executable = 'geckodriver'
-  packageName = 'geckodriver'
-  packageVersion = seleniumDrivers.geckodriver
-
-  String osURIPart
-  String archiveExtension = currentOS.isWindows() ? 'zip' : 'tar.gz'
-
-  switch (currentOS) {
-    case OperatingSystem.MacOs:
-      osURIPart = currentArch == Architecture.aarch64 ? 'macos-aarch64' : 'macos'
-      break
-    case OperatingSystem.Windows:
-      osURIPart = currentArch == Architecture.aarch64 ? 'win-aarch64' : 'win64'
-      break
-    default:
-      osURIPart = currentArch == Architecture.aarch64 ? 'linux-aarch64' : 'linux64'
-      break
-  }
-  url = "https://github.com/mozilla/geckodriver/releases/download/v${packageVersion}/geckodriver-v${packageVersion}-${osURIPart}.${archiveExtension}"
-}
-
-task downloadChromeDriver(type: DownloaderTask) { thisTask ->
-  executable = 'chromedriver'
-  packageName = 'chromedriver'
-  packageVersion = seleniumDrivers.chromedriver
-
-  String osURIPart
-
-  switch (currentOS) {
-    case OperatingSystem.MacOs:
-      osURIPart = currentArch == Architecture.aarch64 ? 'mac-arm64' : 'mac-x64'
-      break
-    case OperatingSystem.Windows:
-      osURIPart = 'win64'
-      break
-    default:
-      osURIPart = 'linux64'
-      break
-  }
-  url = "https://storage.googleapis.com/chrome-for-testing-public/${packageVersion}/${osURIPart}/chromedriver-${osURIPart}.zip"
-}
-
-task jasmineKarma(type: YarnRunTask) {
+tasks.register('jasmineKarma', YarnRunTask) {
   description = 'Run new jasmine tests (typescript) via karma'
   dependsOn ':server:yarnInstall'
   dependsOn ':server:lintNew'
@@ -150,9 +44,8 @@ task jasmineKarma(type: YarnRunTask) {
   yarnCommand = ['jasmine-ci']
 }
 
-task jasmineOld(type: YarnRunTask) {
+tasks.register('jasmineOld', YarnRunTask) {
   description = 'Run old jasmine tests (legacy JS) via jasmine-browser-runner'
-  dependsOn driverImpl()
   dependsOn ':server:yarnInstall'
   dependsOn ':server:lintOld'
   dependsOn ':server:compileAssetsRailsTest'
@@ -163,14 +56,15 @@ task jasmineOld(type: YarnRunTask) {
   yarnCommand = ['jasmine-old-ci']
 
   doFirst {
-    additionalPath = driverImpl().ext.outputDir
-    browserExecutable(additionalPath)
+    logBrowserChosenByEnv(additionalPath)
   }
 }
 
-task jasmine(dependsOn: [':server:lint', jasmineKarma, jasmineOld])
+tasks.register('jasmine') {
+  dependsOn ':server:lint', jasmineKarma, jasmineOld
+}
 
-task jasmineKarmaServer(type: YarnRunTask) {
+tasks.register('jasmineKarmaServer', YarnRunTask) {
   description = 'Run new jasmine tests (typescript) via karma inside a browser'
   dependsOn ':server:yarnInstall'
   dependsOn ':server:compileAssetsWebpackDev'
@@ -181,9 +75,8 @@ task jasmineKarmaServer(type: YarnRunTask) {
   yarnCommand = ['jasmine-server']
 }
 
-task jasmineOldServer(type: YarnRunTask) {
+tasks.register('jasmineOldServer', YarnRunTask) {
   description = 'Run old jasmine tests (legacy JS) via jasmine-browser-runner inside a browser'
-  dependsOn driverImpl()
   dependsOn ':server:yarnInstall'
   dependsOn ':server:compileAssetsRailsTest'
 
@@ -193,7 +86,6 @@ task jasmineOldServer(type: YarnRunTask) {
   yarnCommand = ['jasmine-old-server']
 
   doFirst {
-    additionalPath = driverImpl().ext.outputDir
-    browserExecutable(additionalPath)
+    logBrowserChosenByEnv(additionalPath)
   }
 }

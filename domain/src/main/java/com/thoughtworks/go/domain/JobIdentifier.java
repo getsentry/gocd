@@ -16,16 +16,19 @@
 package com.thoughtworks.go.domain;
 
 import com.google.gson.annotations.Expose;
-import com.thoughtworks.go.util.UrlUtil;
+import com.thoughtworks.go.util.UriEncodingUtil;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
 
 import java.io.Serializable;
+import java.util.Objects;
 
 public class JobIdentifier implements Serializable, LocatableEntity {
+    public static final String LATEST = "latest";
+
     @Expose
     private String pipelineName;
     @Expose
-    private Integer pipelineCounter;
+    private int pipelineCounter;
     @Expose
     private String pipelineLabel;
     @Expose
@@ -34,12 +37,13 @@ public class JobIdentifier implements Serializable, LocatableEntity {
     private String buildName;
 
     @Expose
-    private Long buildId;
+    private long buildId;
     @Expose
     private String stageCounter;
-    public static final String LATEST = "latest";
     @Expose
     private Integer rerunOfCounter;
+
+    public JobIdentifier() {}
 
     public JobIdentifier(Pipeline pipeline, Stage stage, JobInstance jobInstance) {
         this(pipeline.getName(), pipeline.getCounter(), pipeline.getLabel(), stage.getName(), String.valueOf(stage.getCounter()), jobInstance.getName(), jobInstance.getId());
@@ -53,7 +57,7 @@ public class JobIdentifier implements Serializable, LocatableEntity {
         this(stage.getPipelineName(), stage.getPipelineCounter(), stage.getPipelineLabel(), stage.getStageName(), stage.getStageCounter(), jobName, 0L);
     }
 
-    public JobIdentifier(StageIdentifier stage, String jobName, Long jobId) {
+    public JobIdentifier(StageIdentifier stage, String jobName, long jobId) {
         this(stage.getPipelineName(), stage.getPipelineCounter(), stage.getPipelineLabel(), stage.getStageName(), stage.getStageCounter(), jobName, jobId);
     }
 
@@ -61,11 +65,7 @@ public class JobIdentifier implements Serializable, LocatableEntity {
         this(pipelineName, pipelineCounter, pipelineLabel, stageName, stageCounter, jobName, -1L);
     }
 
-    public static JobIdentifier invalidIdentifier(String pipelineName, String pipelineLabel, String stageName, String stageCounter, String buildName) {
-        return new JobIdentifier(pipelineName, null, pipelineLabel, stageName, stageCounter, buildName, null);
-    }
-
-    public JobIdentifier(String pipelineName, Integer pipelineCounter, String pipelineLabel, String stageName, String stageCounter, String buildName, Long buildId) {
+    public JobIdentifier(String pipelineName, int pipelineCounter, String pipelineLabel, String stageName, String stageCounter, String buildName, long buildId) {
         this.pipelineName = pipelineName;
         this.pipelineCounter = pipelineCounter;
         this.pipelineLabel = pipelineLabel;
@@ -75,8 +75,9 @@ public class JobIdentifier implements Serializable, LocatableEntity {
         this.buildId = buildId;
     }
 
-    /*this constructor is for ibatis*/
-    public JobIdentifier() {
+    public JobIdentifier(JobIdentifier job) {
+        this(job.getPipelineName(), job.getPipelineCounter(), job.getPipelineLabel(), job.getStageName(), job.getStageCounter(), job.getBuildName(), job.getBuildId());
+        this.rerunOfCounter = job.rerunOfCounter;
     }
 
     public void setPipelineName(String pipelineName) {
@@ -119,11 +120,11 @@ public class JobIdentifier implements Serializable, LocatableEntity {
         return buildName;
     }
 
-    public Long getBuildId() {
+    public long getBuildId() {
         return buildId;
     }
 
-    public void setBuildId(Long buildId) {
+    public void setBuildId(long buildId) {
         this.buildId = buildId;
     }
 
@@ -134,7 +135,7 @@ public class JobIdentifier implements Serializable, LocatableEntity {
     }
 
     public String toFullString() {
-        return "Build [" + buildLocator() + "/" + getBuildId() + "]";
+        return "Job [" + buildLocator() + "/" + getBuildId() + "]";
     }
 
     @Override
@@ -148,43 +149,31 @@ public class JobIdentifier implements Serializable, LocatableEntity {
 
         JobIdentifier that = (JobIdentifier) o;
 
-        if (buildId != null ? !buildId.equals(that.buildId) : that.buildId != null) {
-            return false;
-        }
-        if (buildName != null ? !buildName.equals(that.buildName) : that.buildName != null) {
-            return false;
-        }
-        if (pipelineCounter != null ? !pipelineCounter.equals(that.pipelineCounter) : that.pipelineCounter != null) {
-            return false;
-        }
-        if (pipelineLabel != null ? !pipelineLabel.equals(that.pipelineLabel) : that.pipelineLabel != null) {
-            return false;
-        }
-        if (pipelineName != null ? !pipelineName.equals(that.pipelineName) : that.pipelineName != null) {
-            return false;
-        }
-        if (stageCounter != null ? !stageCounter.equals(that.stageCounter) : that.stageCounter != null) {
-            return false;
-        }
-        return stageName != null ? stageName.equals(that.stageName) : that.stageName == null;
+        return buildId == that.buildId &&
+            Objects.equals(buildName, that.buildName) &&
+            pipelineCounter == that.pipelineCounter &&
+            Objects.equals(pipelineLabel, that.pipelineLabel) &&
+            Objects.equals(pipelineName, that.pipelineName) &&
+            Objects.equals(stageCounter, that.stageCounter) &&
+            Objects.equals(stageName, that.stageName);
     }
 
     @Override
     public int hashCode() {
         int result;
-        result = (pipelineName != null ? pipelineName.hashCode() : 0);
+        result = pipelineName != null ? pipelineName.hashCode() : 0;
         result = 31 * result + (pipelineLabel != null ? pipelineLabel.hashCode() : 0);
         result = 31 * result + (stageName != null ? stageName.hashCode() : 0);
         result = 31 * result + (buildName != null ? buildName.hashCode() : 0);
-        result = 31 * result + (buildId != null ? buildId.hashCode() : 0);
+        result = 31 * result + Long.hashCode(buildId);
         result = 31 * result + (stageCounter != null ? stageCounter.hashCode() : 0);
-        result = 31 * result + (pipelineCounter != null ? pipelineCounter.hashCode() : 0);
+        result = 31 * result + Integer.hashCode(pipelineCounter);
         return result;
     }
 
     public String buildLocator() {
         //TODO: the encoding logic should be moved to presentation layer
-        return UrlUtil.encodeInUtf8(String.format("%s/%s", stageLocator(), buildName));
+        return UriEncodingUtil.encodePathPartial(stageLocator() + "/" + buildName);
     }
 
     private String stageLocator() {
@@ -192,11 +181,7 @@ public class JobIdentifier implements Serializable, LocatableEntity {
     }
 
     public String buildLocatorForDisplay() {
-        return String.format("%s/%s", getStageIdentifier().stageLocatorForDisplay(), buildName);
-    }
-
-    public String propertyLocator(String propertyName) {
-        return UrlUtil.encodeInUtf8(String.format("%s/%s/%s", stageLocator(), buildName, propertyName));
+        return getStageIdentifier().stageLocatorForDisplay() + "/" + buildName;
     }
 
     public String artifactLocator(String filePath) {
@@ -204,7 +189,7 @@ public class JobIdentifier implements Serializable, LocatableEntity {
         if (filePath.startsWith("/")) {
             filePath = filePath.substring(1);
         }
-        return UrlUtil.encodeInUtf8(String.format("%s/%s/%s", stageLocator(), buildName, filePath));
+        return UriEncodingUtil.encodePathPartial(stageLocator() + "/" + buildName + "/" + filePath);
     }
 
     public StageIdentifier getStageIdentifier() {
@@ -212,30 +197,21 @@ public class JobIdentifier implements Serializable, LocatableEntity {
                 stageCounter);
     }
 
-    public String ccProjectName() {
-        return String.format("%s :: %s :: %s", getPipelineName(), getStageName(), getBuildName());
-    }
 
-    public String webUrl() {
-        return "tab/build/detail/" + buildLocator();
+    public String webPathAfterContext() {
+        return "/tab/build/detail/" + buildLocator();
     }
 
     public JobConfigIdentifier jobConfigIdentifier() {
         return new JobConfigIdentifier(pipelineName, stageName, buildName);
     }
 
-    public Integer getPipelineCounter() {
+    public int getPipelineCounter() {
         return pipelineCounter;
     }
 
-    public void setPipelineCounter(Integer pipelineCounter) {
+    public void setPipelineCounter(int pipelineCounter) {
         this.pipelineCounter = pipelineCounter;
-    }
-
-    public boolean isSameStageConfig(JobIdentifier other) {
-        return getPipelineName().equalsIgnoreCase(other.getPipelineName())
-                && getStageName().equalsIgnoreCase(other.getStageName());
-
     }
 
     public void populateEnvironmentVariables(EnvironmentVariableContext environmentVariableContext) {
@@ -268,7 +244,7 @@ public class JobIdentifier implements Serializable, LocatableEntity {
     }
 
     @Override
-    public Long getId() {
+    public long getId() {
         return getBuildId();
     }
 }

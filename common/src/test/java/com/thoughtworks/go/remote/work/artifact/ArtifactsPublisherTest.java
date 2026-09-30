@@ -20,12 +20,11 @@ import com.thoughtworks.go.config.ArtifactStores;
 import com.thoughtworks.go.config.PluggableArtifactConfig;
 import com.thoughtworks.go.domain.*;
 import com.thoughtworks.go.plugin.access.artifact.ArtifactExtension;
-import com.thoughtworks.go.plugin.access.artifact.model.PublishArtifactResponse;
+import com.thoughtworks.go.plugin.access.artifact.models.PublishArtifactResponse;
 import com.thoughtworks.go.plugin.infra.PluginRequestProcessorRegistry;
 import com.thoughtworks.go.util.TestFileUtil;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
 import com.thoughtworks.go.work.GoPublisher;
-import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
@@ -36,6 +35,7 @@ import org.mockito.InOrder;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 
 import static com.thoughtworks.go.domain.packagerepository.ConfigurationPropertyMother.create;
@@ -281,7 +281,7 @@ public class ArtifactsPublisherTest {
                 .publishArtifacts(List.of(s3ArtifactPlan), env);
 
         InOrder inOrder = inOrder(registry, artifactExtension);
-        inOrder.verify(registry, times(1)).registerProcessorFor(eq(CONSOLE_LOG.requestName()), any(ArtifactRequestProcessor.class));
+        inOrder.verify(registry, times(1)).registerProcessorFor(eq(CONSOLE_LOG.requestName()), any());
         inOrder.verify(artifactExtension, times(1))
                 .publishArtifact("cd.go.s3", s3ArtifactPlan, s3ArtifactStore, workingFolder.getAbsolutePath(), env);
         inOrder.verify(registry, times(1)).removeProcessorFor(CONSOLE_LOG.requestName());
@@ -296,7 +296,7 @@ public class ArtifactsPublisherTest {
                 <testcase/>
                 </testsuite>
                 """;
-        FileUtils.writeStringToFile(testFile, content, StandardCharsets.UTF_8);
+        Files.writeString(testFile.toPath(), content, StandardCharsets.UTF_8);
         return testFolder;
     }
 }

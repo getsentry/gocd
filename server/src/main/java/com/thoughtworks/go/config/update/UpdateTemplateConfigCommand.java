@@ -27,11 +27,10 @@ import com.thoughtworks.go.server.service.result.LocalizedOperationResult;
 
 import static com.thoughtworks.go.serverhealth.HealthStateType.forbidden;
 
-
 public class UpdateTemplateConfigCommand extends TemplateConfigCommand {
-    private SecurityService securityService;
-    private String digest;
-    private EntityHashingService entityHashingService;
+    private final SecurityService securityService;
+    private final String digest;
+    private final EntityHashingService entityHashingService;
 
     public UpdateTemplateConfigCommand(PipelineTemplateConfig templateConfig,
                                        Username currentUser,
@@ -61,7 +60,7 @@ public class UpdateTemplateConfigCommand extends TemplateConfigCommand {
         preprocessedTemplateConfig = findAddedTemplate(preprocessedConfig);
 
         if (!preprocessedConfig.getAllErrors().isEmpty()) {
-            templateConfig.errors().addAll(preprocessedConfig.getAllErrors().get(0));
+            templateConfig.errors().addAll(preprocessedConfig.getAllErrors().getFirst());
             return false;
         }
 

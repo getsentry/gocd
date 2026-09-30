@@ -20,7 +20,6 @@ import com.thoughtworks.go.agent.service.SslInfrastructureService;
 import com.thoughtworks.go.agent.statusapi.AgentHealthHolder;
 import com.thoughtworks.go.config.AgentRegistry;
 import com.thoughtworks.go.plugin.infra.PluginManager;
-import com.thoughtworks.go.plugin.infra.monitor.PluginJarLocationMonitor;
 import com.thoughtworks.go.util.SubprocessLogger;
 import com.thoughtworks.go.util.SystemEnvironment;
 import com.thoughtworks.go.util.TestingClock;
@@ -33,10 +32,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
-import java.util.Date;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.inOrder;
 
 @ExtendWith(MockitoExtension.class)
 public class AgentControllerTest {
@@ -52,8 +51,7 @@ public class AgentControllerTest {
     private PluginManager pluginManager;
     @Mock
     private AgentRegistry agentRegistry;
-    @Mock
-    private PluginJarLocationMonitor pluginJarLocationMonitor;
+
     private AgentController agentController;
 
     private final TestingClock clock = new TestingClock();
@@ -79,26 +77,16 @@ public class AgentControllerTest {
 
     @Test
     void shouldUpgradeAgentBeforeAgentRegistration() throws Exception {
-        when(pluginJarLocationMonitor.hasRunAtLeastOnce()).thenReturn(true);
         assertThat(agentController.performWork()).isEqualTo(WorkAttempt.OK);
-        InOrder inOrder = inOrder(agentUpgradeService, sslInfrastructureService, pluginJarLocationMonitor);
+        InOrder inOrder = inOrder(agentUpgradeService, sslInfrastructureService);
         inOrder.verify(agentUpgradeService).checkForUpgradeAndExtraProperties();
         inOrder.verify(sslInfrastructureService).registerIfNecessary(agentController.getAgentAutoRegistrationProperties());
-        inOrder.verify(pluginJarLocationMonitor).hasRunAtLeastOnce();
-    }
-
-    @Test
-    void shouldNotTryWorkIfPluginMonitorHasNotRun() {
-        when(pluginJarLocationMonitor.hasRunAtLeastOnce()).thenReturn(false);
-        assertThat(agentController.performWork()).isEqualTo(WorkAttempt.FAILED);
-        verify(pluginJarLocationMonitor).hasRunAtLeastOnce();
     }
 
     @Test
     void remembersLastPingTime() {
         // initial time
-        Date now = new Date(42);
-        clock.setTime(now);
+        clock.setTime(Instant.ofEpochMilli(42));
         agentController.pingSuccess();
 
         assertThat(agentHealthHolder.hasLostContact()).isFalse();
@@ -109,8 +97,8 @@ public class AgentControllerTest {
     }
 
     private AgentController createAgentController() {
-        return new AgentController(sslInfrastructureService, systemEnvironment, agentRegistry, pluginManager,
-            subprocessLogger, agentUpgradeService, agentHealthHolder, pluginJarLocationMonitor) {
+        return new AgentController(sslInfrastructureService, agentRegistry, pluginManager,
+            subprocessLogger, agentUpgradeService, agentHealthHolder) {
             @Override
             public void ping() {
             }

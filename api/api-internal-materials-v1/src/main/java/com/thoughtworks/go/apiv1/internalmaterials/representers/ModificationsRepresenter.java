@@ -27,14 +27,14 @@ import static java.util.Collections.emptyList;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 public class ModificationsRepresenter {
-    public static void toJSON(OutputWriter outputWriter, List<Modification> modifications, PipelineRunIdInfo latestAndOldestModId, String fingerprint, String pattern, Integer pageSize) {
+    public static void toJSON(OutputWriter outputWriter, List<Modification> modifications, PipelineRunIdInfo latestAndOldestModId, String fingerprint, String pattern, int pageSize) {
         if (modifications == null || modifications.isEmpty()) {
             outputWriter.addChildList("modifications", emptyList());
             return;
         }
         if (latestAndOldestModId != null) {
-            Modification latest = modifications.get(0);
-            Modification oldest = modifications.get(modifications.size() - 1);
+            Modification latest = modifications.getFirst();
+            Modification oldest = modifications.getLast();
             String previousLink = null, nextLink = null;
             if (latest.getId() != latestAndOldestModId.getLatestRunId()) {
                 previousLink = Routes.InternalMaterialConfig.previous(fingerprint, latest.getId(), pattern, pageSize);
@@ -51,6 +51,6 @@ public class ModificationsRepresenter {
                 });
             }
         }
-        outputWriter.addChildList("modifications", childWriter -> modifications.forEach((mod) -> childWriter.addChild(writer -> ModificationRepresenter.toJSON(writer, mod))));
+        outputWriter.addChildList("modifications", childWriter -> modifications.forEach(mod -> childWriter.addChild(writer -> ModificationRepresenter.toJSON(writer, mod))));
     }
 }

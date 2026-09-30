@@ -20,9 +20,8 @@ import com.thoughtworks.go.config.Role;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.service.GoConfigService;
 import com.thoughtworks.go.server.service.result.LocalizedOperationResult;
-import com.thoughtworks.go.validation.RolesConfigUpdateValidator;
 
-import static com.thoughtworks.go.config.CaseInsensitiveString.isBlank;
+import static com.thoughtworks.go.config.CaseInsensitiveString.isEmpty;
 
 public class RoleConfigCreateCommand extends RoleConfigCommand {
     public RoleConfigCreateCommand(GoConfigService goConfigService, Role newRole, Username currentUser, LocalizedOperationResult result) {
@@ -37,7 +36,7 @@ public class RoleConfigCreateCommand extends RoleConfigCommand {
 
     @Override
     public boolean isValid(CruiseConfig preprocessedConfig) {
-        if (isBlank(role.getName())) {
+        if (isEmpty(role.getName())) {
             role.validateTree(RolesConfigUpdateValidator.validationContextWithSecurityConfig(preprocessedConfig));
             return false;
         }

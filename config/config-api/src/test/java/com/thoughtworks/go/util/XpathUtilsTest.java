@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.util;
 
-import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -23,6 +22,7 @@ import org.xml.sax.InputSource;
 
 import javax.xml.xpath.XPathExpressionException;
 import java.io.*;
+import java.nio.file.Files;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,7 +67,7 @@ public class XpathUtilsTest {
     public void shouldEvaluateTextValueXpath() throws Exception {
         String xpath = "//son/grandson[2]/text()";
         String value = XpathUtils.evaluate(getTestFile(), xpath);
-        assertThat(value).isEqualTo("");
+        assertThat(value).isEmpty();
     }
 
     @Test
@@ -78,7 +78,7 @@ public class XpathUtilsTest {
     @Test
     public void shouldCheckIfNodeExists() throws Exception {
         String attribute = "//son/grandson[@name=\"anyone\"]/@address";
-        assertThat(XpathUtils.evaluate(getTestFile(), attribute)).isEqualTo("");
+        assertThat(XpathUtils.evaluate(getTestFile(), attribute)).isEmpty();
         assertThat(XpathUtils.nodeExists(getTestFile(), attribute)).isTrue();
 
         String textNode = "//son/grandson[2]/text()";
@@ -99,7 +99,7 @@ public class XpathUtilsTest {
     public void shouldReturnEmptyStringWhenMatchedNodeIsNotTextNode() throws Exception {
         String xpath = "/root/son";
         String value = XpathUtils.evaluate(getTestFile(), xpath);
-        assertThat(value).isEqualTo("");
+        assertThat(value).isEmpty();
     }
 
     @Test
@@ -148,7 +148,7 @@ public class XpathUtilsTest {
 
     private File getTestFile(String xml) throws IOException {
         testFile = File.createTempFile("xpath", null, temporaryFolder);
-        FileUtils.writeStringToFile(testFile, xml, UTF_8);
+        Files.writeString(testFile.toPath(), xml, UTF_8);
         return testFile;
     }
 }

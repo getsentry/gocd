@@ -31,7 +31,7 @@ import java.util.Set;
 
 @Component
 public class DownstreamInstancePopulator {
-    private PipelineDao pipelineDao;
+    private final PipelineDao pipelineDao;
 
     @Autowired
     public DownstreamInstancePopulator(PipelineDao pipelineDao) {
@@ -49,8 +49,8 @@ public class DownstreamInstancePopulator {
 		}
 	}
 
-	private void populateRevisionsFor(Node currentMaterial, MaterialInstance currentMaterialInstance, HashSet<Revision> visitedRevisions) {
-		String revision = currentMaterial.revisions().get(0).getRevisionString();
+	private void populateRevisionsFor(Node currentMaterial, MaterialInstance currentMaterialInstance, Set<Revision> visitedRevisions) {
+		String revision = currentMaterial.revisions().getFirst().getRevisionString();
 		List<Node> downstreamPipelines = currentMaterial.getChildren();
 		for (Node downstreamPipeline : downstreamPipelines) {
 			List<PipelineIdentifier> pipelineIdentifiers = pipelineDao.getPipelineInstancesTriggeredWithDependencyMaterial(downstreamPipeline.getName(), currentMaterialInstance, revision);

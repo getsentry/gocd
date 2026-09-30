@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.valuestreammap;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.PipelineConfig;
 import com.thoughtworks.go.config.StageConfig;
 import com.thoughtworks.go.domain.NullStage;
@@ -28,9 +27,11 @@ import org.springframework.stereotype.Component;
 import java.util.HashSet;
 import java.util.List;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+
 @Component
 public class UnrunStagesPopulator {
-    private GoConfigService goConfigService;
+    private final GoConfigService goConfigService;
 
     @Autowired
     public UnrunStagesPopulator(GoConfigService goConfigService) {
@@ -64,7 +65,7 @@ public class UnrunStagesPopulator {
 
     private void populateUnrunStages(Node node) {
         List<Revision> revisions = node.revisions();
-        PipelineConfig pipelineConfig = goConfigService.getCurrentConfig().pipelineConfigByName(new CaseInsensitiveString(node.getName()));
+        PipelineConfig pipelineConfig = goConfigService.getCurrentConfig().pipelineConfigByName(cis(node.getName()));
         if (revisions.isEmpty()) {
             populateConfiguredStages(node, pipelineConfig);
         }
@@ -75,10 +76,10 @@ public class UnrunStagesPopulator {
 
     private void appendUnrunStages(PipelineConfig pipelineConfig, PipelineRevision pipelineRevision) {
         Stages stages = pipelineRevision.getStages();
-        StageConfig nextStage = pipelineConfig.nextStage(new CaseInsensitiveString(stages.last().getName()));
+        StageConfig nextStage = pipelineConfig.nextStageAfter(cis(stages.getLast().getName()));
         while (nextStage != null && !stages.hasStage(nextStage.name().toString())) {
             pipelineRevision.addStage(new NullStage(nextStage.name().toString()));
-            nextStage = pipelineConfig.nextStage(nextStage.name());
+            nextStage = pipelineConfig.nextStageAfter(nextStage.name());
         }
     }
 

@@ -15,7 +15,7 @@
  */
 package com.thoughtworks.go.config.validation;
 
-import com.thoughtworks.go.service.ConfigRepository;
+import com.thoughtworks.go.config.ConfigRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class ConfigRepositoryValidatorService implements InitializingBean {
     private static final Logger LOG = LoggerFactory.getLogger(ConfigRepositoryValidatorService.class);
-    private ConfigRepository configRepository;
+    private final ConfigRepository configRepository;
 
     @Autowired
     public ConfigRepositoryValidatorService(ConfigRepository configRepository) {
@@ -42,9 +42,5 @@ public class ConfigRepositoryValidatorService implements InitializingBean {
 
     void shutDownServer() {
         new Thread(() -> System.exit(1)).start();
-    }
-
-    public void destroy() {
-
     }
 }

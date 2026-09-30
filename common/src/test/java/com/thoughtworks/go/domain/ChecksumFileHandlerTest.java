@@ -15,15 +15,16 @@
  */
 package com.thoughtworks.go.domain;
 
-import org.apache.commons.io.FileUtils;
+import com.thoughtworks.go.util.SystemEnvironment;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import javax.servlet.http.HttpServletResponse;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -39,18 +40,24 @@ public class ChecksumFileHandlerTest {
     public void setUp(@TempDir Path tempDir) throws Exception {
         file = Files.createTempFile(tempDir, "checksum", null).toFile();
         checksumFileHandler = new ChecksumFileHandler(file);
+        new SystemEnvironment().set(SystemEnvironment.SERVICE_URL, "http://foo/go");
+    }
+
+    @AfterEach
+    public void tearDown() {
+        new SystemEnvironment().clearProperty(SystemEnvironment.SERVICE_URL.propertyName());
     }
 
     @Test
     public void shouldGenerateChecksumFileUrl() {
-        String url = checksumFileHandler.url("http://foo/go", "cruise/1/stage/1/job");
+        String url = checksumFileHandler.url("cruise/1/stage/1/job");
         assertThat(url).isEqualTo("http://foo/go/remoting/files/cruise/1/stage/1/job/cruise-output/md5.checksum");
     }
 
     @Test
     public void shouldStoreTheMd5ChecksumOnTheAgent() throws IOException {
         checksumFileHandler.handle(new ByteArrayInputStream("Hello World".getBytes()));
-        assertThat(FileUtils.readFileToString(file, UTF_8)).isEqualTo("Hello World");
+        assertThat(Files.readString(file.toPath(), UTF_8)).isEqualTo("Hello World");
     }
 
     @Test
@@ -58,7 +65,7 @@ public class ChecksumFileHandlerTest {
         StubGoPublisher goPublisher = new StubGoPublisher();
         file.createNewFile();
 
-        boolean isSuccessful = checksumFileHandler.handleResult(HttpServletResponse.SC_NOT_FOUND, goPublisher);
+        boolean isSuccessful = checksumFileHandler.handleResult(HttpURLConnection.HTTP_NOT_FOUND, goPublisher);
         assertThat(isSuccessful).isTrue();
         assertThat(file.exists()).isFalse();
     }
@@ -68,7 +75,7 @@ public class ChecksumFileHandlerTest {
         StubGoPublisher goPublisher = new StubGoPublisher();
         file.createNewFile();
 
-        boolean isSuccessful = checksumFileHandler.handleResult(HttpServletResponse.SC_OK, goPublisher);
+        boolean isSuccessful = checksumFileHandler.handleResult(HttpURLConnection.HTTP_OK, goPublisher);
         assertThat(isSuccessful).isTrue();
         assertThat(file.exists()).isTrue();
 
@@ -77,26 +84,26 @@ public class ChecksumFileHandlerTest {
     @Test
     public void shouldHandleResultIfHttpCodeSaysFileNotFound() {
         StubGoPublisher goPublisher = new StubGoPublisher();
-        assertThat(checksumFileHandler.handleResult(HttpServletResponse.SC_NOT_FOUND, goPublisher)).isTrue();
-        assertThat(goPublisher.getMessage()).contains(String.format("[WARN] The md5checksum property file was not found on the server. Hence, Go can not verify the integrity of the artifacts.", file));
+        assertThat(checksumFileHandler.handleResult(HttpURLConnection.HTTP_NOT_FOUND, goPublisher)).isTrue();
+        assertThat(goPublisher.getMessage()).contains("[WARN] The md5checksum property file was not found on the server. Hence, Go can not verify the integrity of the artifacts.");
     }
 
     @Test
     public void shouldHandleResultIfHttpCodeIsSuccessful() {
         StubGoPublisher goPublisher = new StubGoPublisher();
-        assertThat(checksumFileHandler.handleResult(HttpServletResponse.SC_OK, goPublisher)).isTrue();
+        assertThat(checksumFileHandler.handleResult(HttpURLConnection.HTTP_OK, goPublisher)).isTrue();
     }
 
     @Test
     public void shouldHandleResultIfHttpCodeSaysFileNotModified() {
         StubGoPublisher goPublisher = new StubGoPublisher();
-        assertThat(checksumFileHandler.handleResult(HttpServletResponse.SC_NOT_MODIFIED, goPublisher)).isTrue();
+        assertThat(checksumFileHandler.handleResult(HttpURLConnection.HTTP_NOT_MODIFIED, goPublisher)).isTrue();
     }
 
     @Test
     public void shouldHandleResultIfHttpCodeSaysFilePermissionDenied() {
         StubGoPublisher goPublisher = new StubGoPublisher();
-        assertThat(checksumFileHandler.handleResult(HttpServletResponse.SC_FORBIDDEN, goPublisher)).isFalse();
+        assertThat(checksumFileHandler.handleResult(HttpURLConnection.HTTP_FORBIDDEN, goPublisher)).isFalse();
     }
 
     @Test

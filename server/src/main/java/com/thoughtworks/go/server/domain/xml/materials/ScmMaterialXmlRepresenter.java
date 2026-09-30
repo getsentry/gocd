@@ -21,7 +21,7 @@ import com.thoughtworks.go.server.domain.xml.XmlWriterContext;
 import com.thoughtworks.go.server.domain.xml.builder.ElementBuilder;
 
 public class ScmMaterialXmlRepresenter extends MaterialXmlRepresenter {
-    public ScmMaterialXmlRepresenter(String pipelineName, Integer pipelineCounter, MaterialRevision materialRevision) {
+    public ScmMaterialXmlRepresenter(String pipelineName, int pipelineCounter, MaterialRevision materialRevision) {
         super(pipelineName, pipelineCounter, materialRevision);
     }
 
@@ -33,9 +33,10 @@ public class ScmMaterialXmlRepresenter extends MaterialXmlRepresenter {
                 .cdataNode("revision", modification.getRevision())
                 .cdataNode("message", modification.getComment());
 
-            modification.getModifiedFiles().forEach(file -> cb.node("file", fb -> fb.
-                attr("name", file.getFileName())
-                .attr("action", file.getAction().toString())));
+            modification.getModifiedFiles()
+                .forEach(file -> cb.node("file", fb -> fb
+                    .attr("name", file.getFileName())
+                    .attr("action", file.getAction().toString())));
         });
     }
 }

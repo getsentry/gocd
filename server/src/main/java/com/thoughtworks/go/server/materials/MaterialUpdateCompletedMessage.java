@@ -18,12 +18,14 @@ package com.thoughtworks.go.server.materials;
 import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.server.messaging.GoMessage;
 
+import java.util.Objects;
+
 /**
  * Understands when a material update has completed
  */
 public class MaterialUpdateCompletedMessage implements GoMessage {
     private final Material material;
-    private long trackingId;
+    private final long trackingId;
 
     public MaterialUpdateCompletedMessage(Material material, long trackingId) {
         this.material = material;
@@ -49,11 +51,7 @@ public class MaterialUpdateCompletedMessage implements GoMessage {
 
         MaterialUpdateCompletedMessage that = (MaterialUpdateCompletedMessage) o;
 
-        if (material != null ? !material.equals(that.material) : that.material != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(material, that.material);
     }
 
     @Override

@@ -37,14 +37,13 @@ import com.thoughtworks.go.domain.packagerepository.*;
 import com.thoughtworks.go.domain.scm.SCM;
 import com.thoughtworks.go.domain.scm.SCMMother;
 import com.thoughtworks.go.helper.*;
-import com.thoughtworks.go.security.GoCipher;
 import com.thoughtworks.go.util.FunctionalUtils;
-import com.thoughtworks.go.util.ReflectionUtil;
 import com.thoughtworks.go.util.command.UrlArgument;
 import org.junit.jupiter.api.Test;
 
 import java.util.*;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.*;
 import static com.thoughtworks.go.helper.PipelineConfigMother.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,28 +70,6 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         assertThat(cruiseConfig.getPartials().size()).isEqualTo(1);
         cruiseConfig = cruiseConfig.cloneForValidation();
         assertThat(cruiseConfig.getPartials().size()).isEqualTo(1);
-    }
-
-    @Test
-    public void shouldLoadPasswordForGivenMaterialFingerprint() {
-        MaterialConfig svnConfig = svn("url", "loser", "boozer", true);
-        PipelineConfig one = PipelineConfigMother.pipelineConfig("one", svnConfig, new JobConfigs(new JobConfig("job")));
-        cruiseConfig.addPipeline("group-1", one);
-
-        P4MaterialConfig p4One = p4("server_and_port", "outside_the_window");
-        p4One.setPassword("abcdef");
-        PipelineConfig two = PipelineConfigMother.pipelineConfig("two", p4One, new JobConfigs(new JobConfig("job")));
-        cruiseConfig.addPipeline("group-2", two);
-
-        P4MaterialConfig p4Two = p4("port_and_server", "inside_yourself");
-        p4Two.setPassword("fedcba");
-        PipelineConfig three = PipelineConfigMother.pipelineConfig("three", p4Two, new JobConfigs(new JobConfig("job")));
-        cruiseConfig.addPipeline("group-3", three);
-
-        assertThat(cruiseConfig.materialConfigFor(svnConfig.getFingerprint())).isEqualTo(svnConfig);
-        assertThat(cruiseConfig.materialConfigFor(p4One.getFingerprint())).isEqualTo(p4One);
-        assertThat(cruiseConfig.materialConfigFor(p4Two.getFingerprint())).isEqualTo(p4Two);
-        assertThat(cruiseConfig.materialConfigFor("some_crazy_fingerprint")).isNull();
     }
 
     @Test
@@ -147,27 +124,27 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
     @Test
     public void shouldFindNextStage() {
         addPipelineWithStages("mingle", "dev", jobConfig("ut"), jobConfig("ft"));
-        assertThat(cruiseConfig.hasNextStage(new CaseInsensitiveString("mingle"), new CaseInsensitiveString("dev"))).isTrue();
-        StageConfig nextStage = cruiseConfig.nextStage(new CaseInsensitiveString("mingle"), new CaseInsensitiveString("dev"));
-        assertThat(nextStage.name()).isEqualTo(new CaseInsensitiveString("dev2"));
-        assertThat(cruiseConfig.hasNextStage(new CaseInsensitiveString("mingle"), nextStage.name())).isFalse();
+        assertThat(cruiseConfig.hasNextStage(cis("mingle"), cis("dev"))).isTrue();
+        StageConfig nextStage = cruiseConfig.nextStage(cis("mingle"), cis("dev"));
+        assertThat(nextStage.name()).isEqualTo(cis("dev2"));
+        assertThat(cruiseConfig.hasNextStage(cis("mingle"), nextStage.name())).isFalse();
     }
 
     @Test
     public void shouldFindPreviousStage() {
         addPipelineWithStages("mingle", "dev", jobConfig("ut"), jobConfig("ft"));
-        assertThat(cruiseConfig.hasPreviousStage(new CaseInsensitiveString("mingle"), new CaseInsensitiveString("dev2"))).isTrue();
-        StageConfig previousStage = cruiseConfig.previousStage(new CaseInsensitiveString("mingle"), new CaseInsensitiveString("dev2"));
-        assertThat(previousStage.name()).isEqualTo(new CaseInsensitiveString("dev"));
-        assertThat(cruiseConfig.hasPreviousStage(new CaseInsensitiveString("mingle"), previousStage.name())).isFalse();
+        assertThat(cruiseConfig.hasPreviousStage(cis("mingle"), cis("dev2"))).isTrue();
+        StageConfig previousStage = cruiseConfig.previousStage(cis("mingle"), cis("dev2"));
+        assertThat(previousStage.name()).isEqualTo(cis("dev"));
+        assertThat(cruiseConfig.hasPreviousStage(cis("mingle"), previousStage.name())).isFalse();
     }
 
     @Test
     public void shouldKnowWhenBuildPlanNotInConfigFile() {
         pipelines.add(createPipelineConfig("pipeline", "stage", "build1", "build2"));
-        assertThat(cruiseConfig.hasBuildPlan(new CaseInsensitiveString("pipeline"), new CaseInsensitiveString("stage"), "build1", true)).isTrue();
-        assertThat(cruiseConfig.hasBuildPlan(new CaseInsensitiveString("pipeline"), new CaseInsensitiveString("stage"), "build2", true)).isTrue();
-        assertThat(cruiseConfig.hasBuildPlan(new CaseInsensitiveString("pipeline"), new CaseInsensitiveString("stage"), "build3", true)).isFalse();
+        assertThat(cruiseConfig.hasBuildPlan(cis("pipeline"), cis("stage"), "build1", true)).isTrue();
+        assertThat(cruiseConfig.hasBuildPlan(cis("pipeline"), cis("stage"), "build2", true)).isTrue();
+        assertThat(cruiseConfig.hasBuildPlan(cis("pipeline"), cis("stage"), "build3", true)).isFalse();
     }
 
     @Test
@@ -186,12 +163,12 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         PipelineTemplateConfig template = template("first_template");
         PipelineConfig pipelineConfig1 = PipelineConfigMother.pipelineConfig("first");
         pipelineConfig1.clear();
-        pipelineConfig1.setTemplateName(new CaseInsensitiveString("first_template"));
+        pipelineConfig1.setTemplateName(cis("first_template"));
         pipelineConfig1.usingTemplate(template);
 
         PipelineConfig pipelineConfig2 = PipelineConfigMother.pipelineConfig("second");
         pipelineConfig2.clear();
-        pipelineConfig2.setTemplateName(new CaseInsensitiveString("FIRST_template"));
+        pipelineConfig2.setTemplateName(cis("FIRST_template"));
         pipelineConfig2.usingTemplate(template);
 
         PipelineConfig pipelineConfigWithoutTemplate = PipelineConfigMother.pipelineConfig("third");
@@ -202,79 +179,21 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
 
         cruiseConfig.addTemplate(template);
         SecurityConfig securityConfig = new SecurityConfig();
-        securityConfig.adminsConfig().add(new AdminUser(new CaseInsensitiveString("root")));
+        securityConfig.adminsConfig().add(new AdminUser(cis("root")));
         cruiseConfig.server().useSecurity(securityConfig);
 
         Map<CaseInsensitiveString, Map<CaseInsensitiveString, Authorization>> allTemplatesWithAssociatedPipelines = cruiseConfig.templatesWithAssociatedPipelines();
 
         assertThat(allTemplatesWithAssociatedPipelines.size()).isEqualTo(1);
         Map<CaseInsensitiveString, Map<CaseInsensitiveString, Authorization>> expectedTemplatesMap = new HashMap<>();
-        expectedTemplatesMap.put(new CaseInsensitiveString("first_template"), new HashMap<>());
-        expectedTemplatesMap.get(new CaseInsensitiveString("first_template")).put(new CaseInsensitiveString("first"), new Authorization());
-        expectedTemplatesMap.get(new CaseInsensitiveString("first_template")).put(new CaseInsensitiveString("second"), new Authorization());
+        expectedTemplatesMap.put(cis("first_template"), new HashMap<>());
+        expectedTemplatesMap.get(cis("first_template")).put(cis("first"), new Authorization());
+        expectedTemplatesMap.get(cis("first_template")).put(cis("second"), new Authorization());
         assertThat(allTemplatesWithAssociatedPipelines).isEqualTo(expectedTemplatesMap);
     }
 
     private PipelineTemplateConfig template(final String name) {
-        return new PipelineTemplateConfig(new CaseInsensitiveString(name), StageConfigMother.stageConfig("some_stage"));
-    }
-
-    @Test
-    public void shouldThrowExceptionWhenThereIsNoGroup() {
-        CruiseConfig config = createCruiseConfig();
-        try {
-            config.isInFirstGroup(new CaseInsensitiveString("any-pipeline"));
-            fail("should throw exception when there is no group");
-        } catch (Exception e) {
-            assertThat(e.getMessage()).isEqualTo("No pipeline group defined yet!");
-        }
-    }
-
-    @Test
-    public void shouldOfferAllTasksToVisitors() {
-        CruiseConfig config = createCruiseConfig();
-        Task task1 = new ExecTask("ls", "-a", "");
-        Task task2 = new AntTask();
-        setupJobWithTasks(config, task1, task2);
-
-        final List<Task> tasksVisited = new ArrayList<>();
-        config.accept((pipelineConfig, stageConfig, jobConfig, task) -> tasksVisited.add(task));
-
-        assertThat(tasksVisited.size()).isEqualTo(3);
-        assertThat(tasksVisited.get(0)).isEqualTo(task2);
-        assertThat(tasksVisited.get(1)).isEqualTo(task1);
-        assertThat(tasksVisited.get(2)).isEqualTo(task2);
-    }
-
-    @Test
-    public void shouldReturnTrueIfThereAreTwoPipelineGroups() {
-        CruiseConfig config = goConfigMother.cruiseConfigWithTwoPipelineGroups();
-        assertThat(config.hasMultiplePipelineGroups()).isTrue();
-    }
-
-    @Test
-    public void shouldReturnFalseIfThereIsOnePipelineGroup() {
-        CruiseConfig config = goConfigMother.cruiseConfigWithOnePipelineGroup();
-        assertThat(config.hasMultiplePipelineGroups()).isFalse();
-    }
-
-    @Test
-    public void shouldFindDownstreamPipelines() {
-        CruiseConfig config = goConfigMother.defaultCruiseConfig();
-        goConfigMother.addPipeline(config, "pipeline-1", "stage-1", "job-1");
-        PipelineConfig pipeline2 = goConfigMother.addPipeline(config, "pipeline-2", "stage-2", "job-2");
-        PipelineConfig pipeline3 = goConfigMother.addPipeline(config, "pipeline-3", "stage-3", "job-3");
-        goConfigMother.setDependencyOn(config, pipeline2, "pipeline-1", "stage-1");
-        goConfigMother.setDependencyOn(config, pipeline3, "pipeline-1", "stage-1");
-        Iterable<PipelineConfig> downstream = config.getDownstreamPipelines("pipeline-1");
-        assertThat(downstream).contains(pipeline2);
-        assertThat(downstream).contains(pipeline3);
-    }
-
-    @Test
-    public void shouldReturnFalseForEmptyCruiseConfig() {
-        CruiseConfig config = createCruiseConfig();
-        assertThat(config.hasMultiplePipelineGroups()).isFalse();
+        return new PipelineTemplateConfig(cis(name), StageConfigMother.stageConfig("some_stage"));
     }
 
     @Test
@@ -292,15 +211,15 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
     public void shouldNotLockAPipelineWhenItIsAddedToAnEnvironment() {
         CruiseConfig config = GoConfigMother.configWithPipelines("pipeline-1");
         EnvironmentConfig env = config.addEnvironment("environment");
-        env.addPipeline(new CaseInsensitiveString("pipeline-1"));
+        env.addPipeline(cis("pipeline-1"));
         assertThat(config.isPipelineLockable("pipeline-1")).isFalse();
     }
 
     @Test
     public void shouldBeAbleToExplicitlyLockAPipeline() {
         CruiseConfig config = GoConfigMother.configWithPipelines("pipeline-1");
-        PipelineConfig pipelineConfig = config.pipelineConfigByName(new CaseInsensitiveString("pipeline-1"));
-        pipelineConfig.lockExplicitly();
+        PipelineConfig pipelineConfig = config.pipelineConfigByName(cis("pipeline-1"));
+        pipelineConfig.setLockBehaviorIfNecessary(PipelineConfig.LOCK_VALUE_LOCK_ON_FAILURE);
         assertThat(config.isPipelineLockable("pipeline-1")).isTrue();
     }
 
@@ -317,7 +236,7 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         ldapConfig.errors().add("searchBase", "invalid search base");
         config.server().security().securityAuthConfigs().add(ldapConfig);
 
-        PipelineConfig pipelineConfig = config.pipelineConfigByName(new CaseInsensitiveString("pipeline-1"));
+        PipelineConfig pipelineConfig = config.pipelineConfigByName(cis("pipeline-1"));
         pipelineConfig.errors().add("base", "Some base errors");
 
         P4MaterialConfig p4MaterialConfig = p4("localhost:1999", "view");
@@ -325,17 +244,17 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         pipelineConfig.addMaterialConfig(p4MaterialConfig);
         p4MaterialConfig.errors().add("materialName", "material name does not follow pattern");
 
-        StageConfig stage = pipelineConfig.first();
+        StageConfig stage = pipelineConfig.getFirst();
         stage.errors().add("role", "Roles must be proper");
 
         List<ConfigErrors> allErrors = config.validateAfterPreprocess();
         assertThat(allErrors.size()).isEqualTo(5);
-        assertThat(allErrors.get(0).on("uri")).isEqualTo("invalid ldap uri");
-        assertThat(allErrors.get(0).on("searchBase")).isEqualTo("invalid search base");
-        assertThat(allErrors.get(1).on("base")).isEqualTo("Some base errors");
-        assertThat(allErrors.get(2).on("role")).isEqualTo("Roles must be proper");
-        assertThat(allErrors.get(3).on(ScmMaterialConfig.FOLDER)).isEqualTo("Destination directory is required when a pipeline has multiple SCM materials.");
-        assertThat(allErrors.get(4).on("materialName")).isEqualTo("material name does not follow pattern");
+        assertThat(allErrors.get(0).firstErrorOn("uri")).isEqualTo("invalid ldap uri");
+        assertThat(allErrors.get(0).firstErrorOn("searchBase")).isEqualTo("invalid search base");
+        assertThat(allErrors.get(1).firstErrorOn("base")).isEqualTo("Some base errors");
+        assertThat(allErrors.get(2).firstErrorOn("role")).isEqualTo("Roles must be proper");
+        assertThat(allErrors.get(3).firstErrorOn(ScmMaterialConfig.FOLDER)).isEqualTo("Destination directory is required when a pipeline has multiple SCM materials.");
+        assertThat(allErrors.get(4).firstErrorOn("materialName")).isEqualTo("material name does not follow pattern");
     }
 
 
@@ -348,81 +267,31 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         ldapConfig.errors().add("searchBase", "invalid search base");
         config.server().security().securityAuthConfigs().add(ldapConfig);
 
-        PipelineConfig pipelineConfig = config.pipelineConfigByName(new CaseInsensitiveString("pipeline-1"));
+        PipelineConfig pipelineConfig = config.pipelineConfigByName(cis("pipeline-1"));
         pipelineConfig.errors().add("base", "Some base errors");
 
         P4MaterialConfig p4MaterialConfig = p4("localhost:1999", "view");
         pipelineConfig.addMaterialConfig(p4MaterialConfig);
         p4MaterialConfig.errors().add("materialName", "material name does not follow pattern");
 
-        StageConfig stage = pipelineConfig.first();
+        StageConfig stage = pipelineConfig.getFirst();
         stage.errors().add("role", "Roles must be proper");
 
         List<ConfigErrors> allErrors = config.getAllErrors();
         assertThat(allErrors.size()).isEqualTo(4);
-        assertThat(allErrors.get(0).on("uri")).isEqualTo("invalid ldap uri");
-        assertThat(allErrors.get(0).on("searchBase")).isEqualTo("invalid search base");
-        assertThat(allErrors.get(1).on("base")).isEqualTo("Some base errors");
-        assertThat(allErrors.get(2).on("role")).isEqualTo("Roles must be proper");
-        assertThat(allErrors.get(3).on("materialName")).isEqualTo("material name does not follow pattern");
-    }
-
-    @Test
-    public void getAllErrors_shouldIgnoreErrorsOnElementToBeSkipped() {
-        CruiseConfig config = GoConfigMother.configWithPipelines("pipeline-1");
-
-        SecurityAuthConfig ldapConfig = new SecurityAuthConfig("ldap", "cd.go.authorization.ldap");
-        ldapConfig.errors().add("uri", "invalid ldap uri");
-        ldapConfig.errors().add("searchBase", "invalid search base");
-        config.server().security().securityAuthConfigs().add(ldapConfig);
-
-        PipelineConfig pipelineConfig = config.pipelineConfigByName(new CaseInsensitiveString("pipeline-1"));
-        pipelineConfig.errors().add("base", "Some base errors");
-
-        P4MaterialConfig p4MaterialConfig = p4("localhost:1999", "view");
-        pipelineConfig.addMaterialConfig(p4MaterialConfig);
-        p4MaterialConfig.errors().add("materialName", "material name does not follow pattern");
-
-        StageConfig stage = pipelineConfig.first();
-        stage.errors().add("role", "Roles must be proper");
-
-        List<ConfigErrors> allErrors = config.getAllErrorsExceptFor(p4MaterialConfig);
-        assertThat(allErrors.size()).isEqualTo(3);
-        assertThat(allErrors.get(0).on("uri")).isEqualTo("invalid ldap uri");
-        assertThat(allErrors.get(0).on("searchBase")).isEqualTo("invalid search base");
-        assertThat(allErrors.get(1).on("base")).isEqualTo("Some base errors");
-        assertThat(allErrors.get(2).on("role")).isEqualTo("Roles must be proper");
-    }
-
-    @Test
-    public void getAllErrors_shouldRetainAllErrorsWhenNoSubjectGiven() {
-        CruiseConfig config = GoConfigMother.configWithPipelines("pipeline-1");
-
-        SecurityAuthConfig ldapConfig = new SecurityAuthConfig("ldap", "cd.go.authorization.ldap");
-        ldapConfig.errors().add("uri", "invalid ldap uri");
-        ldapConfig.errors().add("searchBase", "invalid search base");
-        config.server().security().securityAuthConfigs().add(ldapConfig);
-
-        PipelineConfig pipelineConfig = config.pipelineConfigByName(new CaseInsensitiveString("pipeline-1"));
-        pipelineConfig.errors().add("base", "Some base errors");
-
-        P4MaterialConfig p4MaterialConfig = p4("localhost:1999", "view");
-        pipelineConfig.addMaterialConfig(p4MaterialConfig);
-        p4MaterialConfig.errors().add("materialName", "material name does not follow pattern");
-
-        StageConfig stage = pipelineConfig.first();
-        stage.errors().add("role", "Roles must be proper");
-
-        List<ConfigErrors> allErrors = config.getAllErrorsExceptFor(null);
-        assertThat(allErrors.size()).isEqualTo(4);
+        assertThat(allErrors.get(0).firstErrorOn("uri")).isEqualTo("invalid ldap uri");
+        assertThat(allErrors.get(0).firstErrorOn("searchBase")).isEqualTo("invalid search base");
+        assertThat(allErrors.get(1).firstErrorOn("base")).isEqualTo("Some base errors");
+        assertThat(allErrors.get(2).firstErrorOn("role")).isEqualTo("Roles must be proper");
+        assertThat(allErrors.get(3).firstErrorOn("materialName")).isEqualTo("material name does not follow pattern");
     }
 
     @Test
     public void shouldBuildTheValidationContextForAnOnCancelTask() {
         CruiseConfig config = GoConfigMother.configWithPipelines("pipeline-1");
-        PipelineConfig pipelineConfig = config.pipelineConfigByName(new CaseInsensitiveString("pipeline-1"));
-        StageConfig stageConfig = pipelineConfig.get(0);
-        JobConfig jobConfig = stageConfig.getJobs().get(0);
+        PipelineConfig pipelineConfig = config.pipelineConfigByName(cis("pipeline-1"));
+        StageConfig stageConfig = pipelineConfig.getFirst();
+        JobConfig jobConfig = stageConfig.getJobs().getFirst();
         ExecTask execTask = new ExecTask("ls", "-la", "dir");
         Task mockTask = mock(Task.class);
         when(mockTask.errors()).thenReturn(new ConfigErrors());
@@ -450,12 +319,12 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         MyValidatable bar = new AlwaysEqualMyValidatable();
         foo.innerValidatable = bar;
 
-        GoConfigGraphWalker.Handler handler = mock(GoConfigGraphWalker.Handler.class);
+        Validatable.Handler handler = mock(Validatable.Handler.class);
 
         new GoConfigGraphWalker(foo).walk(handler);
 
-        verify(handler).handle(same(foo), any(ValidationContext.class));
-        verify(handler).handle(same(bar), any(ValidationContext.class));
+        verify(handler).handle(same(foo), any());
+        verify(handler).handle(same(bar), any());
     }
 
     @Test
@@ -473,11 +342,11 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         goConfigMother.setDependencyOn(cruiseConfig, pipelineConfig, "pipeline1", "ft");
         cruiseConfig.validate(null);
         ConfigErrors errors = pipelineConfig.materialConfigs().errors();
-        assertThat(errors.on("base")).isEqualTo("Circular dependency: pipeline1 <- pipeline1");
+        assertThat(errors.firstErrorOn("base")).isEqualTo("Circular dependency: pipeline1 <- pipeline1");
     }
 
     @Test
-    public void shouldNotDuplicateErrorWhenPipelineDoesnotExist() {
+    public void shouldNotDuplicateErrorWhenPipelineDoesNotExist() {
         CruiseConfig cruiseConfig = createCruiseConfig();
         PipelineConfig pipelineConfig = goConfigMother.addPipeline(cruiseConfig, "pipeline1", "stage", "build");
         PipelineConfig pipelineConfig2 = goConfigMother.addPipeline(cruiseConfig, "pipeline2", "stage", "build");
@@ -491,7 +360,7 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
             errors.addAll(allError.getAllOn("base"));
         }
         assertThat(errors.size()).isEqualTo(1);
-        assertThat(errors.get(0)).isEqualTo("Pipeline 'invalid' does not exist. It is used from pipeline 'pipeline1'.");
+        assertThat(errors.getFirst()).isEqualTo("Pipeline 'invalid' does not exist. It is used from pipeline 'pipeline1'.");
     }
 
     @Test
@@ -527,7 +396,7 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
     public void shouldErrorOutWhenThreePipelinesFormACycle() {
         CruiseConfig cruiseConfig = createCruiseConfig();
         PipelineConfig pipeline1 = goConfigMother.addPipeline(cruiseConfig, "pipeline1", "stage", "build");
-        SvnMaterialConfig material = (SvnMaterialConfig) pipeline1.materialConfigs().get(0);
+        SvnMaterialConfig material = (SvnMaterialConfig) pipeline1.materialConfigs().getFirst();
         material.setConfigAttributes(Map.of(ScmMaterialConfig.FOLDER, "svn_dir"));
         P4MaterialConfig p4MaterialConfig = p4("localhost:1999", "view");
         p4MaterialConfig.setConfigAttributes(Map.of(ScmMaterialConfig.FOLDER, "p4_folder"));
@@ -541,21 +410,6 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         assertThat(pipeline1.materialConfigs().errors().isEmpty()).isFalse();
         assertThat(pipeline2.materialConfigs().errors().isEmpty()).isFalse();
         assertThat(pipeline3.materialConfigs().errors().isEmpty()).isFalse();
-    }
-
-    @Test
-    public void shouldAllowCleanupOfNonExistentStages() {
-        CruiseConfig cruiseConfig = createCruiseConfig();
-        assertThat(cruiseConfig.isArtifactCleanupProhibited("foo", "bar")).isFalse();
-
-        PipelineConfig pipelineConfig = PipelineConfigMother.createPipelineConfig("foo-pipeline", "bar-stage", "baz-job");
-        cruiseConfig.addPipeline("defaultGrp", pipelineConfig);
-        assertThat(cruiseConfig.isArtifactCleanupProhibited("foo-pipeline", "baz-stage")).isFalse();
-        assertThat(cruiseConfig.isArtifactCleanupProhibited("foo-pipeline", "bar-stage")).isFalse();
-
-        ReflectionUtil.setField(pipelineConfig.getFirstStageConfig(), "artifactCleanupProhibited", true);
-        assertThat(cruiseConfig.isArtifactCleanupProhibited("foo-pipeline", "bar-stage")).isTrue();
-        assertThat(cruiseConfig.isArtifactCleanupProhibited("fOO-pipeLINE", "BaR-StagE")).isTrue();
     }
 
     @Test
@@ -574,30 +428,6 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
     }
 
     @Test
-    public void shouldAddPackageRepository() {
-        PackageRepository packageRepository = new PackageRepository();
-        cruiseConfig.savePackageRepository(packageRepository);
-        assertThat(cruiseConfig.getPackageRepositories().size()).isEqualTo(1);
-        assertThat(cruiseConfig.getPackageRepositories().get(0)).isEqualTo(packageRepository);
-        assertThat(cruiseConfig.getPackageRepositories().get(0).getId()).isNotNull();
-    }
-
-    @Test
-    public void shouldUpdatePackageRepository() {
-        PackageRepository packageRepository = new PackageRepository();
-        packageRepository.setName("old");
-        cruiseConfig.savePackageRepository(packageRepository);
-
-        packageRepository.setName("new");
-        cruiseConfig.savePackageRepository(packageRepository);
-
-        assertThat(cruiseConfig.getPackageRepositories().size()).isEqualTo(1);
-        assertThat(cruiseConfig.getPackageRepositories().get(0)).isEqualTo(packageRepository);
-        assertThat(cruiseConfig.getPackageRepositories().get(0).getId()).isNotNull();
-        assertThat(cruiseConfig.getPackageRepositories().get(0).getName()).isEqualTo("new");
-    }
-
-    @Test
     public void shouldAddPackageDefinitionToGivenRepository() {
         String repoId = "repo-id";
         PackageRepository packageRepository = PackageRepositoryMother.create(repoId, "repo-name", "plugin-id", "1.0", new Configuration());
@@ -613,30 +443,14 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         cruiseConfig.savePackageDefinition(packageDefinition);
 
         assertThat(cruiseConfig.getPackageRepositories().size()).isEqualTo(1);
-        assertThat(cruiseConfig.getPackageRepositories().get(0).getId()).isEqualTo(repoId);
+        assertThat(cruiseConfig.getPackageRepositories().getFirst().getId()).isEqualTo(repoId);
 
-        assertThat(cruiseConfig.getPackageRepositories().get(0).getPackages().size()).isEqualTo(2);
-        assertThat(cruiseConfig.getPackageRepositories().get(0).getPackages().get(0).getId()).isEqualTo(existing.getId());
-        PackageDefinition createdPkgDef = cruiseConfig.getPackageRepositories().get(0).getPackages().get(1);
-        assertThat(createdPkgDef.getId()).isNotNull();
-        assertThat(createdPkgDef.getConfiguration().getProperty("key")).isNotNull();
-        assertThat(createdPkgDef.getConfiguration().getProperty("key-with-no-value")).isNull();
-    }
-
-    @Test
-    public void shouldClearPackageRepositoryConfigurationsWhichAreEmptyWithNoErrors() {
-        PackageRepository packageRepository = mock(PackageRepository.class);
-        when(packageRepository.isNew()).thenReturn(true);
-        cruiseConfig.savePackageRepository(packageRepository);
-        verify(packageRepository).clearEmptyConfigurations();
-    }
-
-    @Test
-    public void shouldRemovePackageRepositoryById() {
-        PackageRepository packageRepository = PackageRepositoryMother.create(null, "repo", "pid", "1.3", new Configuration());
-        cruiseConfig.savePackageRepository(packageRepository);
-        cruiseConfig.removePackageRepository(packageRepository.getId());
-        assertThat(cruiseConfig.getPackageRepositories().find(packageRepository.getId())).isNull();
+        Packages packages = cruiseConfig.getPackageRepositories().getFirst().getPackages();
+        assertThat(packages.size()).isEqualTo(2);
+        assertThat(packages.getFirst().getId()).isEqualTo(existing.getId());
+        assertThat(packages.getLast().getId()).isNotNull();
+        assertThat(packages.getLast().getConfiguration().getProperty("key")).isNotNull();
+        assertThat(packages.getLast().getConfiguration().getProperty("key-with-no-value")).isNull();
     }
 
     @Test
@@ -646,10 +460,8 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         PackageDefinition packageDefinition = PackageDefinitionMother.create("package", repo2);
         repo2.addPackage(packageDefinition);
         PipelineConfig pipeline = PipelineConfigMother.pipelineConfig("pipeline");
-        pipeline.addMaterialConfig(new PackageMaterialConfig(new CaseInsensitiveString("p1"), packageDefinition.getId(), packageDefinition));
+        pipeline.addMaterialConfig(new PackageMaterialConfig(cis("p1"), packageDefinition.getId(), packageDefinition));
         cruiseConfig.addPipeline("existing_group", pipeline);
-        cruiseConfig.savePackageRepository(repo1);
-        cruiseConfig.savePackageRepository(repo2);
         assertThat(cruiseConfig.canDeletePackageRepository(repo1)).isTrue();
         assertThat(cruiseConfig.canDeletePackageRepository(repo2)).isFalse();
     }
@@ -701,8 +513,8 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig,
                 PartialConfigMother.withPipeline("pipe2"));
 
-        assertThat(cruiseConfig.hasPipelineNamed(new CaseInsensitiveString("pipe1"))).isTrue();
-        assertThat(cruiseConfig.hasPipelineNamed(new CaseInsensitiveString("pipe2"))).isTrue();
+        assertThat(cruiseConfig.hasPipelineNamed(cis("pipe1"))).isTrue();
+        assertThat(cruiseConfig.hasPipelineNamed(cis("pipe2"))).isTrue();
     }
 
     @Test
@@ -712,7 +524,7 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig,
                 PartialConfigMother.withPipeline("pipe2"));
 
-        assertThat(cruiseConfig.hasPipelineNamed(new CaseInsensitiveString("pipe3"))).isFalse();
+        assertThat(cruiseConfig.hasPipelineNamed(cis("pipe3"))).isFalse();
     }
 
     @Test
@@ -734,8 +546,8 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
                 PartialConfigMother.withPipeline("pipe2"));
         cruiseConfig.addPipeline("group_main", PipelineConfigMother.pipelineConfig("pipe3"));
 
-        assertThat(mainCruiseConfig.hasPipelineNamed(new CaseInsensitiveString("pipe3"))).isTrue();
-        assertThat(cruiseConfig.hasPipelineNamed(new CaseInsensitiveString("pipe3"))).isTrue();
+        assertThat(mainCruiseConfig.hasPipelineNamed(cis("pipe3"))).isTrue();
+        assertThat(cruiseConfig.hasPipelineNamed(cis("pipe3"))).isTrue();
 
     }
 
@@ -746,9 +558,9 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig,
                 PartialConfigMother.withPipelineInGroup("pipe2", "g2"), PartialConfigMother.withPipelineInGroup("pipe3", "g3"));
 
-        assertThat(cruiseConfig.getAllPipelineNames()).contains(new CaseInsensitiveString("pipe1"));
-        assertThat(cruiseConfig.getAllPipelineNames()).contains(new CaseInsensitiveString("pipe2"));
-        assertThat(cruiseConfig.getAllPipelineNames()).contains(new CaseInsensitiveString("pipe3"));
+        assertThat(cruiseConfig.getAllPipelineNames()).contains(cis("pipe1"));
+        assertThat(cruiseConfig.getAllPipelineNames()).contains(cis("pipe2"));
+        assertThat(cruiseConfig.getAllPipelineNames()).contains(cis("pipe3"));
     }
 
     @Test
@@ -768,7 +580,7 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         hgMaterialConfig.setAutoUpdate(false);
         final MaterialConfig gitMaterialConfig = git("http://git_url");
         gitMaterialConfig.setAutoUpdate(false);
-        final MaterialConfig tfsMaterialConfig = tfs(mock(GoCipher.class), new UrlArgument("http://tfs_url"), "username", "domain", "password", "project_path");
+        final MaterialConfig tfsMaterialConfig = tfs(new UrlArgument("http://tfs_url"), "username", "domain", "password", "project_path");
         tfsMaterialConfig.setAutoUpdate(false);
         final MaterialConfig p4MaterialConfig = p4("http://p4_url", "view", "username");
         p4MaterialConfig.setAutoUpdate(false);
@@ -776,14 +588,14 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         final PluggableSCMMaterialConfig pluggableSCMMaterialConfig = MaterialConfigsMother.pluggableSCMMaterialConfig("scm-id-1", null, null);
         pluggableSCMMaterialConfig.getSCMConfig().setAutoUpdate(false);
 
-        final PipelineConfig p1 = PipelineConfigMother.pipelineConfig("pipeline1", new MaterialConfigs(svnMaterialConfig), new JobConfigs(new JobConfig(new CaseInsensitiveString("jobName"))));
+        final PipelineConfig p1 = PipelineConfigMother.pipelineConfig("pipeline1", new MaterialConfigs(svnMaterialConfig), new JobConfigs(new JobConfig(cis("jobName"))));
         final PipelineConfig p2 = PipelineConfigMother.pipelineConfig("pipeline2", new MaterialConfigs(svnMaterialConfig, gitMaterialConfig),
-                new JobConfigs(new JobConfig(new CaseInsensitiveString("jobName"))));
+                new JobConfigs(new JobConfig(cis("jobName"))));
         final PipelineConfig p3 = PipelineConfigMother.pipelineConfig("pipeline3", new MaterialConfigs(hgMaterialConfig, dependencyMaterialConfig),
-                new JobConfigs(new JobConfig(new CaseInsensitiveString("jobName"))));
-        final PipelineConfig p4 = PipelineConfigMother.pipelineConfig("pipeline4", new MaterialConfigs(p4MaterialConfig, pluggableSCMMaterialConfig), new JobConfigs(new JobConfig(new CaseInsensitiveString("jobName"))));
+                new JobConfigs(new JobConfig(cis("jobName"))));
+        final PipelineConfig p4 = PipelineConfigMother.pipelineConfig("pipeline4", new MaterialConfigs(p4MaterialConfig, pluggableSCMMaterialConfig), new JobConfigs(new JobConfig(cis("jobName"))));
         final PipelineConfig p5 = PipelineConfigMother.pipelineConfig("pipeline5", new MaterialConfigs(svnMaterialConfigWithAutoUpdate, tfsMaterialConfig),
-                new JobConfigs(new JobConfig(new CaseInsensitiveString("jobName"))));
+                new JobConfigs(new JobConfig(cis("jobName"))));
         cruiseConfig.getGroups().add(new BasicPipelineConfigs(p1, p2, p3, p4, p5));
         final Set<MaterialConfig> materials = cruiseConfig.getAllUniquePostCommitSchedulableMaterials();
 
@@ -796,7 +608,7 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
     public void getAllUniquePostCommitSchedulableMaterials_shouldReturnMaterialsWithAutoUpdateFalse() {
         GitMaterialConfig gitAutoMaterial = MaterialConfigsMother.gitMaterialConfig("url");
         PipelineConfig pipelineAuto = pipelineConfig("pipelineAuto", new MaterialConfigs(gitAutoMaterial));
-        GitMaterialConfig gitNonAutoMaterial = git(new UrlArgument("other-url"), null, null, "master", "dest", false, null, false, null, new CaseInsensitiveString("git"), false);
+        GitMaterialConfig gitNonAutoMaterial = git(new UrlArgument("other-url"), null, null, "master", "dest", false, null, false, null, cis("git"), false);
         PipelineConfig pipelineTriggerable = pipelineConfig("pipelineTriggerable", new MaterialConfigs(gitNonAutoMaterial));
         PipelineConfigs defaultGroup = createGroup("defaultGroup", pipelineAuto, pipelineTriggerable);
         cruiseConfig.getGroups().add(defaultGroup);
@@ -809,7 +621,7 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
     public void getAllUniquePostCommitSchedulableMaterials_shouldReturnMaterialsAndConfigReposWithAutoUpdateFalse() {
         GitMaterialConfig gitMaterialAuto = MaterialConfigsMother.gitMaterialConfig("url");
         PipelineConfig pipelineAuto = pipelineConfig("pipelineAuto", new MaterialConfigs(gitMaterialAuto));
-        GitMaterialConfig gitMaterialManual = git(new UrlArgument("other-url"), null, null, "master", "dest", false, null, false, null, new CaseInsensitiveString("git"), false);
+        GitMaterialConfig gitMaterialManual = git(new UrlArgument("other-url"), null, null, "master", "dest", false, null, false, null, cis("git"), false);
         PipelineConfig pipelineTriggerable = pipelineConfig("pipelineTriggerable", new MaterialConfigs(gitMaterialManual));
         PipelineConfigs defaultGroup = createGroup("defaultGroup", pipelineAuto, pipelineTriggerable);
 
@@ -833,10 +645,10 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
     public void shouldCheckCyclicDependency() {
         PipelineConfig p1 = createPipelineConfig("p1", "s1", "j1");
         PipelineConfig p2 = createPipelineConfig("p2", "s2", "j1");
-        p2.addMaterialConfig(new DependencyMaterialConfig(new CaseInsensitiveString("p1"), new CaseInsensitiveString("s1")));
+        p2.addMaterialConfig(new DependencyMaterialConfig(cis("p1"), cis("s1")));
         PipelineConfig p3 = createPipelineConfig("p3", "s3", "j1");
-        p3.addMaterialConfig(new DependencyMaterialConfig(new CaseInsensitiveString("p2"), new CaseInsensitiveString("s2")));
-        p1.addMaterialConfig(new DependencyMaterialConfig(new CaseInsensitiveString("p3"), new CaseInsensitiveString("s3")));
+        p3.addMaterialConfig(new DependencyMaterialConfig(cis("p2"), cis("s2")));
+        p1.addMaterialConfig(new DependencyMaterialConfig(cis("p3"), cis("s3")));
         pipelines.addAll(List.of(p1, p2, p3));
         BasicCruiseConfig mainCruiseConfig = new BasicCruiseConfig(pipelines);
         ConfigReposConfig reposConfig = new ConfigReposConfig();
@@ -849,7 +661,7 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
 
         cruiseConfig.validate(mock(ValidationContext.class));
         List<ConfigErrors> allErrors = cruiseConfig.getAllErrors();
-        assertThat((allErrors.get(0).on("base"))).isEqualTo("Circular dependency: p1 <- p2 <- p3 <- p1");
+        assertThat(allErrors.getFirst().firstErrorOn("base")).isEqualTo("Circular dependency: p1 <- p2 <- p3 <- p1");
 
     }
 
@@ -862,9 +674,9 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig, true, partialConfig);
 
         assertThat(cruiseConfig.getEnvironments().size()).isEqualTo(1);
-        assertThat(cruiseConfig.getEnvironments().get(0) instanceof MergeEnvironmentConfig).isTrue();
-        assertThat(cruiseConfig.getEnvironments().get(0).name()).isEqualTo(new CaseInsensitiveString("remoteEnv"));
-        MergeEnvironmentConfig mergedEnv = (MergeEnvironmentConfig) cruiseConfig.getEnvironments().get(0);
+        assertThat(cruiseConfig.getEnvironments().getFirst() instanceof MergeEnvironmentConfig).isTrue();
+        assertThat(cruiseConfig.getEnvironments().getFirst().name()).isEqualTo(cis("remoteEnv"));
+        MergeEnvironmentConfig mergedEnv = (MergeEnvironmentConfig) cruiseConfig.getEnvironments().getFirst();
         assertThat(mergedEnv.size()).isEqualTo(2);
     }
 
@@ -878,9 +690,9 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig, true, partialConfig1, partialConfig2);
 
         assertThat(cruiseConfig.getEnvironments().size()).isEqualTo(1);
-        assertThat(cruiseConfig.getEnvironments().get(0) instanceof MergeEnvironmentConfig).isTrue();
-        assertThat(cruiseConfig.getEnvironments().get(0).name()).isEqualTo(new CaseInsensitiveString("remoteEnv"));
-        MergeEnvironmentConfig mergedEnv = (MergeEnvironmentConfig) cruiseConfig.getEnvironments().get(0);
+        assertThat(cruiseConfig.getEnvironments().getFirst() instanceof MergeEnvironmentConfig).isTrue();
+        assertThat(cruiseConfig.getEnvironments().getFirst().name()).isEqualTo(cis("remoteEnv"));
+        MergeEnvironmentConfig mergedEnv = (MergeEnvironmentConfig) cruiseConfig.getEnvironments().getFirst();
         assertThat(mergedEnv.size()).isEqualTo(3);
     }
 
@@ -892,28 +704,28 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig, false, partialConfig);
 
         assertThat(cruiseConfig.getEnvironments().size()).isEqualTo(1);
-        assertThat(cruiseConfig.getEnvironments().get(0) instanceof MergeEnvironmentConfig).isFalse();
-        assertThat(cruiseConfig.getEnvironments().get(0).name()).isEqualTo(new CaseInsensitiveString("remoteEnv"));
-        assertThat(cruiseConfig.getEnvironments().get(0).isLocal()).isFalse();
+        assertThat(cruiseConfig.getEnvironments().getFirst() instanceof MergeEnvironmentConfig).isFalse();
+        assertThat(cruiseConfig.getEnvironments().getFirst().name()).isEqualTo(cis("remoteEnv"));
+        assertThat(cruiseConfig.getEnvironments().getFirst().isLocal()).isFalse();
     }
 
     @Test
     public void shouldNotCreateEmptyEnvironmentConfigForEditsWithUIOrigin_WhenFileHasEnvironment_AndForEdit() {
         BasicCruiseConfig mainCruiseConfig = new BasicCruiseConfig(pipelines);
-        mainCruiseConfig.addEnvironment(new BasicEnvironmentConfig(new CaseInsensitiveString("Env")));
+        mainCruiseConfig.addEnvironment(new BasicEnvironmentConfig(cis("Env")));
         mainCruiseConfig.setOrigins(new FileConfigOrigin());
         PartialConfig partialConfig = PartialConfigMother.withEnvironment("Env");
         partialConfig.setOrigins(new RepoConfigOrigin());
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig, true, partialConfig);
 
         assertThat(cruiseConfig.getEnvironments().size()).isEqualTo(1);
-        assertThat(cruiseConfig.getEnvironments().get(0) instanceof MergeEnvironmentConfig).isTrue();
-        assertThat(cruiseConfig.getEnvironments().get(0).name()).isEqualTo(new CaseInsensitiveString("Env"));
+        assertThat(cruiseConfig.getEnvironments().getFirst() instanceof MergeEnvironmentConfig).isTrue();
+        assertThat(cruiseConfig.getEnvironments().getFirst().name()).isEqualTo(cis("Env"));
 
-        MergeEnvironmentConfig mergedEnv = (MergeEnvironmentConfig) cruiseConfig.getEnvironments().get(0);
+        MergeEnvironmentConfig mergedEnv = (MergeEnvironmentConfig) cruiseConfig.getEnvironments().getFirst();
         assertThat(mergedEnv.size()).isEqualTo(2);
-        assertThat(mergedEnv.get(0).isLocal()).isTrue();
-        assertThat(mergedEnv.get(1).isLocal()).isFalse();
+        assertThat(mergedEnv.getFirst().isLocal()).isTrue();
+        assertThat(mergedEnv.getLast().isLocal()).isFalse();
 
     }
 
@@ -924,22 +736,22 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         partialConfig.setOrigins(new RepoConfigOrigin());
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig, true, partialConfig);
 
-        cruiseConfig.getEnvironments().get(0).addAgent("agent");
-        MergeEnvironmentConfig mergedEnv = (MergeEnvironmentConfig) cruiseConfig.getEnvironments().get(0);
+        cruiseConfig.getEnvironments().getFirst().addAgent("agent");
+        MergeEnvironmentConfig mergedEnv = (MergeEnvironmentConfig) cruiseConfig.getEnvironments().getFirst();
         assertThat(mergedEnv.getFirstEditablePart().getAgents()).contains(new EnvironmentAgentConfig("agent"));
     }
 
     @Test
     public void shouldModifyEnvironmentConfigWithFileOrigin() {
         BasicCruiseConfig mainCruiseConfig = new BasicCruiseConfig(pipelines);
-        BasicEnvironmentConfig envInFile = new BasicEnvironmentConfig(new CaseInsensitiveString("Env"));
+        BasicEnvironmentConfig envInFile = new BasicEnvironmentConfig(cis("Env"));
         mainCruiseConfig.addEnvironment(envInFile);
         mainCruiseConfig.setOrigins(new FileConfigOrigin());
         PartialConfig partialConfig = PartialConfigMother.withEnvironment("Env");
         partialConfig.setOrigins(new RepoConfigOrigin());
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig, true, partialConfig);
 
-        cruiseConfig.getEnvironments().get(0).addAgent("agent");
+        cruiseConfig.getEnvironments().getFirst().addAgent("agent");
 
         assertThat(envInFile.getAgents()).contains(new EnvironmentAgentConfig("agent"));
     }
@@ -953,15 +765,15 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig, true, partialConfig);
 
         assertThat(cruiseConfig.getGroups().size()).isEqualTo(1);
-        assertThat(cruiseConfig.getGroups().get(0) instanceof MergePipelineConfigs).isTrue();
-        assertThat(cruiseConfig.getGroups().get(0).getGroup()).isEqualTo("group1");
+        assertThat(cruiseConfig.getGroups().getFirst() instanceof MergePipelineConfigs).isTrue();
+        assertThat(cruiseConfig.getGroups().getFirst().getGroup()).isEqualTo("group1");
 
-        MergePipelineConfigs mergedEnv = (MergePipelineConfigs) cruiseConfig.getGroups().get(0);
+        MergePipelineConfigs mergedEnv = (MergePipelineConfigs) cruiseConfig.getGroups().getFirst();
         assertThat(mergedEnv.getLocal().getOrigin()).isEqualTo(new UIConfigOrigin());
 
         Authorization authorization = new Authorization(new AdminsConfig(
-                new AdminUser(new CaseInsensitiveString("firstTemplate-admin"))));
-        cruiseConfig.getGroups().get(0).setAuthorization(authorization);
+                new AdminUser(cis("firstTemplate-admin"))));
+        cruiseConfig.getGroups().getFirst().setAuthorization(authorization);
 
         assertThat(mergedEnv.getLocal().getAuthorization()).isEqualTo(authorization);
     }
@@ -976,20 +788,20 @@ public abstract class CruiseConfigTestBase implements FunctionalUtils {
     }
 
     private JobConfig jobConfig(String jobConfigName) {
-        return new JobConfig(new CaseInsensitiveString(jobConfigName), null, null);
+        return new JobConfig(cis(jobConfigName), null, null);
     }
 
     private PipelineConfig addPipeline(String pipelineName, String stageName, JobConfig... jobConfigs) {
-        PipelineConfig pipeline = new PipelineConfig(new CaseInsensitiveString(pipelineName), new MaterialConfigs());
-        pipeline.add(new StageConfig(new CaseInsensitiveString(stageName), new JobConfigs(jobConfigs)));
+        PipelineConfig pipeline = new PipelineConfig(cis(pipelineName), new MaterialConfigs());
+        pipeline.add(new StageConfig(cis(stageName), new JobConfigs(jobConfigs)));
         pipelines.add(pipeline);
         return pipeline;
     }
 
     private void addPipelineWithStages(String pipelineName, String stageName, JobConfig... jobConfigs) {
-        PipelineConfig pipeline = new PipelineConfig(new CaseInsensitiveString(pipelineName), null);
-        pipeline.add(new StageConfig(new CaseInsensitiveString(stageName), new JobConfigs(jobConfigs)));
-        pipeline.add(new StageConfig(new CaseInsensitiveString(stageName + "2"), new JobConfigs(jobConfigs)));
+        PipelineConfig pipeline = new PipelineConfig(cis(pipelineName), null);
+        pipeline.add(new StageConfig(cis(stageName), new JobConfigs(jobConfigs)));
+        pipeline.add(new StageConfig(cis(stageName + "2"), new JobConfigs(jobConfigs)));
         pipelines.add(pipeline);
     }
 

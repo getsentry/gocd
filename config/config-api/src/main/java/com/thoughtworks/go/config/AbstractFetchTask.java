@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+
 public abstract class AbstractFetchTask extends AbstractTask implements FetchArtifactConfig {
     public static final String PIPELINE_NAME = "pipelineName";
     public static final String PIPELINE = "pipeline";
@@ -97,7 +99,7 @@ public abstract class AbstractFetchTask extends AbstractTask implements FetchArt
     @Override
     public List<TaskProperty> getPropertiesForDisplay() {
         List<TaskProperty> taskProperties = new ArrayList<>();
-        if (pipelineName != null && !CaseInsensitiveString.isBlank(pipelineName.getPath())) {
+        if (pipelineName != null && !CaseInsensitiveString.isEmpty(pipelineName.getPath())) {
             taskProperties.add(new TaskProperty("Pipeline Name", CaseInsensitiveString.str(pipelineName.getPath())));
         }
         taskProperties.add(new TaskProperty("Stage Name", CaseInsensitiveString.str(stage)));
@@ -122,7 +124,7 @@ public abstract class AbstractFetchTask extends AbstractTask implements FetchArt
         }
         if (validationContext.isWithinPipelines()) {
             PipelineConfig currentPipeline = validationContext.getPipeline();
-            if (pipelineName == null || CaseInsensitiveString.isBlank(pipelineName.getPath())) {
+            if (pipelineName == null || CaseInsensitiveString.isEmpty(pipelineName.getPath())) {
                 pipelineName = new PathFromAncestor(currentPipeline.name());
             }
             if (validateExistenceAndOrigin(currentPipeline, validationContext)) {
@@ -164,15 +166,8 @@ public abstract class AbstractFetchTask extends AbstractTask implements FetchArt
             }
         }
 
-        boolean foundStageAtOrBeforeDependency = Objects.equals(dependencyStage, stage);
-        if (!foundStageAtOrBeforeDependency) {
-            for (StageConfig stageConfig : pipeline.allStagesBefore(dependencyStage)) {
-                foundStageAtOrBeforeDependency = stage.equals(stageConfig.name());
-                if (foundStageAtOrBeforeDependency) {
-                    break;
-                }
-            }
-        }
+        boolean foundStageAtOrBeforeDependency = Objects.equals(dependencyStage, stage)
+            || pipeline.allStagesBefore(dependencyStage).anyMatch(stageConfig -> stage.equals(stageConfig.name()));
 
         if (!foundStageAtOrBeforeDependency) {
             addStageMayNotCompleteBeforeDownstreamError(currentPipeline, validationContext);
@@ -181,11 +176,11 @@ public abstract class AbstractFetchTask extends AbstractTask implements FetchArt
 
     private boolean stageAndOrJobIsBlank() {
         boolean atLeastOneBlank = false;
-        if (CaseInsensitiveString.isBlank(stage)) {
+        if (CaseInsensitiveString.isEmpty(stage)) {
             atLeastOneBlank = true;
             addError(STAGE, "Stage is a required field.");
         }
-        if (CaseInsensitiveString.isBlank(job)) {
+        if (CaseInsensitiveString.isEmpty(job)) {
             atLeastOneBlank = true;
             addError(JOB, "Job is a required field.");
         }
@@ -213,16 +208,16 @@ public abstract class AbstractFetchTask extends AbstractTask implements FetchArt
     }
 
     private void addStageMayNotCompleteBeforeDownstreamError(PipelineConfig currentPipeline, ValidationContext validationContext) {
-        addError(STAGE, String.format("\"%s :: %s :: %s\" tries to fetch artifact from stage \"%s :: %s\" which does not complete before \"%s\" pipeline's dependencies."
-                , currentPipeline.name(), validationContext.getStage().name(), validationContext.getJob().name(), pipelineName.getAncestorName(), stage, currentPipeline.name()));
+        addError(STAGE, String.format("\"%s :: %s :: %s\" tries to fetch artifact from stage \"%s :: %s\" which does not complete before \"%s\" pipeline's dependencies.",
+            currentPipeline.name(), validationContext.getStage().name(), validationContext.getJob().name(), pipelineName.getAncestorName(), stage, currentPipeline.name()));
     }
 
     private void validateStagesOfSamePipeline(ValidationContext validationContext, PipelineConfig currentPipeline) {
         @SuppressWarnings("CollectionAddedToSelf") List<StageConfig> validStages = currentPipeline.validStagesForFetchArtifact(currentPipeline, validationContext.getStage().name());
         StageConfig matchingStage = validStages.stream().filter(stageConfig -> stageConfig.name().equals(stage)).findFirst().orElse(null);
         if (matchingStage == null) {
-            addError(STAGE, String.format("\"%s :: %s :: %s\" tries to fetch artifact from its stage \"%s\" which does not complete before the current stage \"%s\"."
-                    , currentPipeline.name(), validationContext.getStage().name(), validationContext.getJob().name(), stage, validationContext.getStage().name()));
+            addError(STAGE, String.format("\"%s :: %s :: %s\" tries to fetch artifact from its stage \"%s\" which does not complete before the current stage \"%s\".",
+                currentPipeline.name(), validationContext.getStage().name(), validationContext.getJob().name(), stage, validationContext.getStage().name()));
         }
     }
 
@@ -231,14 +226,14 @@ public abstract class AbstractFetchTask extends AbstractTask implements FetchArt
 
         if (srcPipeline == null) {
             //"ProdDeploy :: deploy :: scp" tries|attempts to fetch artifact from pipeline "not-found" which does not exist.
-            addError(PIPELINE, String.format("\"%s :: %s :: %s\" tries to fetch artifact from pipeline \"%s\" which does not exist."
-                    , currentPipeline.name(), validationContext.getStage().name(), validationContext.getJob().name(), pipelineName.getAncestorName()));
+            addError(PIPELINE, String.format("\"%s :: %s :: %s\" tries to fetch artifact from pipeline \"%s\" which does not exist.",
+                currentPipeline.name(), validationContext.getStage().name(), validationContext.getJob().name(), pipelineName.getAncestorName()));
             return true;
         } else {
             StageConfig srcStage = srcPipeline.findBy(stage);
             if (srcStage == null) {
-                addError(STAGE, String.format("\"%s :: %s :: %s\" tries to fetch artifact from stage \"%s :: %s\" which does not exist."
-                        , currentPipeline.name(), validationContext.getStage().name(), validationContext.getJob().name(), pipelineName.getAncestorName(), stage));
+                addError(STAGE, String.format("\"%s :: %s :: %s\" tries to fetch artifact from stage \"%s :: %s\" which does not exist.",
+                    currentPipeline.name(), validationContext.getStage().name(), validationContext.getJob().name(), pipelineName.getAncestorName(), stage));
                 return true;
             } else {
                 if (srcStage.jobConfigByInstanceName(CaseInsensitiveString.str(job), true) == null) {
@@ -266,16 +261,22 @@ public abstract class AbstractFetchTask extends AbstractTask implements FetchArt
     @Override
     public boolean equals(Object o) {
         //TODO: compare abstract tasks for correct implementation -jj
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        if (!super.equals(o)) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        if (!super.equals(o)) {
+            return false;
+        }
 
         AbstractFetchTask that = (AbstractFetchTask) o;
 
-        if (pipelineName != null ? !pipelineName.equals(that.pipelineName) : that.pipelineName != null) return false;
-        if (stage != null ? !stage.equals(that.stage) : that.stage != null) return false;
-        if (job != null ? !job.equals(that.job) : that.job != null) return false;
-        return super.equals(that);
+        return Objects.equals(pipelineName, that.pipelineName) &&
+            Objects.equals(stage, that.stage) &&
+            Objects.equals(job, that.job) &&
+            super.equals(that);
     }
 
     @Override
@@ -293,14 +294,14 @@ public abstract class AbstractFetchTask extends AbstractTask implements FetchArt
             return;
         }
         if (attributeMap.containsKey(PIPELINE_NAME)) {
-            this.pipelineName = new PathFromAncestor(new CaseInsensitiveString((String) attributeMap.get(PIPELINE_NAME)));
+            this.pipelineName = new PathFromAncestor(cis((String) attributeMap.get(PIPELINE_NAME)));
         }
         if (attributeMap.containsKey(STAGE)) {
-            setStage(new CaseInsensitiveString((String) attributeMap.get(STAGE)));
+            setStage(cis((String) attributeMap.get(STAGE)));
         }
         if (attributeMap.containsKey(JOB)) {
             String jobString = (String) attributeMap.get(JOB);
-            setJob(new CaseInsensitiveString(jobString));
+            setJob(cis(jobString));
         }
         setFetchTaskAttributes(attributeMap);
     }

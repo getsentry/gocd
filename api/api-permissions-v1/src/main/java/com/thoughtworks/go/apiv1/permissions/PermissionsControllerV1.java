@@ -18,13 +18,13 @@ package com.thoughtworks.go.apiv1.permissions;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv1.permissions.representers.PermissionsRepresenter;
 import com.thoughtworks.go.config.exceptions.UnprocessableEntityException;
 import com.thoughtworks.go.server.service.permissions.PermissionsService;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import spark.Request;
@@ -36,18 +36,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static spark.Spark.*;
 
 @Component
 public class PermissionsControllerV1 extends ApiController implements SparkSpringController {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private PermissionsService permissionsService;
 
     @Autowired
-    public PermissionsControllerV1(ApiAuthenticationHelper apiAuthenticationHelper, PermissionsService permissionsService) {
+    public PermissionsControllerV1(ApiAuthorizationHelper apiAuthorizationHelper, PermissionsService permissionsService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.permissionsService = permissionsService;
     }
 
@@ -57,13 +58,13 @@ public class PermissionsControllerV1 extends ApiController implements SparkSprin
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
 
-            before("", mimeType, this.apiAuthenticationHelper::checkUserAnd403);
-            before("/*", mimeType, this.apiAuthenticationHelper::checkUserAnd403);
+            before("", mimeType, this.apiAuthorizationHelper::checkUserAnd403);
+            before("/*", mimeType, this.apiAuthorizationHelper::checkUserAnd403);
 
             get("", mimeType, this::index);
         });
@@ -74,7 +75,7 @@ public class PermissionsControllerV1 extends ApiController implements SparkSprin
         List<String> requestedTypes = permissibleEntities;
 
         String type = request.queryParams("type");
-        if (StringUtils.isNotBlank(type)) {
+        if (isNotBlank(type)) {
             requestedTypes = Arrays.stream(type.split(",")).collect(Collectors.toList());
             validateRequestedTypes(requestedTypes, permissibleEntities);
         }
@@ -85,7 +86,7 @@ public class PermissionsControllerV1 extends ApiController implements SparkSprin
 
     private void validateRequestedTypes(List<String> requestedTypes, List<String> permissibleEntities) {
         requestedTypes.forEach(type -> {
-            if (StringUtils.isNotBlank(type.trim()) && !permissibleEntities.contains(type)) {
+            if (isNotBlank(type.trim()) && !permissibleEntities.contains(type)) {
                 throw new UnprocessableEntityException(String.format("Invalid permission type '%s'. It has to be one of '%s'.", type, String.join(", ", permissibleEntities)));
             }
         });

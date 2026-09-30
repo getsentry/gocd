@@ -20,7 +20,6 @@ import com.thoughtworks.go.util.ReflectionUtil;
 import com.thoughtworks.go.util.command.CommandLine;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
 import com.thoughtworks.go.util.command.InMemoryStreamConsumer;
-import org.apache.commons.io.FileUtils;
 
 import java.io.File;
 import java.io.IOException;
@@ -30,7 +29,6 @@ import java.nio.file.Path;
 
 import static com.thoughtworks.go.util.command.ProcessOutputStreamConsumer.inMemoryConsumer;
 import static java.nio.charset.StandardCharsets.UTF_8;
-
 
 public class SvnRemoteRepository {
     private static final String HOST = "127.0.0.1";
@@ -69,11 +67,11 @@ public class SvnRemoteRepository {
         enableAuthentication();
         File passwdFile = new File(repo.projectRepositoryRoot(), "conf/passwd");
         String passwd = String.join(System.lineSeparator(), Files.readAllLines(passwdFile.toPath()));
-        if (!(passwd.contains("\n[users]\n"))) {
+        if (!passwd.contains("\n[users]\n")) {
             passwd = passwd + "\n[users]\n";
         }
         passwd = passwd + String.format("\n%s = %s\n", username, password);
-        FileUtils.writeStringToFile(passwdFile, passwd, UTF_8);
+        Files.writeString(passwdFile.toPath(), passwd, UTF_8);
     }
 
     private void enableAuthentication() throws IOException {
@@ -85,7 +83,7 @@ public class SvnRemoteRepository {
                 auth-access = write
                 password-db = passwd
                 """;
-        FileUtils.writeStringToFile(confFile, passwd, UTF_8);
+        Files.writeString(confFile.toPath(), passwd, UTF_8);
     }
 
     public void stop() {

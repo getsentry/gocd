@@ -15,16 +15,17 @@
  */
 package com.thoughtworks.go.spark.spa;
 
-import com.google.gson.Gson;
 import com.thoughtworks.go.config.PipelineConfigs;
 import com.thoughtworks.go.plugin.access.analytics.AnalyticsExtension;
 import com.thoughtworks.go.plugin.domain.analytics.AnalyticsData;
 import com.thoughtworks.go.server.newsecurity.utils.SessionUtils;
 import com.thoughtworks.go.server.service.PipelineConfigService;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.SparkController;
-import com.thoughtworks.go.spark.spring.SPAAuthenticationHelper;
+import com.thoughtworks.go.spark.spring.SpaAuthorizationHelper;
 import com.thoughtworks.go.util.SystemEnvironment;
+import com.thoughtworks.go.util.json.JsonHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.ModelAndView;
@@ -43,16 +44,15 @@ import static spark.Spark.*;
 
 public class AnalyticsController implements SparkController {
     private static final Logger LOG = LoggerFactory.getLogger(AnalyticsController.class);
-    private static final Gson GSON = new Gson();
 
-    private final SPAAuthenticationHelper authenticationHelper;
+    private final SpaAuthorizationHelper authorizationHelper;
     private final TemplateEngine engine;
     private final SystemEnvironment systemEnvironment;
     private final AnalyticsExtension analyticsExtension;
     private final PipelineConfigService pipelineConfigService;
 
-    public AnalyticsController(SPAAuthenticationHelper authenticationHelper, TemplateEngine engine, SystemEnvironment systemEnvironment, AnalyticsExtension analyticsExtension, PipelineConfigService pipelineConfigService) {
-        this.authenticationHelper = authenticationHelper;
+    public AnalyticsController(SpaAuthorizationHelper authorizationHelper, TemplateEngine engine, SystemEnvironment systemEnvironment, AnalyticsExtension analyticsExtension, PipelineConfigService pipelineConfigService) {
+        this.authorizationHelper = authorizationHelper;
         this.engine = engine;
         this.systemEnvironment = systemEnvironment;
         this.analyticsExtension = analyticsExtension;
@@ -65,9 +65,9 @@ public class AnalyticsController implements SparkController {
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
-            before("", authenticationHelper::checkAdminUserAnd403);
+            before("", authorizationHelper::checkAdminUserAnd403);
             get("", this::index, engine);
         });
 
@@ -84,12 +84,12 @@ public class AnalyticsController implements SparkController {
         pipelineConfigService.viewableGroupsFor(SessionUtils.currentUsername())
             .forEach(
             (PipelineConfigs config) -> config.getPipelines().forEach(
-                (p) -> pipelines.add(p.name().toString())
+                    p -> pipelines.add(p.name().toString())
             ));
 
         Map<String, String> locals = Map.of(
             "viewTitle", "Analytics",
-            "pipelines", GSON.toJson(pipelines)
+            "pipelines", JsonHelper.toJson(pipelines)
         );
         return new ModelAndView(locals, "analytics/index.ftlh");
     }
@@ -103,7 +103,7 @@ public class AnalyticsController implements SparkController {
                     getQueryParams(request));
 
             response.type("application/json");
-            return GSON.toJson(analytics.toMap());
+            return JsonHelper.toJson(analytics.toMap());
         } catch (Exception e) {
             LOG.error("Encountered error while fetching analytics", e);
             throw halt(500, format("Error generating analytics from plugin - %s", request.params(":plugin_id")));
@@ -120,16 +120,16 @@ public class AnalyticsController implements SparkController {
 
     private void checkPermissions(Request request, Response response) {
         if (isAnalyticsEnabledOnlyForAdmins()) {
-            authenticationHelper.checkAdminUserAnd403(request, response);
+            authorizationHelper.checkAdminUserAnd403(request, response);
             return;
         }
 
         if (isPipelineRequest(request)) {
-            authenticationHelper.checkPipelineViewPermissionsAnd403(request, response);
+            authorizationHelper.checkPipelineViewPermissionsAnd403(request, response);
         } else if (isDashboardRequest(request)) {
-            authenticationHelper.checkAdminUserAnd403(request, response);
+            authorizationHelper.checkAdminUserAnd403(request, response);
         } else {
-            authenticationHelper.checkUserAnd403(request, response);
+            authorizationHelper.checkUserAnd403(request, response);
         }
     }
 

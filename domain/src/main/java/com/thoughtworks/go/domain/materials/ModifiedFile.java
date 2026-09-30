@@ -18,6 +18,7 @@ package com.thoughtworks.go.domain.materials;
 import com.thoughtworks.go.domain.PersistentObject;
 
 import java.io.Serializable;
+import java.util.Objects;
 
 public class ModifiedFile extends PersistentObject implements Serializable {
 
@@ -49,13 +50,11 @@ public class ModifiedFile extends PersistentObject implements Serializable {
             return false;
         }
 
-        boolean folderNamesAreEqual = (folderName != null)
-                ? folderName.equals(mod.folderName)
-                : (mod.folderName == null);
+        boolean folderNamesAreEqual = Objects.equals(folderName, mod.folderName);
 
-        return (action.equals(mod.action)
+        return action.equals(mod.action)
                 && fileName.equals(mod.fileName)
-                && folderNamesAreEqual);
+                && folderNamesAreEqual;
     }
 
     @Override

@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.domain.materials.scm;
 
-import com.google.gson.Gson;
 import com.thoughtworks.go.config.materials.PluggableSCMMaterial;
 import com.thoughtworks.go.domain.MaterialRevision;
 import com.thoughtworks.go.domain.config.Configuration;
@@ -30,6 +29,7 @@ import com.thoughtworks.go.plugin.access.scm.SCMPropertyConfiguration;
 import com.thoughtworks.go.plugin.access.scm.revision.SCMRevision;
 import com.thoughtworks.go.plugin.api.response.Result;
 import com.thoughtworks.go.util.command.ConsoleOutputStreamConsumer;
+import com.thoughtworks.go.util.json.JsonHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -71,7 +71,7 @@ class PluggableSCMMaterialAgentTest {
         Map<String, String> additionalData = new HashMap<>();
         additionalData.put("a1", "v1");
         additionalData.put("a2", "v2");
-        modification.setAdditionalData(new Gson().toJson(additionalData));
+        modification.setAdditionalData(JsonHelper.toJson(additionalData));
         MaterialRevision revision = new MaterialRevision(pluggableSCMMaterial, modification);
         String pipelineFolder = new File(System.getProperty("java.io.tmpdir")).getAbsolutePath();
         String destinationFolder = new File(pipelineFolder, "destination-folder").getAbsolutePath();
@@ -80,7 +80,7 @@ class PluggableSCMMaterialAgentTest {
 
         pluggableSCMMaterialAgent.prepare();
 
-        verify(scmExtension).checkout(any(String.class), any(SCMPropertyConfiguration.class), any(String.class), any(SCMRevision.class));
+        verify(scmExtension).checkout(any(), any(), any(), any());
         assertThat(scmConfiguration.getValue().size()).isEqualTo(2);
         assertThat(scmConfiguration.getValue().get("k1").getValue()).isEqualTo("v1");
         assertThat(scmConfiguration.getValue().get("k2").getValue()).isEqualTo("v2");
@@ -94,14 +94,14 @@ class PluggableSCMMaterialAgentTest {
     @Test
     void shouldSendResolvedValuesToPluginCheckoutForPrepareWhenSecretParamsArePresent() {
         PluggableSCMMaterial pluggableSCMMaterial = MaterialsMother.pluggableSCMMaterial();
-        pluggableSCMMaterial.getScmConfig().getConfiguration().get(0).setConfigurationValue(new ConfigurationValue("{{SECRET:[secret_config_id][lookup_username]}}"));
-        pluggableSCMMaterial.getScmConfig().getConfiguration().get(0).getSecretParams().get(0).setValue("some-dummy-value");
+        pluggableSCMMaterial.getScmConfig().getConfiguration().getFirst().setConfigurationValue(new ConfigurationValue("{{SECRET:[secret_config_id][lookup_username]}}"));
+        pluggableSCMMaterial.getScmConfig().getConfiguration().getFirst().getSecretParams().getFirst().setValue("some-dummy-value");
         pluggableSCMMaterial.setFolder("destination-folder");
         Modification modification = ModificationsMother.oneModifiedFile("r1");
         Map<String, String> additionalData = new HashMap<>();
         additionalData.put("a1", "v1");
         additionalData.put("a2", "v2");
-        modification.setAdditionalData(new Gson().toJson(additionalData));
+        modification.setAdditionalData(JsonHelper.toJson(additionalData));
         MaterialRevision revision = new MaterialRevision(pluggableSCMMaterial, modification);
         String pipelineFolder = new File(System.getProperty("java.io.tmpdir")).getAbsolutePath();
         String destinationFolder = new File(pipelineFolder, "destination-folder").getAbsolutePath();
@@ -110,7 +110,7 @@ class PluggableSCMMaterialAgentTest {
 
         pluggableSCMMaterialAgent.prepare();
 
-        verify(scmExtension).checkout(any(String.class), any(SCMPropertyConfiguration.class), any(String.class), any(SCMRevision.class));
+        verify(scmExtension).checkout(any(), any(), any(), any());
         assertThat(scmConfiguration.getValue().size()).isEqualTo(2);
         assertThat(scmConfiguration.getValue().get("k1").getValue()).isEqualTo("some-dummy-value");
         assertThat(scmConfiguration.getValue().get("k2").getValue()).isEqualTo("v2");
@@ -131,7 +131,7 @@ class PluggableSCMMaterialAgentTest {
         Map<String, String> additionalData = new HashMap<>();
         additionalData.put("a1", "v1");
         additionalData.put("a2", "v2");
-        modification.setAdditionalData(new Gson().toJson(additionalData));
+        modification.setAdditionalData(JsonHelper.toJson(additionalData));
         MaterialRevision revision = new MaterialRevision(pluggableSCMMaterial, modification);
         String pipelineFolder = new File(System.getProperty("java.io.tmpdir")).getAbsolutePath();
         String destinationFolder = new File(pipelineFolder, "destination-folder").getAbsolutePath();
@@ -155,7 +155,7 @@ class PluggableSCMMaterialAgentTest {
         Map<String, String> additionalData = new HashMap<>();
         additionalData.put("a1", "v1");
         additionalData.put("a2", "v2");
-        modification.setAdditionalData(new Gson().toJson(additionalData));
+        modification.setAdditionalData(JsonHelper.toJson(additionalData));
         MaterialRevision revision = new MaterialRevision(pluggableSCMMaterial, modification);
         String pipelineFolder = new File(System.getProperty("java.io.tmpdir")).getAbsolutePath();
         String destinationFolder = new File(pipelineFolder, "destination-folder").getAbsolutePath();
@@ -181,7 +181,7 @@ class PluggableSCMMaterialAgentTest {
         Map<String, String> additionalData = new HashMap<>();
         additionalData.put("a1", "v1");
         additionalData.put("a2", "v2");
-        modification.setAdditionalData(new Gson().toJson(additionalData));
+        modification.setAdditionalData(JsonHelper.toJson(additionalData));
         MaterialRevision revision = new MaterialRevision(pluggableSCMMaterial, modification);
         String pipelineFolder = new File(System.getProperty("java.io.tmpdir")).getAbsolutePath();
         String destinationFolder = new File(pipelineFolder, "destination-folder").getAbsolutePath();

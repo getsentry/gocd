@@ -24,7 +24,6 @@ import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.exceptions.InvalidAccessTokenException;
 import com.thoughtworks.go.server.exceptions.RevokedAccessTokenException;
 import com.thoughtworks.go.util.Clock;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,9 +36,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import static org.apache.commons.lang3.StringUtils.substring;
+
 @Service
 public class AccessTokenService {
     private static final Logger LOGGER = LoggerFactory.getLogger(AccessTokenService.class);
+    @SuppressWarnings("LoggerInitializedWithForeignClass")
     private static final Logger ACCESS_TOKEN_LOGGER = LoggerFactory.getLogger(AccessToken.class);
     private final Clock timeProvider;
 
@@ -95,7 +97,7 @@ public class AccessTokenService {
             throw new InvalidAccessTokenException();
         }
 
-        String saltId = StringUtils.substring(actualToken, 0, 8);
+        String saltId = substring(actualToken, 0, 8);
 
         AccessToken token = accessTokenDao.findAccessTokenBySaltId(saltId);
         if (token == null) {
@@ -133,7 +135,7 @@ public class AccessTokenService {
         }
 
         ACCESS_TOKEN_LOGGER.debug("[Access Token] Revoking access token with id: '{}' for user '{}' with revoked cause '{}'.", fetchedAccessToken.getId(), username, revokeCause);
-        fetchedAccessToken.revoke(username, revokeCause, timeProvider.currentTimestamp());
+        fetchedAccessToken.revoke(username, revokeCause, timeProvider.currentSqlTimestamp());
         accessTokenDao.saveOrUpdate(fetchedAccessToken);
 
         ACCESS_TOKEN_LOGGER.debug("[Access Token] Done revoking access token with id: '{}' for user '{}' with revoked cause '{}'.", fetchedAccessToken.getId(), username, revokeCause);
@@ -151,17 +153,17 @@ public class AccessTokenService {
 
     public void updateLastUsedCacheWith(AccessToken accessToken) {
         if (!securityService.isSecurityEnabled()) {
-            throw new UnsupportedOperationException("Security is disable. Updating cache is not allowed.");
+            throw new UnsupportedOperationException("Security is disabled. Updating cache is not allowed.");
         }
 
         synchronized (accessTokenIdToLastUsedTimestampCache) {
-            accessTokenIdToLastUsedTimestampCache.put(accessToken.getId(), timeProvider.currentTimestamp());
+            accessTokenIdToLastUsedTimestampCache.put(accessToken.getId(), timeProvider.currentSqlTimestamp());
         }
     }
 
     public void onTimer() {
         if (!securityService.isSecurityEnabled()) {
-            LOGGER.debug("Security is disable. Not updating `LastUsedTime` in DB.");
+            LOGGER.debug("Security is disabled. Not updating `LastUsedTime` in DB.");
             return;
         }
 

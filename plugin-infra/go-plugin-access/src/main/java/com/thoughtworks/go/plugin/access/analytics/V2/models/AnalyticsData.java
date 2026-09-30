@@ -15,16 +15,13 @@
  */
 package com.thoughtworks.go.plugin.access.analytics.V2.models;
 
-
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
-import org.apache.commons.lang3.StringUtils;
+import com.thoughtworks.go.util.json.JsonHelper;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 public class AnalyticsData {
-    private static final Gson GSON = new GsonBuilder().excludeFieldsWithoutExposeAnnotation().create();
-
     public static class MissingRequiredKeyException extends RuntimeException {
         MissingRequiredKeyException(String message) {
             super(message);
@@ -48,7 +45,7 @@ public class AnalyticsData {
     }
 
     public static AnalyticsData fromJSON(String json) {
-        return GSON.fromJson(json, AnalyticsData.class);
+        return JsonHelper.fromJsonExposeOnly(json, AnalyticsData.class);
     }
 
     public com.thoughtworks.go.plugin.domain.analytics.AnalyticsData toAnalyticsData() {
@@ -56,11 +53,11 @@ public class AnalyticsData {
     }
 
     public void validate() {
-        if (StringUtils.isBlank(data)) {
+        if (isBlank(data)) {
             throw new MissingRequiredKeyException("Missing \"data\" key in analytics payload");
         }
 
-        if (StringUtils.isBlank(viewPath)) {
+        if (isBlank(viewPath)) {
             throw new MissingRequiredKeyException("Missing \"view_path\" key in analytics payload");
         }
     }

@@ -15,13 +15,13 @@
  */
 package com.thoughtworks.go.server.messaging;
 
+import com.thoughtworks.go.server.initializers.Daemonized;
+import org.jetbrains.annotations.TestOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
-
-import static java.text.MessageFormat.format;
 
 /*
  * Multiplexes added actions asynchronously and processes them in a single thread.
@@ -29,11 +29,14 @@ import static java.text.MessageFormat.format;
  * Since actions can be added from different threads, line up all of them on to one thread,
  * for processing, and to make sure that the upstream processes are not blocked.
  */
-public class MultiplexingQueueProcessor {
+public class MultiplexingQueueProcessor implements Daemonized {
     private static final Logger LOGGER = LoggerFactory.getLogger(MultiplexingQueueProcessor.class);
-    private Thread processorThread;
-    protected final BlockingQueue<Action> queue;
-    private String queueName;
+    private static final int SHUTDOWN_MILLIS = 1000;
+
+    private final String queueName;
+    private final BlockingQueue<Action> queue;
+
+    private volatile Thread processorThread;
 
     public MultiplexingQueueProcessor(String processorNameForLogging) {
         this.queueName = processorNameForLogging;
@@ -41,34 +44,56 @@ public class MultiplexingQueueProcessor {
     }
 
     public void add(Action action) {
-        LOGGER.debug("Adding action into {} queue for {}", queueName, action.description());
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Adding action into {} queue for {}", queueName, action.description());
+        }
         queue.add(action);
     }
 
+    @TestOnly
+    public boolean isEmpty() {
+        return queue.isEmpty();
+    }
+
+    @Override
     public void start() {
         if (processorThread != null) {
-            throw new RuntimeException(format("Cannot start queue processor for {0} multiple times.", queueName));
+            throw new RuntimeException(String.format("Cannot start queue processor for %s multiple times.", queueName));
         }
 
         processorThread = new Thread(() -> {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     Action action = queue.take();
-                    LOGGER.debug("Acting on item in {} queue for {}", queueName, action.description());
+                    if (LOGGER.isDebugEnabled()) {
+                        LOGGER.debug("Acting on item in {} queue for {}", queueName, action.description());
+                    }
 
                     long startTime = System.currentTimeMillis();
                     action.call();
-                    long endTime = System.currentTimeMillis();
 
-                    LOGGER.debug("Finished acting on item in {} queue for {}. Time taken: {} ms", queueName, action.description(), (endTime - startTime));
+                    if (LOGGER.isDebugEnabled()) {
+                        LOGGER.debug("Finished acting on item in {} queue for {}. Time taken: {} ms", queueName, action.description(), System.currentTimeMillis() - startTime);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 } catch (Exception e) {
-                    LOGGER.warn(format("Failed to handle action in {0} queue", queueName), e);
+                    LOGGER.warn("Failed to handle action in {} queue", queueName, e);
                 }
             }
         });
-        processorThread.setName(format("{0}-Queue-Processor", queueName));
+        processorThread.setName(String.format("Queue-Processor-%s", queueName));
         processorThread.setDaemon(true);
         processorThread.start();
+    }
+
+    @Override
+    public void stop() throws InterruptedException {
+        if (processorThread != null && processorThread.isAlive()) {
+            processorThread.interrupt();
+            processorThread.join(SHUTDOWN_MILLIS);
+            processorThread = null;
+        }
     }
 
     public interface Action {

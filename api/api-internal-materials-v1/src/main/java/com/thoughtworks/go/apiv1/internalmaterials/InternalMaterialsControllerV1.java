@@ -18,7 +18,7 @@ package com.thoughtworks.go.apiv1.internalmaterials;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.MessageJson;
 import com.thoughtworks.go.apiv1.internalmaterials.models.MaterialInfo;
 import com.thoughtworks.go.apiv1.internalmaterials.representers.MaterialWithModificationsRepresenter;
@@ -36,14 +36,15 @@ import com.thoughtworks.go.serverhealth.HealthStateScope;
 import com.thoughtworks.go.serverhealth.ServerHealthService;
 import com.thoughtworks.go.serverhealth.ServerHealthState;
 import com.thoughtworks.go.serverhealth.ServerHealthStates;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import spark.Request;
 import spark.Response;
 
+import java.io.IOException;
 import java.sql.Timestamp;
 import java.util.Collection;
 import java.util.HashMap;
@@ -52,13 +53,15 @@ import java.util.Map;
 
 import static com.thoughtworks.go.serverhealth.HealthStateScope.*;
 import static com.thoughtworks.go.util.CachedDigestUtils.sha512_256Hex;
+import static java.net.HttpURLConnection.HTTP_CONFLICT;
+import static java.net.HttpURLConnection.HTTP_CREATED;
 import static java.util.stream.Collectors.toList;
 import static spark.Spark.*;
 
 @Component
 public class InternalMaterialsControllerV1 extends ApiController implements SparkSpringController {
     public static final String FINGERPRINT = "fingerprint";
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final MaterialConfigService materialConfigService;
     private final MaterialService materialService;
     private final MaintenanceModeService maintenanceModeService;
@@ -67,9 +70,9 @@ public class InternalMaterialsControllerV1 extends ApiController implements Spar
     private final ServerHealthService serverHealthService;
 
     @Autowired
-    public InternalMaterialsControllerV1(ApiAuthenticationHelper apiAuthenticationHelper, MaterialConfigService materialConfigService, MaterialService materialService, MaintenanceModeService maintenanceModeService, MaterialUpdateService materialUpdateService, MaterialConfigConverter materialConfigConverter, ServerHealthService serverHealthService) {
+    public InternalMaterialsControllerV1(ApiAuthorizationHelper apiAuthorizationHelper, MaterialConfigService materialConfigService, MaterialService materialService, MaintenanceModeService maintenanceModeService, MaterialUpdateService materialUpdateService, MaterialConfigConverter materialConfigConverter, ServerHealthService serverHealthService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.materialConfigService = materialConfigService;
         this.materialService = materialService;
         this.maintenanceModeService = maintenanceModeService;
@@ -84,13 +87,13 @@ public class InternalMaterialsControllerV1 extends ApiController implements Spar
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
 
-            before("/*", mimeType, this.apiAuthenticationHelper::checkUserAnd403);
-            before("", mimeType, this.apiAuthenticationHelper::checkUserAnd403);
+            before("/*", mimeType, this.apiAuthorizationHelper::checkUserAnd403);
+            before("", mimeType, this.apiAuthorizationHelper::checkUserAnd403);
 
             get(Routes.InternalMaterialConfig.USAGES, mimeType, this::usages);
             post(Routes.InternalMaterialConfig.TRIGGER_UPDATE, mimeType, this::triggerUpdate);
@@ -98,12 +101,12 @@ public class InternalMaterialsControllerV1 extends ApiController implements Spar
         });
     }
 
-    public String index(Request request, Response response) throws Exception {
-        Map<MaterialConfig, Boolean> materialConfigs = materialConfigService.getMaterialConfigsWithPermissions(currentUsernameString());
+    public String index(Request request, Response response) throws IOException {
+        Map<MaterialConfig, Boolean> materialConfigToOperatePermission = materialConfigService.getMaterialConfigsToOperatePermissions(currentUsernameString());
         Map<String, Modification> modifications = materialService.getLatestModificationForEachMaterial();
         Collection<MaintenanceModeService.MaterialPerformingMDU> runningMDUs = maintenanceModeService.getRunningMDUs();
         ServerHealthStates logs = serverHealthService.logsSorted();
-        Map<MaterialConfig, MaterialInfo> mergedMap = createMergedMap(materialConfigs, modifications, runningMDUs, logs);
+        Map<MaterialConfig, MaterialInfo> mergedMap = createMergedMap(materialConfigToOperatePermission, modifications, runningMDUs, logs);
 
         final String etag = etagFor(mergedMap);
 
@@ -115,7 +118,7 @@ public class InternalMaterialsControllerV1 extends ApiController implements Spar
         return writerForTopLevelObject(request, response, writer -> MaterialWithModificationsRepresenter.toJSON(writer, mergedMap));
     }
 
-    public String usages(Request request, Response response) throws Exception {
+    public String usages(Request request, Response response) throws IOException {
         String fingerprint = request.params(FINGERPRINT);
         List<String> usagesForMaterial = materialConfigService.getUsagesForMaterial(currentUsernameString(), fingerprint);
         return writerForTopLevelObject(request, response, writer -> UsagesRepresenter.toJSON(writer, fingerprint, usagesForMaterial));
@@ -125,28 +128,28 @@ public class InternalMaterialsControllerV1 extends ApiController implements Spar
         String fingerprint = request.params(FINGERPRINT);
         MaterialConfig materialConfig = materialConfigService.getMaterialConfig(currentUsernameString(), fingerprint);
         if (materialUpdateService.updateMaterial(materialConfigConverter.toMaterial(materialConfig))) {
-            response.status(HttpStatus.CREATED.value());
+            response.status(HTTP_CREATED);
             return MessageJson.create("OK");
         } else {
-            response.status(HttpStatus.CONFLICT.value());
+            response.status(HTTP_CONFLICT);
             return MessageJson.create("Update already in progress.");
         }
     }
 
-    private Map<MaterialConfig, MaterialInfo> createMergedMap(Map<MaterialConfig, Boolean> materialConfigs, Map<String, Modification> modificationsMap, Collection<MaintenanceModeService.MaterialPerformingMDU> runningMDUs, ServerHealthStates allLogs) {
+    private Map<MaterialConfig, MaterialInfo> createMergedMap(Map<MaterialConfig, Boolean> materialConfigToOperatePermission, Map<String, Modification> modificationsMap, Collection<MaintenanceModeService.MaterialPerformingMDU> runningMDUs, ServerHealthStates allLogs) {
         Map<MaterialConfig, MaterialInfo> map = new HashMap<>();
-        if (materialConfigs.isEmpty()) {
+        if (materialConfigToOperatePermission.isEmpty()) {
             return map;
         }
 
-        materialConfigs.forEach((materialConfig, hasOperatePermission) -> {
+        materialConfigToOperatePermission.forEach((materialConfig, hasOperatePermission) -> {
             if (!materialConfig.getType().equals(DependencyMaterialConfig.TYPE)) {
                 Material material = materialConfigConverter.toMaterial(materialConfig);
                 List<HealthStateScope> scopes = List.of(forMaterial(material), forMaterialUpdate(material), forMaterialConfig(materialConfig));
-                List<ServerHealthState> logs = allLogs.stream().filter((log) -> scopes.contains(log.getType().getScope())).collect(toList());
+                List<ServerHealthState> logs = allLogs.stream().filter(log -> scopes.contains(log.getType().getScope())).collect(toList());
                 Modification mod = modificationsMap.getOrDefault(materialConfig.getFingerprint(), null);
                 MaintenanceModeService.MaterialPerformingMDU mduInfo = runningMDUs.stream()
-                        .filter((mdu) -> mdu.getMaterial().getFingerprint().equals(materialConfig.getFingerprint()))
+                        .filter(mdu -> mdu.getMaterial().getFingerprint().equals(materialConfig.getFingerprint()))
                         .findFirst()
                         .orElse(null);
                 boolean isMDUInProgress = mduInfo != null;

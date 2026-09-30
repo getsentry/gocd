@@ -30,10 +30,7 @@ import java.io.IOException;
 import java.io.Writer;
 import java.util.Collection;
 import java.util.Date;
-import java.util.TimeZone;
 import java.util.function.Consumer;
-
-import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 public class JsonOutputWriter {
     private static final Logger log = LoggerFactory.getLogger(JsonOutputWriter.class);
@@ -46,7 +43,6 @@ public class JsonOutputWriter {
 
     protected final Writer writer;
     private final RequestContext requestContext;
-    private static final TimeZone UTC = TimeZone.getTimeZone("UTC");
 
     public JsonOutputWriter(Writer writer, RequestContext requestContext) {
         this.writer = writer;
@@ -74,7 +70,7 @@ public class JsonOutputWriter {
     }
 
     private void bufferWriterAndFlushWhenDone(Writer writer, Consumer<BufferedWriter> consumer) {
-        BufferedWriter bufferedWriter = (writer instanceof BufferedWriter) ? (BufferedWriter) writer : new BufferedWriter(writer, 32 * 1024);
+        BufferedWriter bufferedWriter = writer instanceof BufferedWriter bufferedWriter1 ? bufferedWriter1 : new BufferedWriter(writer, 32 * 1024);
         try {
             try {
                 consumer.accept(bufferedWriter);
@@ -98,14 +94,14 @@ public class JsonOutputWriter {
             try {
                 jacksonWriter = JSON_FACTORY.createGenerator(writer);
                 jacksonWriter.useDefaultPrettyPrinter();
-            } catch (Exception e) {
+            } catch (IOException e) {
                 throw new RuntimeException(e);
             }
         }
 
         @Override
         public JsonOutputWriterUsingJackson add(String key, String value) {
-            return withExceptionHandling((jacksonWriter) -> jacksonWriter.writeStringField(key, value));
+            return withExceptionHandling(jacksonWriter -> jacksonWriter.writeStringField(key, value));
         }
 
         @Override
@@ -115,12 +111,12 @@ public class JsonOutputWriter {
 
         @Override
         public JsonOutputWriterUsingJackson add(String key, Double value) {
-            return withExceptionHandling((jacksonWriter) -> jacksonWriter.writeNumberField(key, value));
+            return withExceptionHandling(jacksonWriter -> jacksonWriter.writeNumberField(key, value));
         }
 
         @Override
         public JsonOutputWriterUsingJackson add(String key, CaseInsensitiveString value) {
-            return withExceptionHandling((jacksonWriter) -> {
+            return withExceptionHandling(jacksonWriter -> {
                 if (value == null) {
                     renderNull(key);
                 } else {
@@ -131,7 +127,7 @@ public class JsonOutputWriter {
 
         @Override
         public JsonOutputWriterUsingJackson addIfNotNull(String key, String value) {
-            return withExceptionHandling((jacksonWriter) -> {
+            return withExceptionHandling(jacksonWriter -> {
                 if (value != null) {
                     add(key, value);
                 }
@@ -139,8 +135,17 @@ public class JsonOutputWriter {
         }
 
         @Override
+        public JsonOutputWriterUsingJackson addIfNotBlank(String key, String value) {
+            return withExceptionHandling(jacksonWriter -> {
+                if (value != null && !value.isBlank()) {
+                    add(key, value);
+                }
+            });
+        }
+
+        @Override
         public JsonOutputWriterUsingJackson addIfNotNull(String key, Long value) {
-            return withExceptionHandling((jacksonWriter) -> {
+            return withExceptionHandling(jacksonWriter -> {
                 if (value != null) {
                     add(key, value);
                 }
@@ -149,7 +154,7 @@ public class JsonOutputWriter {
 
         @Override
         public OutputWriter addIfNotNull(String key, Integer value) {
-            return withExceptionHandling((jacksonWriter) -> {
+            return withExceptionHandling(jacksonWriter -> {
                 if (value != null) {
                     add(key, value);
                 }
@@ -158,7 +163,7 @@ public class JsonOutputWriter {
 
         @Override
         public JsonOutputWriterUsingJackson addIfNotNull(String key, CaseInsensitiveString value) {
-            return withExceptionHandling((jacksonWriter) -> {
+            return withExceptionHandling(jacksonWriter -> {
                 if (value != null) {
                     add(key, value);
                 }
@@ -167,18 +172,17 @@ public class JsonOutputWriter {
 
         @Override
         public JsonOutputWriterUsingJackson addIfNotNull(String key, Double value) {
-            return withExceptionHandling((jacksonWriter) -> {
+            return withExceptionHandling(jacksonWriter -> {
                 if (value != null) {
                     add(key, value);
                 }
             });
         }
 
-
         @Override
         public JsonOutputWriterUsingJackson addWithDefaultIfBlank(String key, String value, String defaultValue) {
-            return withExceptionHandling((jacksonWriter) -> {
-                if (isNotBlank(value)) {
+            return withExceptionHandling(jacksonWriter -> {
+                if (value != null && !value.isBlank()) {
                     add(key, value);
                 } else {
                     add(key, defaultValue);
@@ -188,32 +192,32 @@ public class JsonOutputWriter {
 
         @Override
         public JsonOutputWriterUsingJackson add(String key, int value) {
-            return withExceptionHandling((jacksonWriter) -> jacksonWriter.writeNumberField(key, value));
+            return withExceptionHandling(jacksonWriter -> jacksonWriter.writeNumberField(key, value));
         }
 
         @Override
         public JsonOutputWriterUsingJackson add(String key, boolean value) {
-            return withExceptionHandling((jacksonWriter) -> jacksonWriter.writeBooleanField(key, value));
+            return withExceptionHandling(jacksonWriter -> jacksonWriter.writeBooleanField(key, value));
         }
 
         @Override
         public JsonOutputWriterUsingJackson add(String key, long value) {
-            return withExceptionHandling((jacksonWriter) -> jacksonWriter.writeNumberField(key, value));
+            return withExceptionHandling(jacksonWriter -> jacksonWriter.writeNumberField(key, value));
         }
 
         @Override
         public JsonOutputWriterUsingJackson add(String key, Date value) {
-            return withExceptionHandling((jacksonWriter) -> jacksonWriter.writeStringField(key, jsonDate(value)));
+            return withExceptionHandling(jacksonWriter -> jacksonWriter.writeStringField(key, jsonDate(value)));
         }
 
         @Override
         public OutputWriter addInMillis(String key, Date value) {
-            return withExceptionHandling((jacksonWriter) -> jacksonWriter.writeNumberField(key, value.getTime()));
+            return withExceptionHandling(jacksonWriter -> jacksonWriter.writeNumberField(key, value.getTime()));
         }
 
         @Override
         public JsonOutputWriterUsingJackson addIfNotNull(String key, Date value) {
-            return withExceptionHandling((jacksonWriter) -> {
+            return withExceptionHandling(jacksonWriter -> {
                 if (value != null) {
                     add(key, value);
                 }
@@ -222,7 +226,7 @@ public class JsonOutputWriter {
 
         @Override
         public OutputWriter addInMillisIfNotNull(String key, Date value) {
-            return withExceptionHandling((jacksonWriter) -> {
+            return withExceptionHandling(jacksonWriter -> {
                 if (value != null) {
                     addInMillis(key, value);
                 }
@@ -246,9 +250,11 @@ public class JsonOutputWriter {
 
         @Override
         public OutputWriter addLinks(Consumer<OutputLinkWriter> consumer) {
-            if (null == requestContext) return this;
+            if (null == requestContext) {
+                return this;
+            }
 
-            return withExceptionHandling((jacksonWriter) -> addChild("_links", (childWriter) -> consumer.accept(new JsonOutputLinkWriter(childWriter))));
+            return withExceptionHandling(jacksonWriter -> addChild("_links", childWriter -> consumer.accept(new JsonOutputLinkWriter(childWriter))));
         }
 
         @Override
@@ -258,7 +264,7 @@ public class JsonOutputWriter {
 
         @Override
         public OutputWriter add(String key, JsonNode jsonNode) {
-            return withExceptionHandling((jacksonWriter) -> {
+            return withExceptionHandling(jacksonWriter -> {
                         jacksonWriter.writeFieldName(key);
                         jacksonWriter.writeTree(jsonNode);
                     }
@@ -267,7 +273,7 @@ public class JsonOutputWriter {
 
         @Override
         public void renderNull(String key) {
-            withExceptionHandling((jacksonWriter) -> {
+            withExceptionHandling(jacksonWriter -> {
                         jacksonWriter.writeFieldName(key);
                         jacksonWriter.writeTree(null);
                     }
@@ -281,13 +287,13 @@ public class JsonOutputWriter {
 
         @FunctionalInterface
         interface ConsumerWhichThrows extends Consumer<JsonGenerator> {
-            void acceptWhichThrows(JsonGenerator writer) throws Exception;
+            void acceptWhichThrows(JsonGenerator writer) throws IOException;
 
             @Override
             default void accept(JsonGenerator writer) {
                 try {
                     acceptWhichThrows(writer);
-                } catch (Exception e) {
+                } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
             }
@@ -342,7 +348,7 @@ public class JsonOutputWriter {
             }
 
             public JsonOutputWriterUsingJackson body(Consumer<OutputWriter> consumer) {
-                return parentWriter.withExceptionHandling((jacksonWriter) -> {
+                return parentWriter.withExceptionHandling(jacksonWriter -> {
                     jacksonWriter.writeFieldName(key);
                     jacksonWriter.writeStartObject();
                     consumer.accept(parentWriter);
@@ -360,7 +366,7 @@ public class JsonOutputWriter {
             }
 
             private JsonOutputWriterUsingJackson body(String key, Consumer<OutputListWriter> consumer) {
-                return parentWriter.withExceptionHandling((jacksonWriter) -> {
+                return parentWriter.withExceptionHandling(jacksonWriter -> {
                     jacksonWriter.writeFieldName(key);
                     startArrayWithoutName(consumer);
                 });
@@ -376,13 +382,13 @@ public class JsonOutputWriter {
 
             @Override
             public JsonOutputListWriter value(String value) {
-                parentWriter.withExceptionHandling((jacksonWriter) -> jacksonWriter.writeString(value));
+                parentWriter.withExceptionHandling(jacksonWriter -> jacksonWriter.writeString(value));
                 return this;
             }
 
             @Override
             public JsonOutputListWriter addChild(Consumer<OutputWriter> consumer) {
-                parentWriter.withExceptionHandling((jacksonWriter) -> {
+                parentWriter.withExceptionHandling(jacksonWriter -> {
                     jacksonWriter.writeStartObject();
                     consumer.accept(parentWriter);
                     jacksonWriter.writeEndObject();
@@ -401,7 +407,7 @@ public class JsonOutputWriter {
 
             @Override
             public OutputLinkWriter addLinkIfPresent(String key, String href) {
-                if (isNotBlank(href)) {
+                if (href != null && !href.isBlank()) {
                     addAbsoluteLink(key, requestContext.build(key, href).getHref());
                 }
                 return this;
@@ -421,7 +427,7 @@ public class JsonOutputWriter {
     }
 
     public static String jsonDate(Date value) {
-        return value == null ? null : ISO8601Utils.format(value, false, UTC);
+        return value == null ? null : ISO8601Utils.format(value, false);
     }
 
 }

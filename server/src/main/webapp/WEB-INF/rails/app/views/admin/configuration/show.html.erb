@@ -1,3 +1,18 @@
+<%#
+  Copyright Thoughtworks, Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+%>
 <%
    time = 'Unknown'
    config_modified_by = 'Unknown'
@@ -9,7 +24,6 @@
 -%>
 <div class="sub_tab_container_content">
     <div id="tab-content-of-source-xml">
-        <%= render :partial => 'admin/configuration/heading', :locals => {:scope => {:go_config => @go_config}} -%>
         <div class="admin_holder" id="admin-holder-for-admin-config-source-xml">
             <div class='form_heading'>
                 <div class="buttons-group">
@@ -19,7 +33,7 @@
             </div>
             <div id="content_area">
                 <div id="content_container" style="height: 400px">
-                  <textarea data-config-url="<%= "/go/api/admin/config/#{@go_config.md5}.xml" %>" class="wrap_pre" id="config-xml-content" style="display: none;" readonly aria-readonly="true"></textarea>
+                  <textarea class="wrap_pre" id="config-xml-content" style="display: none;" readonly aria-readonly="true"></textarea>
                   <div class="spinner-container" style="
                     position:      relative;
                     top:           30%;
@@ -47,7 +61,7 @@
                 $(function() {
                   var httpRequest = new XMLHttpRequest();
                   let textArea = document.querySelector('#config-xml-content');
-                  httpRequest.open('GET', textArea.getAttribute('data-config-url'), true);
+                  httpRequest.open('GET', '/go/api/admin/config.xml', true);
                   httpRequest.send();
                   httpRequest.onreadystatechange = function() {
                     if (httpRequest.readyState === XMLHttpRequest.DONE) {

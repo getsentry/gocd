@@ -15,9 +15,9 @@
  */
 package com.thoughtworks.go.domain.builder;
 
-import com.thoughtworks.go.agent.HttpService;
-import com.thoughtworks.go.agent.URLService;
 import com.thoughtworks.go.domain.*;
+import com.thoughtworks.go.remote.work.artifact.WorkDownloader;
+import com.thoughtworks.go.util.SystemEnvironment;
 import com.thoughtworks.go.util.TempDirUtils;
 import com.thoughtworks.go.util.TestingClock;
 import com.thoughtworks.go.util.ZipUtil;
@@ -36,19 +36,18 @@ import java.util.List;
 import java.util.UUID;
 import java.util.zip.Deflater;
 
-import static javax.servlet.http.HttpServletResponse.SC_OK;
+import static java.net.HttpURLConnection.HTTP_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 public class FetchArtifactBuilderTest {
-    private File zip;
-    private List<File> toClean = new ArrayList<>();
+    private final List<File> toClean = new ArrayList<>();
 
+    private File zip;
     private File dest;
     private TestingClock clock;
     private StubGoPublisher publisher;
     private ChecksumFileHandler checksumFileHandler;
-    private URLService urlService;
     private DownloadAction downloadAction;
 
     @BeforeEach
@@ -61,8 +60,9 @@ public class FetchArtifactBuilderTest {
         clock = new TestingClock();
         publisher = new StubGoPublisher();
         checksumFileHandler = mock(ChecksumFileHandler.class);
-        urlService = mock(URLService.class);
         downloadAction = mock(DownloadAction.class);
+
+        new SystemEnvironment().set(SystemEnvironment.SERVICE_URL, "http://foo.bar:8153/go");
     }
 
     private void createZipArtifactIn(Path tempDir) throws IOException {
@@ -77,6 +77,7 @@ public class FetchArtifactBuilderTest {
 
     @AfterEach
     public void tearDown() {
+        new SystemEnvironment().clearProperty(SystemEnvironment.SERVICE_URL.propertyName());
         for (File fileToClean : toClean) {
             FileUtils.deleteQuietly(fileToClean);
         }
@@ -85,12 +86,12 @@ public class FetchArtifactBuilderTest {
     @Test
     public void shouldUnzipWhenFetchingFolder() throws Exception {
         ChecksumFileHandler checksumFileHandler = mock(ChecksumFileHandler.class);
-        when(checksumFileHandler.handleResult(SC_OK, publisher)).thenReturn(true);
+        when(checksumFileHandler.handleResult(HTTP_OK, publisher)).thenReturn(true);
 
         File destOnAgent = new File("pipelines/cruise/", dest.getPath());
         FetchArtifactBuilder builder = getBuilder(new JobIdentifier("cruise", -10, "1", "dev", "1", "windows", 1L), "log", dest.getPath(), new DirHandler("log",destOnAgent), checksumFileHandler);
 
-        builder.fetch(new DownloadAction(new StubFetchZipHttpService(), publisher, clock), new StubURLService());
+        builder.fetch(new DownloadAction(new StubFetchZipWorkDownloader(), publisher, clock));
 
         assertDownloaded(destOnAgent);
     }
@@ -98,14 +99,14 @@ public class FetchArtifactBuilderTest {
     @Test
     public void shouldSaveFileWhenFetchingFile() throws Exception {
         ChecksumFileHandler checksumFileHandler = mock(ChecksumFileHandler.class);
-        when(checksumFileHandler.handleResult(SC_OK, publisher)).thenReturn(true);
+        when(checksumFileHandler.handleResult(HTTP_OK, publisher)).thenReturn(true);
 
         File artifactOnAgent = new File("pipelines/cruise/a.jar");
         toClean.add(artifactOnAgent);
 
         FetchArtifactBuilder builder = getBuilder(new JobIdentifier("cruise", -1, "1", "dev", "1", "windows", 1L), "log", "some where do download", new FileHandler(artifactOnAgent, getSrc()), checksumFileHandler);
 
-        builder.fetch(new DownloadAction(new StubFetchZipHttpService(), publisher, clock), new StubURLService());
+        builder.fetch(new DownloadAction(new StubFetchZipWorkDownloader(), publisher, clock));
 
         assertThat(artifactOnAgent.isFile()).isTrue();
     }
@@ -125,14 +126,12 @@ public class FetchArtifactBuilderTest {
                 src, "lib/a.jar",
                 new FileHandler(consolelog, getSrc()), checksumFileHandler);
 
-        when(urlService.baseRemoteURL()).thenReturn("http://foo.bar:8153/go");
-
-        when(checksumFileHandler.url("http://foo.bar:8153/go", "foo/label-1/dev/1/linux")).thenReturn("http://foo.bar:8153/go/files/foo/label-1/dev/1/linux/cruise-output/md5.checksum");
+        when(checksumFileHandler.url("foo/label-1/dev/1/linux")).thenReturn("http://foo.bar:8153/go/files/foo/label-1/dev/1/linux/cruise-output/md5.checksum");
 
         java.util.Properties properties = new java.util.Properties();
         when(checksumFileHandler.getArtifactMd5Checksums()).thenReturn(new ArtifactMd5Checksums(properties));
 
-        builder.fetch(downloadAction, urlService);
+        builder.fetch(downloadAction);
 
         verify(downloadAction).perform(eq("http://foo.bar:8153/go/files/foo/label-1/dev/1/linux/cruise-output/md5.checksum"), isA(FetchHandler.class));
         verify(downloadAction).perform(eq("http://foo.bar:8153/go/remoting/files/foo/label-1/dev/1/linux/cruise-output/console.log"), isA(FileHandler.class));
@@ -152,17 +151,15 @@ public class FetchArtifactBuilderTest {
                 src, "lib/a.jar",
                 new FileHandler(consolelog, getSrc()), checksumFileHandler);
 
-        when(urlService.baseRemoteURL()).thenReturn("http://foo.bar:8153/go");
-
-        when(checksumFileHandler.url("http://foo.bar:8153/go", "foo/label-1/dev/1/linux")).thenReturn("http://foo.bar:8153/go/files/foo/label-1/dev/1/linux/cruise-output/md5.checksum");
+        when(checksumFileHandler.url("foo/label-1/dev/1/linux")).thenReturn("http://foo.bar:8153/go/files/foo/label-1/dev/1/linux/cruise-output/md5.checksum");
 
         java.util.Properties properties = new java.util.Properties();
         when(checksumFileHandler.getArtifactMd5Checksums()).thenReturn(new ArtifactMd5Checksums(properties));
 
-        builder.fetch(downloadAction, urlService);
+        builder.fetch(downloadAction);
 
-        verify(downloadAction).perform(eq("http://foo.bar:8153/go/files/foo/label-1/dev/1/linux/cruise-output/md5.checksum"), any(FetchHandler.class));
-        verify(downloadAction).perform(eq("http://foo.bar:8153/go/remoting/files/foo/label-1/dev/1/linux/cruise-output/console.log?sha1=2jmj7l5rSw0yVb%2FvlWAYkK%2FYBwk%3D"), any(FileHandler.class));
+        verify(downloadAction).perform(eq("http://foo.bar:8153/go/files/foo/label-1/dev/1/linux/cruise-output/md5.checksum"), any());
+        verify(downloadAction).perform(eq("http://foo.bar:8153/go/remoting/files/foo/label-1/dev/1/linux/cruise-output/console.log?sha1=2jmj7l5rSw0yVb%2FvlWAYkK%2FYBwk%3D"), any());
         verifyNoMoreInteractions(downloadAction);
     }
 
@@ -175,14 +172,12 @@ public class FetchArtifactBuilderTest {
                 src, "lib/a.jar",
                 new DirHandler(src, destOnAgent), checksumFileHandler);
 
-        when(urlService.baseRemoteURL()).thenReturn("http://foo.bar:8153/go");
-
-        when(checksumFileHandler.url("http://foo.bar:8153/go", "foo/label-1/dev/1/linux")).thenReturn("http://foo.bar:8153/go/files/foo/label-1/dev/1/linux/cruise-output/md5.checksum");
+        when(checksumFileHandler.url("foo/label-1/dev/1/linux")).thenReturn("http://foo.bar:8153/go/files/foo/label-1/dev/1/linux/cruise-output/md5.checksum");
 
         java.util.Properties properties = new java.util.Properties();
         when(checksumFileHandler.getArtifactMd5Checksums()).thenReturn(new ArtifactMd5Checksums(properties));
 
-        builder.fetch(downloadAction, urlService);
+        builder.fetch(downloadAction);
 
         verify(downloadAction).perform(eq("http://foo.bar:8153/go/files/foo/label-1/dev/1/linux/cruise-output/md5.checksum"), isA(FetchHandler.class));
         verify(downloadAction).perform(eq("http://foo.bar:8153/go/remoting/files/foo/label-1/dev/1/linux/cruise-output.zip"), isA(DirHandler.class));
@@ -192,26 +187,24 @@ public class FetchArtifactBuilderTest {
 
     @Test
     public void shouldValidateChecksumOnArtifact() throws Exception {
-        when(urlService.baseRemoteURL()).thenReturn("http://10.10.1.1/go/files");
-        when(checksumFileHandler.url("http://10.10.1.1/go/files", "cruise/10/dev/1/windows")).thenReturn("http://10.10.1.1/go/files/cruise/10/dev/1/windows/cruise-output/md5.checksum");
+        when(checksumFileHandler.url("cruise/10/dev/1/windows")).thenReturn("http://foo.bar:8153/go/files/cruise/10/dev/1/windows/cruise-output/md5.checksum");
 
         FetchArtifactBuilder builder = getBuilder(new JobIdentifier("cruise", 10, "1", "dev", "1", "windows", 1L), "log", dest.getPath(), mock(FetchHandler.class), checksumFileHandler);
-        builder.fetch(downloadAction, urlService);
+        builder.fetch(downloadAction);
 
-        verify(downloadAction).perform("http://10.10.1.1/go/files/cruise/10/dev/1/windows/cruise-output/md5.checksum", checksumFileHandler);
+        verify(downloadAction).perform("http://foo.bar:8153/go/files/cruise/10/dev/1/windows/cruise-output/md5.checksum", checksumFileHandler);
     }
 
     @Test
     public void shouldMakeTheFetchHandlerUseTheArtifactMd5Checksum() throws Exception {
         ArtifactMd5Checksums artifactMd5Checksums = mock(ArtifactMd5Checksums.class);
 
-        when(urlService.baseRemoteURL()).thenReturn("http://10.10.1.1/go/files");
-        when(checksumFileHandler.url("http://10.10.1.1/go/files", "cruise/10/dev/1/windows")).thenReturn("http://10.10.1.1/go/files/cruise/10/dev/1/windows/cruise-output/md5.checksum");
+        when(checksumFileHandler.url("cruise/10/dev/1/windows")).thenReturn("http://foo.bar:8153/go/files/cruise/10/dev/1/windows/cruise-output/md5.checksum");
         when(checksumFileHandler.getArtifactMd5Checksums()).thenReturn(artifactMd5Checksums);
 
         FetchHandler fetchHandler = mock(FetchHandler.class);
         FetchArtifactBuilder builder = getBuilder(new JobIdentifier("cruise", 10, "1", "dev", "1", "windows", 1L), "log", dest.getPath(), fetchHandler, checksumFileHandler);
-        builder.fetch(downloadAction, urlService);
+        builder.fetch(downloadAction);
 
         verify(fetchHandler).useArtifactMd5Checksums(artifactMd5Checksums);
     }
@@ -220,23 +213,13 @@ public class FetchArtifactBuilderTest {
         return new FetchArtifactBuilder(new RunIfConfigs(), new NullBuilder(), "", jobLocator, srcdir, dest, handler, checksumFileHandler);
     }
 
-    private class StubFetchZipHttpService extends HttpService {
-        StubFetchZipHttpService() {
-            super(null, null);
-        }
+    private class StubFetchZipWorkDownloader implements WorkDownloader {
         @Override
         public int download(String url, FetchHandler handler) throws IOException {
             try (FileInputStream stream = new FileInputStream(zip)) {
                 handler.handle(stream);
             }
-            return SC_OK;
-        }
-    }
-
-    private static class StubURLService extends URLService {
-        @Override
-        public String baseRemoteURL() {
-            return "";
+            return HTTP_OK;
         }
     }
 

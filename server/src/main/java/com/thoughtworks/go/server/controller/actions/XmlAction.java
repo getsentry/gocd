@@ -18,50 +18,30 @@ package com.thoughtworks.go.server.controller.actions;
 import org.springframework.web.servlet.ModelAndView;
 
 import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
 
-import static com.thoughtworks.go.util.GoConstants.RESPONSE_CHARSET;
-import static javax.servlet.http.HttpServletResponse.SC_CONFLICT;
-import static javax.servlet.http.HttpServletResponse.SC_OK;
-import static org.apache.http.HttpStatus.SC_FORBIDDEN;
+import static java.net.HttpURLConnection.HTTP_OK;
 
-public class XmlAction extends BasicRestfulAction {
+public class XmlAction extends TextAction {
+    public static final String CONTENT_TYPE = "text/xml; charset=utf-8";
+    public static final String HEADER_RESPONSE_CRUISE_CONFIG_MD5 = "X-CRUISE-CONFIG-MD5";
+
     private final String md5;
-    public static final String X_CRUISE_CONFIG_MD5 = "X-CRUISE-CONFIG-MD5";
 
     public static RestfulAction xmlFound(String xml, String md5) {
-        return new XmlAction(SC_OK, xml, md5);
-    }
-
-    public static RestfulAction xmlMd5Conflict(String errorMessage, String newMd5) {
-        return new XmlAction(SC_CONFLICT, RESPONSE_CHARSET, errorMessage, newMd5);
-    }
-
-    public static RestfulAction xmlNotFound(String errorMessage) {
-        return notFound(errorMessage);
-    }
-
-    private XmlAction(int status, String message) {
-        this(status, message, null);
+        return new XmlAction(HTTP_OK, xml, md5);
     }
 
     private XmlAction(int status, String message, String md5) {
-        this(status, "text/xml", message, md5);
-    }
-
-    private XmlAction(int status, String contentType, String message, String md5) {
-        super(status, contentType, message);
+        super(status, CONTENT_TYPE, message);
         this.md5 = md5;
     }
 
     @Override
-    public ModelAndView respond(HttpServletResponse response) throws Exception {
+    public ModelAndView respond(HttpServletResponse response) throws IOException {
         if (md5 != null) {
-            response.setHeader(X_CRUISE_CONFIG_MD5, md5);
+            response.setHeader(HEADER_RESPONSE_CRUISE_CONFIG_MD5, md5);
         }
         return super.respond(response);
-    }
-
-    public static RestfulAction xmlForbidden(String message) {
-       return new XmlAction(SC_FORBIDDEN, message);
     }
 }

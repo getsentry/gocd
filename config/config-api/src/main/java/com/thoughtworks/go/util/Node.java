@@ -52,20 +52,12 @@ public class Node {
         if (this.getClass() != that.getClass()) {
             return false;
         }
-        return equals((Node) that);
-    }
-
-    private boolean equals(Node that) {
-        return dependencies.equals(that.dependencies);
+        return dependencies.equals(((Node) that).dependencies);
     }
 
     @Override
     public String toString() {
         return "<Node: " + dependencies.toString() + ">";
-    }
-
-    public boolean hasDependency(final CaseInsensitiveString pipelineName) {
-        return dependencies.stream().anyMatch(item -> item.getPipelineName().equals(pipelineName));
     }
 
     public Optional<DependencyNode> getDependency(final CaseInsensitiveString pipelineName) {
@@ -91,13 +83,16 @@ public class Node {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
 
             DependencyNode that = (DependencyNode) o;
-
-            if (!pipelineName.equals(that.pipelineName)) return false;
-            return stageName.equals(that.stageName);
+            return pipelineName.equals(that.pipelineName) &&
+                stageName.equals(that.stageName);
         }
 
         @Override

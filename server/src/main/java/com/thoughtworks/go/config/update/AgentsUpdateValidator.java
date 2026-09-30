@@ -28,7 +28,6 @@ import java.util.List;
 import static com.thoughtworks.go.domain.AgentInstance.FilterBy.*;
 import static java.lang.String.format;
 import static java.util.Collections.emptyList;
-import static org.apache.commons.lang3.StringUtils.join;
 
 public class AgentsUpdateValidator {
     private final AgentInstances agentInstances;
@@ -79,7 +78,7 @@ public class AgentsUpdateValidator {
             return;
         }
 
-        if (state.isTrue() || state.isFalse()) {
+        if (state.isPresent()) {
             return;
         }
 
@@ -104,10 +103,10 @@ public class AgentsUpdateValidator {
     }
 
     private String commaSeparate(List<String> listOfStrs) {
-        return join(listOfStrs, ", ");
+        return String.join(", ", listOfStrs);
     }
 
     private List<String> actualOrEmptyList(List<String> list) {
-        return (list == null ? emptyList() : list);
+        return list == null ? emptyList() : list;
     }
 }

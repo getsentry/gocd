@@ -1,0 +1,12 @@
+# Configuration for https://mise.jdx.dev/ as an alternative to asdf, jabba, sdkman, rvm, nvm etc
+[tools]
+"java" = [
+  { version = "temurin-25", os = ["linux", "macos"] },
+  { version = "microsoft-25", os = ["windows"] }
+]
+"node" = { version = "24", postinstall = "corepack enable && ./gradlew --stop" }
+
+# Unit tests only
+"ant" = "1"
+"chromedriver" = { version = "latest", os = ["linux", "macos"] } # plugin not working on Windows with pwsh right now :(
+"github:mozilla/geckodriver" = { version = "latest", os = ["linux", "macos"] }

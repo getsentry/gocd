@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.service;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.GoConfigDao;
 import com.thoughtworks.go.config.materials.Filter;
 import com.thoughtworks.go.config.materials.IgnoredFiles;
@@ -37,7 +36,6 @@ import com.thoughtworks.go.server.service.result.ServerHealthStateOperationResul
 import com.thoughtworks.go.server.transaction.TransactionTemplate;
 import com.thoughtworks.go.util.GoConfigFileHelper;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -48,6 +46,7 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.nio.file.Path;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ExtendWith(SpringExtension.class)
@@ -67,60 +66,52 @@ public class MultipleMaterialsWithFilterTest {
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private SubprocessExecutionContext subprocessExecutionContext;
 
-    private PipelineWithMultipleMaterials fixture;
-    private static GoConfigFileHelper configHelper;
+    private PipelineWithMultipleMaterials pipelineFixture;
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
 
-    @BeforeAll
-    public static void fixtureSetUp() {
-        configHelper = new GoConfigFileHelper();
-    }
 
     @BeforeEach
     public void setUp(@TempDir Path tempDir) throws Exception {
-        configHelper.onSetUp();
         configHelper.usingCruiseConfigDao(goConfigDao);
-        fixture = new PipelineWithMultipleMaterials(materialRepository, transactionTemplate, tempDir);
-        fixture.usingFilterForFirstMaterial("**/*.doc").usingConfigHelper(configHelper).usingDbHelper(
-                dbHelper).onSetUp();
+        pipelineFixture = new PipelineWithMultipleMaterials(materialRepository, transactionTemplate, tempDir);
+        pipelineFixture.usingFilterForFirstMaterial("**/*.doc").usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
         pipelineScheduleQueue.clear();
     }
 
     @AfterEach
     public void teardown() throws Exception {
-        configHelper.onTearDown();
-        fixture.onTearDown();
-        dbHelper.onTearDown();
+        pipelineFixture.onTearDown();
         pipelineScheduleQueue.clear();
     }
 
     @Test
     public void shouldUseLatestRevisionWhenAutoTriggered() throws Exception {
-        fixture.createPipelineHistory();
-        fixture.checkInToFirstMaterial("a.doc");
-        fixture.checkInToSecondMaterial("b.java");
-        buildCauseProducerService.autoSchedulePipeline(fixture.pipelineName, new ServerHealthStateOperationResult(), 12345);
-        BuildCause buildCause = pipelineScheduleQueue.toBeScheduled().get(new CaseInsensitiveString(fixture.pipelineName));
+        pipelineFixture.createPipelineHistory();
+        pipelineFixture.checkInToFirstMaterial("a.doc");
+        pipelineFixture.checkInToSecondMaterial("b.java");
+        buildCauseProducerService.autoSchedulePipeline(pipelineFixture.pipelineName, new ServerHealthStateOperationResult(), 12345);
+        BuildCause buildCause = pipelineScheduleQueue.toBeScheduled().get(cis(pipelineFixture.pipelineName));
         assertThat(buildCause).isInstanceOf(BuildCause.class);
 
         MaterialRevisions actual = buildCause.getMaterialRevisions();
-        assertThat(actual.getMaterialRevision(fixture.getSecondMaterialFolder()).getRevision()).isEqualTo(fixture.latestRevisionOfSecondMaterial().getRevision());
-        assertThat(actual.getMaterialRevision(fixture.getFirstMaterialFolder()).getRevision()).isEqualTo(fixture.latestRevisionOfFirstMaterial().getRevision());
+        assertThat(actual.getMaterialRevision(pipelineFixture.getSecondMaterialFolder()).getRevision()).isEqualTo(pipelineFixture.latestRevisionOfSecondMaterial().getRevision());
+        assertThat(actual.getMaterialRevision(pipelineFixture.getFirstMaterialFolder()).getRevision()).isEqualTo(pipelineFixture.latestRevisionOfFirstMaterial().getRevision());
     }
 
     @Test
     public void shouldNotTriggerPipelineWhenCheckinsAreIgnored() throws Exception {
-        fixture.createPipelineHistory();
-        fixture.checkInToFirstMaterial("a.doc");
+        pipelineFixture.createPipelineHistory();
+        pipelineFixture.checkInToFirstMaterial("a.doc");
 
         int size = pipelineScheduleQueue.toBeScheduled().size();
 
-        buildCauseProducerService.autoSchedulePipeline(fixture.pipelineName, new ServerHealthStateOperationResult(), 12345);
+        buildCauseProducerService.autoSchedulePipeline(pipelineFixture.pipelineName, new ServerHealthStateOperationResult(), 12345);
 
         assertThat(pipelineScheduleQueue.toBeScheduled().size()).isEqualTo(size);
-        assertThat(pipelineScheduleQueue.toBeScheduled().get(new CaseInsensitiveString(fixture.pipelineName))).isNull();
+        assertThat(pipelineScheduleQueue.toBeScheduled().get(cis(pipelineFixture.pipelineName))).isNull();
     }
 
-    public class PipelineWithMultipleMaterials extends PipelineWithTwoStages {
+public class PipelineWithMultipleMaterials extends PipelineWithTwoStages {
         private String filterForFirstMaterial;
         private SvnTestRepo svnTestRepo1;
         private SvnTestRepo svnTestRepo2;

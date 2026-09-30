@@ -21,12 +21,13 @@ import com.thoughtworks.go.config.materials.Filter;
 import com.thoughtworks.go.domain.ConfigErrors;
 import com.thoughtworks.go.domain.DependencyFilter;
 
-import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.util.ExceptionUtils.bombIfNull;
 
 @ConfigTag(value = "pipeline", label = "Pipeline")
@@ -40,10 +41,10 @@ public class DependencyMaterialConfig extends AbstractMaterialConfig implements 
     public static final String ORIGIN = "origin";
 
     @ConfigAttribute(value = "pipelineName")
-    private CaseInsensitiveString pipelineName = new CaseInsensitiveString("Unknown");
+    private CaseInsensitiveString pipelineName = cis("Unknown");
 
     @ConfigAttribute(value = "stageName")
-    private CaseInsensitiveString stageName = new CaseInsensitiveString("Unknown");
+    private CaseInsensitiveString stageName = cis("Unknown");
 
     @ConfigAttribute(value = "ignoreForScheduling")
     private boolean ignoreForScheduling = false;
@@ -172,32 +173,25 @@ public class DependencyMaterialConfig extends AbstractMaterialConfig implements 
             return false;
         }
         DependencyMaterialConfig that = (DependencyMaterialConfig) o;
-        if (type != null ? !type.equals(that.type) : that.type != null) {
-            return false;
-        }
-        if (pipelineName != null ? !pipelineName.equals(that.pipelineName) : that.pipelineName != null) {
-            return false;
-        }
-        if (stageName != null ? !stageName.equals(that.stageName) : that.stageName != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(type, that.type) &&
+            Objects.equals(pipelineName, that.pipelineName) &&
+            Objects.equals(stageName, that.stageName);
     }
 
     @Override
     public int hashCode() {
-        int result = (type != null ? type.hashCode() : 0);
+        int result = type != null ? type.hashCode() : 0;
         result = 31 * result + (pipelineName != null ? pipelineName.hashCode() : 0);
         result = 31 * result + (stageName != null ? stageName.hashCode() : 0);
         return result;
     }
 
-    @Override public String toString() {
+    @Override
+    public String toString() {
         return "DependencyMaterialConfig{" +
-                "pipelineName='" + pipelineName + '\'' +
-                ", stageName='" + stageName + '\'' +
-                '}';
+            "pipelineName='" + pipelineName + '\'' +
+            ", stageName='" + stageName + '\'' +
+            '}';
     }
 
     @Override
@@ -212,10 +206,9 @@ public class DependencyMaterialConfig extends AbstractMaterialConfig implements 
 
         PipelineConfig upstreamPipeline = validationContext.getPipelineConfigByName(upstreamPipelineName);
         PipelineConfig pipeline = validationContext.getPipeline();
-        if (upstreamPipeline==null) {
+        if (upstreamPipeline == null) {
             errors.add(DependencyMaterialConfig.PIPELINE_STAGE_NAME, String.format("Pipeline with name '%s' does not exist, it is defined as a dependency for pipeline '%s' (%s)", upstreamPipelineName, pipeline.name(), pipeline.getOriginDisplayName()));
-        }
-        else if (upstreamPipeline.findBy(upstreamStageName) == null) {
+        } else if (upstreamPipeline.findBy(upstreamStageName) == null) {
             errors.add(DependencyMaterialConfig.PIPELINE_STAGE_NAME, String.format("Stage with name '%s' does not exist on pipeline '%s', it is being referred to from pipeline '%s' (%s)", upstreamStageName, upstreamPipelineName, pipeline.name(), pipeline.getOriginDisplayName()));
         }
     }
@@ -228,7 +221,7 @@ public class DependencyMaterialConfig extends AbstractMaterialConfig implements 
     public void validateUniqueness(Set<CaseInsensitiveString> dependencies) {
         CaseInsensitiveString upstreamPipelineName = pipelineName;
         if (dependencies.contains(upstreamPipelineName)) {
-            String message = (String.format("A pipeline can depend on each upstream pipeline only once. Remove one of the occurrences of '%s' from the current pipeline dependencies.", upstreamPipelineName));
+            String message = String.format("A pipeline can depend on each upstream pipeline only once. Remove one of the occurrences of '%s' from the current pipeline dependencies.", upstreamPipelineName);
             errors.add(PIPELINE_STAGE_NAME, message);
         }
         dependencies.add(pipelineName);
@@ -242,21 +235,20 @@ public class DependencyMaterialConfig extends AbstractMaterialConfig implements 
         }
         @SuppressWarnings("unchecked") Map<String, ?> attributesMap = (Map<String, ?>) attributes;
         if (attributesMap.containsKey(MATERIAL_NAME)) {
-            name = new CaseInsensitiveString((String) attributesMap.get(MATERIAL_NAME));
-            if (CaseInsensitiveString.isBlank(name)) {
+            name = cis((String) attributesMap.get(MATERIAL_NAME));
+            if (CaseInsensitiveString.isEmpty(name)) {
                 name = null;
             }
         }
         if (attributesMap.containsKey(PIPELINE_STAGE_NAME)) {
             pipelineStageName = (String) attributesMap.get(PIPELINE_STAGE_NAME);
             Matcher matcher = PIPELINE_STAGE_COMBINATION_PATTERN.matcher(pipelineStageName);
-            if(matcher.matches()){
-                pipelineName = new CaseInsensitiveString(matcher.group(1));
+            if (matcher.matches()) {
+                pipelineName = cis(matcher.group(1));
                 String stageNameWithBrackets = matcher.group(2);
-                stageName = new CaseInsensitiveString(stageNameWithBrackets.replace("[","").replace("]",""));
-            }
-            else {
-               errors.add(PIPELINE_STAGE_NAME, String.format("'%s' should conform to the pattern 'pipeline [stage]'",pipelineStageName));
+                stageName = cis(stageNameWithBrackets.replace("[", "").replace("]", ""));
+            } else {
+                errors.add(PIPELINE_STAGE_NAME, String.format("'%s' should conform to the pattern 'pipeline [stage]'", pipelineStageName));
             }
         }
         this.ignoreForScheduling = "true".equals(attributesMap.get(IGNORE_FOR_SCHEDULING));
@@ -266,20 +258,10 @@ public class DependencyMaterialConfig extends AbstractMaterialConfig implements 
         if (pipelineStageName != null) {
             return pipelineStageName;
         }
-        if (CaseInsensitiveString.isBlank(pipelineName) || CaseInsensitiveString.isBlank(stageName)) {
+        if (CaseInsensitiveString.isEmpty(pipelineName) || CaseInsensitiveString.isEmpty(stageName)) {
             return null;
         }
         return String.format("%s [%s]", pipelineName, stageName);
-    }
-
-    @Override
-    public Boolean isUsedInFetchArtifact(PipelineConfig pipelineConfig){
-        List<FetchTask> fetchTasks = pipelineConfig.getFetchTasks();
-        for (FetchTask fetchTask : fetchTasks) {
-            if(pipelineName.equals(fetchTask.getDirectParentInAncestorPath()))
-                return true;
-        }
-        return false;
     }
 
     @Override

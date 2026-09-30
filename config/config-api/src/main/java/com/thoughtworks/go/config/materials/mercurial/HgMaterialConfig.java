@@ -18,12 +18,12 @@ package com.thoughtworks.go.config.materials.mercurial;
 import com.thoughtworks.go.config.ConfigAttribute;
 import com.thoughtworks.go.config.ConfigTag;
 import com.thoughtworks.go.config.ParamsAttributeAware;
-import com.thoughtworks.go.config.ValidationContext;
 import com.thoughtworks.go.config.materials.PasswordAwareMaterial;
 import com.thoughtworks.go.config.materials.ScmMaterialConfig;
 import com.thoughtworks.go.util.command.HgUrlArgument;
 
 import java.util.Map;
+import java.util.Objects;
 
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.apache.commons.lang3.StringUtils.split;
@@ -97,15 +97,8 @@ public class HgMaterialConfig extends ScmMaterialConfig implements ParamsAttribu
 
         HgMaterialConfig that = (HgMaterialConfig) o;
 
-        if (url != null ? !url.equals(that.url) : that.url != null) {
-            return false;
-        }
-
-        if (branch != null ? !branch.equals(that.branch) : that.branch != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(url, that.url) &&
+            Objects.equals(branch, that.branch);
     }
 
     @Override
@@ -117,7 +110,7 @@ public class HgMaterialConfig extends ScmMaterialConfig implements ParamsAttribu
     }
 
     @Override
-    public void validateConcreteScmMaterial(ValidationContext validationContext) {
+    public void validateConcreteScmMaterial() {
         validateMaterialUrl(this.url);
         validateCredentials();
         validateBranch();
@@ -132,23 +125,12 @@ public class HgMaterialConfig extends ScmMaterialConfig implements ParamsAttribu
 
     @Override
     public String getUriForDisplay() {
-        return this.url.forDisplay();
+        return url != null ? url.forDisplay() : null;
     }
 
     @Override
     public String getTypeForDisplay() {
         return "Mercurial";
-    }
-
-    @Override
-    public String getShortRevision(String revision) {
-        if (revision == null) {
-            return null;
-        }
-        if (revision.length() < 12) {
-            return revision;
-        }
-        return revision.substring(0, 12);
     }
 
     @Override

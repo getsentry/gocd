@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.service;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.CruiseConfig;
 import com.thoughtworks.go.config.GoConfigDao;
 import com.thoughtworks.go.config.PipelineConfig;
@@ -42,9 +41,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static com.thoughtworks.go.util.TestUtils.doInterruptiblyQuietly;
+import static com.thoughtworks.go.util.TestUtils.sleepQuietly;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -91,29 +94,20 @@ public class ValueStreamMapPerformanceTest {
     }
 
     @Test
-    public void shouldTestVSMForNPipelines() throws Exception {
+    public void shouldTestVSMForNPipelines() {
         final int numberOfDownstreamPipelines = 5;
         final CruiseConfig cruiseConfig = setupVSM(numberOfDownstreamPipelines);
         List<Thread> ts = new ArrayList<>();
         int numberOfParallelRequests = 10;
         for (int i = 0; i < numberOfParallelRequests; i++) {
-            final int finalI = i;
             Thread t = new Thread(() -> {
-                try {
-                    Thread.sleep(5000);
-                    doRun(numberOfDownstreamPipelines, cruiseConfig);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
+                sleepQuietly(Duration.ofSeconds(5));
+                doRun(numberOfDownstreamPipelines, cruiseConfig);
             }, "Thread" + i);
             ts.add(t);
         }
-        for (Thread t : ts) {
-            t.start();
-        }
-        for (Thread t : ts) {
-            t.join();
-        }
+        ts.forEach(Thread::start);
+        ts.forEach(t -> doInterruptiblyQuietly(t::join));
     }
 
     @Test
@@ -124,7 +118,7 @@ public class ValueStreamMapPerformanceTest {
         int numberOfInstancesForUpstream = 1;
         int numberOfInstancesForDownstream = 10;
 
-        ScmMaterial svn = u.wf((ScmMaterial) MaterialsMother.defaultMaterials().get(0), "folder1");
+        ScmMaterial svn = u.wf((ScmMaterial) MaterialsMother.defaultMaterials().getFirst(), "folder1");
         String[] svn_revs = {"svn_1"};
         u.checkinInOrder(svn, svn_revs);
 
@@ -134,7 +128,7 @@ public class ValueStreamMapPerformanceTest {
 
         long start = System.currentTimeMillis();
         DefaultLocalizedOperationResult result = new DefaultLocalizedOperationResult();
-        ValueStreamMapPresentationModel presentationModel = valueStreamMapService.getValueStreamMap(new CaseInsensitiveString("current"), 1, Username.ANONYMOUS, result);
+        ValueStreamMapPresentationModel presentationModel = valueStreamMapService.getValueStreamMap(cis("current"), 1, Username.ANONYMOUS, result);
         long timeTaken = (System.currentTimeMillis() - start) / 1000;
         assertThat(timeTaken).isLessThan(30L);
 
@@ -159,7 +153,7 @@ public class ValueStreamMapPerformanceTest {
         return nodes;
     }
 
-    private CruiseConfig setupVSM(int numberOfDownstreamPipelines) {
+    private CruiseConfig setupVSM(@SuppressWarnings("SameParameterValue") int numberOfDownstreamPipelines) {
         HgMaterial hg = new HgMaterial("hgurl", "folder");
         String hg_revs = "hg1";
         u.checkinInOrder(hg, hg_revs);
@@ -169,12 +163,12 @@ public class ValueStreamMapPerformanceTest {
         String previousRun = up_r;
 
         for (int i = 0; i < numberOfDownstreamPipelines; i++) {
-            DependencyMaterial dep = new DependencyMaterial(previouslyCreatedPipeline.config.name(), previouslyCreatedPipeline.config.get(0).name());
+            DependencyMaterial dep = new DependencyMaterial(previouslyCreatedPipeline.config.name(), previouslyCreatedPipeline.config.getFirst().name());
             ScheduleTestUtil.AddedPipeline d = u.saveConfigWith("d" + i, new ScheduleTestUtil.MaterialDeclaration(dep, "random"));
             String currentRun = u.runAndPass(d, previousRun);
             previouslyCreatedPipeline = d;
             previousRun = currentRun;
         }
-        return goConfigDao.load();
+        return goConfigDao.currentConfig();
     }
 }

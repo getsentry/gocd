@@ -132,18 +132,22 @@ public class AgentRuntimeInfo implements Serializable {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         AgentRuntimeInfo that = (AgentRuntimeInfo) o;
         return Objects.equals(identifier, that.identifier) &&
-                runtimeStatus == that.runtimeStatus &&
-                Objects.equals(buildingInfo, that.buildingInfo) &&
-                Objects.equals(location, that.location) &&
-                Objects.equals(usableSpace, that.usableSpace) &&
-                Objects.equals(operatingSystemName, that.operatingSystemName) &&
-                Objects.equals(agentBootstrapperVersion, that.agentBootstrapperVersion) &&
-                Objects.equals(agentVersion, that.agentVersion) &&
-                Objects.equals(cookie, that.cookie);
+            runtimeStatus == that.runtimeStatus &&
+            Objects.equals(buildingInfo, that.buildingInfo) &&
+            Objects.equals(location, that.location) &&
+            Objects.equals(usableSpace, that.usableSpace) &&
+            Objects.equals(operatingSystemName, that.operatingSystemName) &&
+            Objects.equals(agentBootstrapperVersion, that.agentBootstrapperVersion) &&
+            Objects.equals(agentVersion, that.agentVersion) &&
+            Objects.equals(cookie, that.cookie);
     }
 
     @Override
@@ -164,7 +168,7 @@ public class AgentRuntimeInfo implements Serializable {
         return new Agent(getUUId(), identifier.getHostName(), identifier.getIpAddress());
     }
 
-    public String getIpAdress() {
+    public String getIpAddress() {
         return identifier.getIpAddress();
     }
 
@@ -237,18 +241,15 @@ public class AgentRuntimeInfo implements Serializable {
     }
 
     public boolean isLowDiskSpace(long limit) {
-        if (usableSpace == null) {
-            return false;
-        }
-        return usableSpace < limit;
+        return usableSpace != null && usableSpace < limit;
     }
 
     public String agentInfoDebugString() {
-        return format("Agent [%s, %s, %s, %s]", getHostName(), getIpAdress(), getUUId(), cookie);
+        return format("Agent [%s, %s, %s, %s]", getHostName(), getIpAddress(), getUUId(), cookie);
     }
 
     public String agentInfoForDisplay() {
-        return format("Agent located at [%s, %s, %s]", getHostName(), getIpAdress(), getLocation());
+        return format("Agent located at [%s, %s, %s]", getHostName(), getIpAddress(), getLocation());
     }
 
     public String getOperatingSystem() {

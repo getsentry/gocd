@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.materials;
 
-import com.google.gson.GsonBuilder;
 import com.thoughtworks.go.ClearSingleton;
 import com.thoughtworks.go.config.materials.PluggableSCMMaterial;
 import com.thoughtworks.go.config.materials.SubprocessExecutionContext;
@@ -24,7 +23,10 @@ import com.thoughtworks.go.domain.materials.Modification;
 import com.thoughtworks.go.domain.materials.Modifications;
 import com.thoughtworks.go.helper.MaterialsMother;
 import com.thoughtworks.go.helper.ModificationsMother;
-import com.thoughtworks.go.plugin.access.scm.*;
+import com.thoughtworks.go.plugin.access.scm.SCMConfiguration;
+import com.thoughtworks.go.plugin.access.scm.SCMConfigurations;
+import com.thoughtworks.go.plugin.access.scm.SCMExtension;
+import com.thoughtworks.go.plugin.access.scm.SCMMetadataStore;
 import com.thoughtworks.go.plugin.access.scm.material.MaterialPollResult;
 import com.thoughtworks.go.plugin.access.scm.revision.SCMRevision;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
@@ -34,6 +36,7 @@ import com.thoughtworks.go.server.service.materials.MaterialPoller;
 import com.thoughtworks.go.server.service.materials.PluggableSCMMaterialPoller;
 import com.thoughtworks.go.server.transaction.TransactionTemplate;
 import com.thoughtworks.go.util.ReflectionUtil;
+import com.thoughtworks.go.util.json.JsonHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -116,7 +119,7 @@ public class PluggableSCMMaterialUpdaterIntegrationTest {
 
         Map<String, String> data = new HashMap<>();
         data.put("k1", "v1");
-        when(scmExtension.getLatestRevision(any(String.class), any(SCMPropertyConfiguration.class), any(), any(String.class))).thenReturn(new MaterialPollResult(data, new SCMRevision()));
+        when(scmExtension.getLatestRevision(any(), any(), any(), any())).thenReturn(new MaterialPollResult(data, new SCMRevision()));
         mockSCMExtensionInPoller();
         scmMaterialUpdater = new ScmMaterialUpdater(materialRepository, materialChecker, subprocessExecutionContext, materialService);
         pluggableSCMMaterialUpdater = new PluggableSCMMaterialUpdater(materialRepository, scmMaterialUpdater, transactionTemplate);
@@ -136,12 +139,12 @@ public class PluggableSCMMaterialUpdaterIntegrationTest {
         final MaterialInstance materialInstance = material.createMaterialInstance();
         Map<String, String> oldData = new HashMap<>();
         oldData.put("k1", "v1");
-        materialInstance.setAdditionalData(new GsonBuilder().create().toJson(oldData));
+        materialInstance.setAdditionalData(JsonHelper.toJson(oldData));
         materialRepository.saveOrUpdate(materialInstance);
 
         Map<String, String> newData = new HashMap<>(oldData);
         newData.put("k2", "v2");
-        when(scmExtension.latestModificationSince(any(String.class), any(SCMPropertyConfiguration.class), any(), any(String.class), any(SCMRevision.class))).thenReturn(new MaterialPollResult(newData, new SCMRevision()));
+        when(scmExtension.latestModificationSince(any(), any(), any(), any(), any())).thenReturn(new MaterialPollResult(newData, new SCMRevision()));
         mockSCMExtensionInPoller();
         scmMaterialUpdater = new ScmMaterialUpdater(materialRepository, materialChecker, subprocessExecutionContext, materialService);
         pluggableSCMMaterialUpdater = new PluggableSCMMaterialUpdater(materialRepository, scmMaterialUpdater, transactionTemplate);

@@ -15,11 +15,14 @@
  */
 package com.thoughtworks.go.domain.materials.scm;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.materials.PluggableSCMMaterial;
 import com.thoughtworks.go.domain.MaterialInstance;
 import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.util.json.JsonHelper;
+
+import java.util.Objects;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 
 public class PluggableSCMMaterialInstance extends MaterialInstance {
 
@@ -32,8 +35,8 @@ public class PluggableSCMMaterialInstance extends MaterialInstance {
 
     @Override
     public Material toOldMaterial(String name, String folder, String password) {
-        PluggableSCMMaterial pluggableSCMMaterial = JsonHelper.fromJson(configuration, PluggableSCMMaterial.class);
-        pluggableSCMMaterial.setName(new CaseInsensitiveString(name));
+        PluggableSCMMaterial pluggableSCMMaterial = JsonHelper.fromJsonExposeOnly(configuration, PluggableSCMMaterial.class);
+        pluggableSCMMaterial.setName(cis(name));
         pluggableSCMMaterial.setId(id);
         pluggableSCMMaterial.setFolder(folder);
         pluggableSCMMaterial.setFingerprint(getFingerprint());
@@ -45,18 +48,9 @@ public class PluggableSCMMaterialInstance extends MaterialInstance {
         if (this == o) {
             return true;
         }
-        if (!(o instanceof PluggableSCMMaterialInstance that)) {
-            return false;
-        }
-        if (!super.equals(o)) {
-            return false;
-        }
-
-        if (configuration != null ? !configuration.equals(that.configuration) : that.configuration != null) {
-            return false;
-        }
-
-        return true;
+        return o instanceof PluggableSCMMaterialInstance that &&
+            super.equals(o) &&
+            Objects.equals(configuration, that.configuration);
     }
 
     @Override
@@ -67,10 +61,7 @@ public class PluggableSCMMaterialInstance extends MaterialInstance {
     }
 
     public boolean shouldUpgradeTo(PluggableSCMMaterialInstance materialInstance) {
-        if (configuration == null && materialInstance.configuration == null) {
-            return false;
-        }
-        return configuration == null || !configuration.equals(materialInstance.configuration);
+        return (configuration != null || materialInstance.configuration != null) && !Objects.equals(configuration, materialInstance.configuration);
     }
 
     public void upgradeTo(PluggableSCMMaterialInstance newMaterialInstance) {

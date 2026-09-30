@@ -15,17 +15,16 @@
  */
 package com.thoughtworks.go.plugin.access.authorization.v2;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.reflect.TypeToken;
 import com.thoughtworks.go.plugin.domain.authorization.User;
+import com.thoughtworks.go.util.json.JsonHelper;
 
 import java.util.List;
+import java.util.Objects;
 
 class UserDTO {
-    private static final Gson GSON = new GsonBuilder().excludeFieldsWithoutExposeAnnotation().create();
 
     @Expose
     @SerializedName("username")
@@ -69,16 +68,18 @@ class UserDTO {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         UserDTO user = (UserDTO) o;
 
-        if (displayName != null ? !displayName.equals(user.displayName) : user.displayName != null) return false;
-        if (emailId != null ? !emailId.equals(user.emailId) : user.emailId != null) return false;
-        if (username != null ? !username.equals(user.username) : user.username != null) return false;
-
-        return true;
+        return Objects.equals(displayName, user.displayName) &&
+            Objects.equals(emailId, user.emailId) &&
+            Objects.equals(username, user.username);
     }
 
     @Override
@@ -90,8 +91,7 @@ class UserDTO {
     }
 
     public static List<UserDTO> fromJSONList(String json) {
-        return GSON.fromJson(json, new TypeToken<List<UserDTO>>() {
-        }.getType());
+        return JsonHelper.fromJsonExposeOnly(json, new TypeToken<List<UserDTO>>() {}.getType());
     }
 
     public User toDomainModel() {

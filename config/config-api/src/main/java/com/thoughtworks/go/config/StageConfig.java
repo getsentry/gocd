@@ -15,14 +15,20 @@
  */
 package com.thoughtworks.go.config;
 
+import com.thoughtworks.go.config.pluggabletask.PluggableTask;
 import com.thoughtworks.go.config.preprocessor.SkipParameterResolution;
 import com.thoughtworks.go.config.validation.NameTypeValidator;
 import com.thoughtworks.go.domain.ConfigErrors;
+import com.thoughtworks.go.domain.Task;
 import com.thoughtworks.go.service.TaskFactory;
-import com.thoughtworks.go.util.GoConstants;
+import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 
 /**
  * Understands the configuration for a stage
@@ -78,6 +84,21 @@ public class StageConfig implements Validatable, ParamsAttributeAware, Environme
         this.artifactCleanupProhibited = artifactCleanupProhibited;
     }
 
+    @NotNull
+    public static List<PluggableTask> allPluggableTasks(List<StageConfig> stages) {
+        List<PluggableTask> pluggableTasks = new ArrayList<>();
+        for (StageConfig stage : stages) {
+            for (JobConfig job : stage.getJobs()) {
+                for (Task task : job.getTasks()) {
+                    if (task instanceof PluggableTask pluggableTask) {
+                        pluggableTasks.add(pluggableTask);
+                    }
+                }
+            }
+        }
+        return pluggableTasks;
+    }
+
     @Override
     public CaseInsensitiveString name() {
         return name;
@@ -117,7 +138,7 @@ public class StageConfig implements Validatable, ParamsAttributeAware, Environme
     }
 
     public JobConfig jobConfigByConfigName(String jobName) {
-        return jobConfigByConfigName(new CaseInsensitiveString(jobName));
+        return jobConfigByConfigName(cis(jobName));
     }
 
     // TODO - #2491 - rename jobConfig to job
@@ -127,7 +148,7 @@ public class StageConfig implements Validatable, ParamsAttributeAware, Environme
     }
 
     public String approvalType() {
-        return requiresApproval() ? GoConstants.APPROVAL_MANUAL : GoConstants.APPROVAL_SUCCESS;
+        return requiresApproval() ? Approval.TYPE_MANUAL : Approval.TYPE_SUCCESS;
     }
 
     @Override
@@ -141,29 +162,13 @@ public class StageConfig implements Validatable, ParamsAttributeAware, Environme
 
         StageConfig that = (StageConfig) o;
 
-        if (fetchMaterials != that.fetchMaterials) {
-            return false;
-        }
-        if (artifactCleanupProhibited != that.artifactCleanupProhibited) {
-            return false;
-        }
-        if (cleanWorkingDir != that.cleanWorkingDir) {
-            return false;
-        }
-        if (approval != null ? !approval.equals(that.approval) : that.approval != null) {
-            return false;
-        }
-        if (jobConfigs != null ? !jobConfigs.equals(that.jobConfigs) : that.jobConfigs != null) {
-            return false;
-        }
-        if (name != null ? !name.equals(that.name) : that.name != null) {
-            return false;
-        }
-        if (variables != null ? !variables.equals(that.variables) : that.variables != null) {
-            return false;
-        }
-
-        return true;
+        return fetchMaterials == that.fetchMaterials &&
+            artifactCleanupProhibited == that.artifactCleanupProhibited &&
+            cleanWorkingDir == that.cleanWorkingDir &&
+            Objects.equals(approval, that.approval) &&
+            Objects.equals(jobConfigs, that.jobConfigs) &&
+            Objects.equals(name, that.name) &&
+            Objects.equals(variables, that.variables);
     }
 
     @Override
@@ -224,15 +229,6 @@ public class StageConfig implements Validatable, ParamsAttributeAware, Environme
         }
         for (JobConfig jobConfig : jobConfigs) {
             if (jobConfig.hasVariable(variableName)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public boolean hasTests() {
-        for (JobConfig job : jobConfigs) {
-            if (job.hasTests()) {
                 return true;
             }
         }
@@ -317,7 +313,7 @@ public class StageConfig implements Validatable, ParamsAttributeAware, Environme
         }
         Map<String, Object> attributeMap = (Map<String, Object>) attributes;
         if (attributeMap.containsKey(NAME)) {
-            name = new CaseInsensitiveString((String) attributeMap.get(NAME));
+            name = cis((String) attributeMap.get(NAME));
         }
         if (attributeMap.containsKey(ARTIFACT_CLEANUP_PROHIBITED)) {
             artifactCleanupProhibited = attributeMap.get(ARTIFACT_CLEANUP_PROHIBITED).equals("1");

@@ -15,38 +15,32 @@
  */
 package com.thoughtworks.go.spark;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.text.StringEscapeUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 import static java.lang.String.valueOf;
 
 public abstract class HtmlErrorPage {
 
     public static String errorPage(int code, String message) {
-        return Holder.INSTANCE.replaceAll(buildRegex("status_code"), valueOf(code))
-                .replaceAll(buildRegex("error_message"), StringEscapeUtils.escapeHtml4(message));
+        return Holder.INSTANCE
+                .replace("{{status_code}}", valueOf(code))
+                .replace("{{error_message}}", StringEscapeUtils.escapeHtml4(message));
     }
-
-    private static String buildRegex(final String value) {
-        return "\\{\\{" + value + "\\}\\}";
-    }
-
 
     private static class Holder {
         private static final String INSTANCE = fileContents();
 
         private static String fileContents() {
-            try (InputStream in = Holder.class.getResourceAsStream("/error.html")) {
-                return IOUtils.toString(in, StandardCharsets.UTF_8);
+            try (InputStream in = Objects.requireNonNull(Holder.class.getResourceAsStream("/error.html"))) {
+                return new String(in.readAllBytes(), StandardCharsets.UTF_8);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
         }
-
     }
-
 }

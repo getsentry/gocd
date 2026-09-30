@@ -16,24 +16,27 @@
 package com.thoughtworks.go.server.domain;
 
 import com.thoughtworks.go.config.CaseInsensitiveString;
-import org.apache.commons.lang3.builder.ToStringBuilder;
 
 import java.io.Serializable;
+import java.util.Objects;
+import java.util.StringJoiner;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 
 public class Username implements Serializable {
-    public static final Username ANONYMOUS = new Username(new CaseInsensitiveString("anonymous"));
-    public static final Username BLANK = new Username(new CaseInsensitiveString(""));
-    public static final Username CRUISE_TIMER = new Username(new CaseInsensitiveString("timer"));
+    public static final Username ANONYMOUS = new Username(cis("anonymous"));
+    public static final Username BLANK = new Username(cis(""));
+    public static final Username CRUISE_TIMER = new Username(cis("timer"));
 
-    private final String displayName;
     private final CaseInsensitiveString username;
+    private final String displayName;
 
     public Username(final CaseInsensitiveString userName) {
         this(userName, CaseInsensitiveString.str(userName));
     }
 
     public Username(final String userName) {
-        this(new CaseInsensitiveString(userName));
+        this(cis(userName));
     }
 
     public Username(final Username userName, String displayName) {
@@ -46,7 +49,7 @@ public class Username implements Serializable {
     }
 
     public Username(final String userName, String displayName) {
-        this(new CaseInsensitiveString(userName), displayName);
+        this(cis(userName), displayName);
     }
 
     public String getDisplayName() {
@@ -57,13 +60,12 @@ public class Username implements Serializable {
         return username;
     }
 
-    public boolean hasDistinctDisplayName() {
-        return !displayName.equals(username.toString());
-    }
-
     @Override
     public String toString() {
-        return ToStringBuilder.reflectionToString(this);
+        return new StringJoiner(", ", Username.class.getSimpleName() + "[", "]")
+            .add("username=" + username)
+            .add("displayName='" + displayName + "'")
+            .toString();
     }
 
     public boolean isAnonymous() {
@@ -71,11 +73,7 @@ public class Username implements Serializable {
     }
 
     public boolean isGoAgentUser() {
-        return this.username.toLower().startsWith("_go_agent_");
-    }
-
-    public String appendNameToText(String text) {
-        return text + CaseInsensitiveString.str(getUsername());
+        return this.username.startsWith("_go_agent_");
     }
 
     @Override
@@ -87,10 +85,8 @@ public class Username implements Serializable {
             return false;
         }
         Username other = (Username) o;
-        if (displayName != null ? !displayName.equals(other.displayName) : other.displayName != null) {
-            return false;
-        }
-        return !(username != null ? !username.equals(other.username) : other.username != null);
+        return Objects.equals(displayName, other.displayName) &&
+            Objects.equals(username, other.username);
 
     }
 
@@ -102,6 +98,6 @@ public class Username implements Serializable {
     }
 
     public static Username valueOf(String username) {
-        return new Username(new CaseInsensitiveString(username));
+        return new Username(cis(username));
     }
 }

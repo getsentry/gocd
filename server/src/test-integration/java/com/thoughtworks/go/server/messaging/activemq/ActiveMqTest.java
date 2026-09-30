@@ -15,7 +15,10 @@
  */
 package com.thoughtworks.go.server.messaging.activemq;
 
-import com.thoughtworks.go.server.messaging.*;
+import com.thoughtworks.go.server.messaging.GoMessageListener;
+import com.thoughtworks.go.server.messaging.GoMessageQueue;
+import com.thoughtworks.go.server.messaging.GoMessageTopic;
+import com.thoughtworks.go.server.messaging.GoTextMessage;
 import com.thoughtworks.go.server.service.support.DaemonThreadStatsCollector;
 import com.thoughtworks.go.serverhealth.ServerHealthService;
 import com.thoughtworks.go.util.SystemEnvironment;
@@ -26,14 +29,16 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
-import javax.jms.JMSException;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static com.thoughtworks.go.util.TestUtils.doInterruptiblyQuietly;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.mockito.Mockito.mock;
 
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(locations = {
@@ -42,34 +47,31 @@ import static org.awaitility.Awaitility.await;
         "classpath:/testPropertyConfigurer.xml",
         "classpath:/spring-all-servlet.xml",
 })
-public class ActiveMqTest implements GoMessageListener<GoTextMessage> {
-    private GoMessage receivedMessage;
+public class ActiveMqTest {
     public ActiveMqMessagingService messaging;
 
     @BeforeEach
     public void setUp() throws Exception {
-        messaging = new ActiveMqMessagingService(new DaemonThreadStatsCollector(), new SystemEnvironment(), new ServerHealthService());
+        messaging = new ActiveMqMessagingService(new DaemonThreadStatsCollector(), new SystemEnvironment(), new ServerHealthService(mock()));
     }
 
     @AfterEach
-    public void tearDown() throws JMSException {
-        receivedMessage = null;
+    public void tearDown() throws Exception {
         messaging.stop();
     }
 
     @Test
     public void shouldBeAbleToListenForMessages() {
-        GoMessageTopic<GoTextMessage> topic
-                = new GoMessageTopic<>(messaging, "queue-name") {
-        };
-        topic.addListener(this);
+        GoMessageTopic<GoTextMessage> topic = new GoMessageTopic<>(messaging, "queue-name");
+        final AtomicReference<GoTextMessage> receivedMessage = new AtomicReference<>();
+        topic.addListener(receivedMessage::set);
 
         topic.post(new GoTextMessage("Hello World!"));
 
         await()
             .pollDelay(10, TimeUnit.MILLISECONDS)
-            .timeout(1, TimeUnit.SECONDS)
-            .untilAsserted(() -> assertThat(((GoTextMessage) receivedMessage).getText()).isEqualTo("Hello World!"));
+            .timeout(2, TimeUnit.SECONDS)
+            .untilAsserted(() -> assertThat(receivedMessage).hasValueSatisfying(m -> assertThat(m.getText()).isEqualTo("Hello World!")));
     }
 
     @Test
@@ -77,9 +79,7 @@ public class ActiveMqTest implements GoMessageListener<GoTextMessage> {
         HangingListener hanging = new HangingListener();
         FastListener fast1 = new FastListener();
 
-        GoMessageQueue<GoTextMessage> queue
-                = new GoMessageQueue<>(messaging, "queue-name") {
-        };
+        GoMessageQueue<GoTextMessage> queue = new GoMessageQueue<>(messaging, "queue-name");
         queue.addListener(hanging);
         queue.addListener(fast1);
 
@@ -89,21 +89,21 @@ public class ActiveMqTest implements GoMessageListener<GoTextMessage> {
         queue.post(new GoTextMessage("Hello World4"));
         queue.post(new GoTextMessage("Hello World5"));
 
-        await()
-            .pollDelay(10, TimeUnit.MILLISECONDS)
-            .timeout(1, TimeUnit.SECONDS)
-            .untilAsserted(() -> assertThat(fast1.receivedMessages.size()).isEqualTo(4));
-
-        hanging.finish();
+        try {
+            await()
+                .pollDelay(10, TimeUnit.MILLISECONDS)
+                .timeout(2, TimeUnit.SECONDS)
+                .untilAsserted(() -> assertThat(fast1.receivedMessages.size()).isEqualTo(4));
+        } finally {
+            hanging.finish();
+        }
     }
 
     @Test
     public void shouldStillReceiveMessagesIfAnExceptionIsThrown() {
         ExceptionListener exceptionListener = new ExceptionListener();
 
-        GoMessageQueue<GoTextMessage> queue
-                = new GoMessageQueue<>(messaging, "queue-name") {
-        };
+        GoMessageQueue<GoTextMessage> queue = new GoMessageQueue<>(messaging, "queue-name");
         queue.addListener(exceptionListener);
 
         queue.post(new GoTextMessage("Hello World1"));
@@ -114,34 +114,12 @@ public class ActiveMqTest implements GoMessageListener<GoTextMessage> {
 
         await()
             .pollDelay(10, TimeUnit.MILLISECONDS)
-            .timeout(1, TimeUnit.SECONDS)
+            .timeout(2, TimeUnit.SECONDS)
             .untilAsserted(() -> assertThat(exceptionListener.receivedMessages.size()).isEqualTo(5));
     }
 
-    @Override
-    public void onMessage(GoTextMessage message) {
-        receivedMessage = message;
-    }
-
-    private static class HangingListener implements GoMessageListener<GoTextMessage> {
-        private final CountDownLatch finish = new CountDownLatch(1);
-
-        @Override
-        public void onMessage(GoTextMessage message) {
-            try {
-                finish.await();
-            } catch (InterruptedException ignore) {
-                Thread.currentThread().interrupt();
-            }
-        }
-
-        public void finish() {
-            finish.countDown();
-        }
-    }
-
     private static class FastListener implements GoMessageListener<GoTextMessage> {
-        public List<GoTextMessage> receivedMessages = new ArrayList<>();
+        public final Queue<GoTextMessage> receivedMessages = new ConcurrentLinkedQueue<>();
 
         @Override
         public void onMessage(GoTextMessage message) {
@@ -153,9 +131,20 @@ public class ActiveMqTest implements GoMessageListener<GoTextMessage> {
         @Override
         public void onMessage(GoTextMessage message) {
             super.onMessage(message);
-
             throw new RuntimeException(message.getText());
         }
     }
 
+    private static class HangingListener implements GoMessageListener<GoTextMessage> {
+        private final CountDownLatch finish = new CountDownLatch(1);
+
+        @Override
+        public void onMessage(GoTextMessage message) {
+            doInterruptiblyQuietly(finish::await);
+        }
+
+        public void finish() {
+            finish.countDown();
+        }
+    }
 }

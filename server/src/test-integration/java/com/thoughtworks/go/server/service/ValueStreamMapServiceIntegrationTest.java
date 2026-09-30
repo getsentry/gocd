@@ -20,7 +20,7 @@ import com.thoughtworks.go.config.GoConfigDao;
 import com.thoughtworks.go.config.materials.git.GitMaterial;
 import com.thoughtworks.go.domain.StageState;
 import com.thoughtworks.go.domain.valuestreammap.*;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.materials.DependencyMaterialUpdateNotifier;
@@ -37,15 +37,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
-import java.util.Collection;
 import java.util.List;
+import java.util.stream.Stream;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.domain.valuestreammap.VSMTestHelper.assertInstances;
 import static com.thoughtworks.go.domain.valuestreammap.VSMTestHelper.assertStageDetails;
 import static com.thoughtworks.go.domain.valuestreammap.VSMViewType.NO_PERMISSION;
-import static javax.servlet.http.HttpServletResponse.SC_NOT_FOUND;
-import static javax.servlet.http.HttpServletResponse.SC_NOT_IMPLEMENTED;
-import static org.apache.commons.collections4.CollectionUtils.collect;
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.net.HttpURLConnection.HTTP_NOT_IMPLEMENTED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -65,7 +65,7 @@ public class ValueStreamMapServiceIntegrationTest {
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private DependencyMaterialUpdateNotifier notifier;
 
-    private GoConfigFileHelper configHelper = new GoConfigFileHelper();
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
     private ScheduleTestUtil u;
     private HttpLocalizedOperationResult result;
     private Username username;
@@ -82,7 +82,7 @@ public class ValueStreamMapServiceIntegrationTest {
         u = new ScheduleTestUtil(transactionTemplate, materialRepository, dbHelper, configHelper);
         result = new HttpLocalizedOperationResult();
 
-        username = new Username(new CaseInsensitiveString("admin"));
+        username = new Username(cis("admin"));
         notifier.disableUpdates();
     }
 
@@ -162,7 +162,7 @@ public class ValueStreamMapServiceIntegrationTest {
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(3), 4, pipelineName(p4), pipelineName(c4));
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(2), 5, pipelineName(p3), pipelineName(c3));
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(1), 2, pipelineName(p2), pipelineName(c2));
-        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, new CaseInsensitiveString(g1.getFingerprint()), new CaseInsensitiveString(g2.getFingerprint()));
+        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, cis(g1.getFingerprint()), cis(g2.getFingerprint()));
 
         VSMTestHelper.assertDepth(graph, pipelineName(c5), 1);
         VSMTestHelper.assertDepth(graph, pipelineName(p4), 4);
@@ -171,8 +171,8 @@ public class ValueStreamMapServiceIntegrationTest {
         VSMTestHelper.assertDepth(graph, pipelineName(c3), 6);
         VSMTestHelper.assertDepth(graph, pipelineName(p2), 2);
         VSMTestHelper.assertDepth(graph, pipelineName(c2), 4);
-        VSMTestHelper.assertDepth(graph, new CaseInsensitiveString(g1.getFingerprint()), 1);
-        VSMTestHelper.assertDepth(graph, new CaseInsensitiveString(g2.getFingerprint()), 2);
+        VSMTestHelper.assertDepth(graph, cis(g1.getFingerprint()), 1);
+        VSMTestHelper.assertDepth(graph, cis(g2.getFingerprint()), 2);
 
         // PDG for C4
         graph = valueStreamMapService.getValueStreamMap(pipelineName(c4), 1, username, result);
@@ -181,7 +181,7 @@ public class ValueStreamMapServiceIntegrationTest {
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(3), 0, pipelineName(c4));
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(2), 0, pipelineName(c3), pipelineName(p2));
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(1), 2, pipelineName(c2));
-        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, new CaseInsensitiveString(g1.getFingerprint()), new CaseInsensitiveString(g2.getFingerprint()));
+        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, cis(g1.getFingerprint()), cis(g2.getFingerprint()));
 
         VSMTestHelper.assertDepth(graph, pipelineName(p5), 1);
         VSMTestHelper.assertDepth(graph, pipelineName(c5), 2);
@@ -189,8 +189,8 @@ public class ValueStreamMapServiceIntegrationTest {
         VSMTestHelper.assertDepth(graph, pipelineName(c3), 1);
         VSMTestHelper.assertDepth(graph, pipelineName(p2), 2);
         VSMTestHelper.assertDepth(graph, pipelineName(c2), 1);
-        VSMTestHelper.assertDepth(graph, new CaseInsensitiveString(g1.getFingerprint()), 1);
-        VSMTestHelper.assertDepth(graph, new CaseInsensitiveString(g2.getFingerprint()), 2);
+        VSMTestHelper.assertDepth(graph, cis(g1.getFingerprint()), 1);
+        VSMTestHelper.assertDepth(graph, cis(g2.getFingerprint()), 2);
 
         // PDG for p3
         nodesAtEachLevel = valueStreamMapService.getValueStreamMap(pipelineName(p3), 1, username, result).getNodesAtEachLevel();
@@ -198,7 +198,7 @@ public class ValueStreamMapServiceIntegrationTest {
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(3), 1, pipelineName(p4));
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(2), 0, pipelineName(p3));
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(1), 0, pipelineName(p2));
-        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, new CaseInsensitiveString(g1.getFingerprint()), new CaseInsensitiveString(g2.getFingerprint()));
+        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, cis(g1.getFingerprint()), cis(g2.getFingerprint()));
     }
 
     @Test //Scenario: #7181
@@ -239,13 +239,13 @@ public class ValueStreamMapServiceIntegrationTest {
         List<List<Node>> nodesAtEachLevel = graph.getNodesAtEachLevel();
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(2), 0, pipelineName(p2));
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(1), 0, pipelineName(p1));
-        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, new CaseInsensitiveString(g1.getFingerprint()), new CaseInsensitiveString(g2.getFingerprint()));
+        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.getFirst(), 0, cis(g1.getFingerprint()), cis(g2.getFingerprint()));
 
         // PDG for P2/1
         nodesAtEachLevel = valueStreamMapService.getValueStreamMap(pipelineName(p2), 1, username, result).getNodesAtEachLevel();
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(2), 0, pipelineName(p2));
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(1), 0, pipelineName(p1));
-        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, new CaseInsensitiveString(g1.getFingerprint()), new CaseInsensitiveString(g2.getFingerprint()));
+        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, cis(g1.getFingerprint()), cis(g2.getFingerprint()));
 
         // add g3 to p1, and add P3 dependent on p1
         u.addMaterialToPipeline(p1, u.m(g3));
@@ -258,13 +258,13 @@ public class ValueStreamMapServiceIntegrationTest {
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(3), 0, pipelineName(p2));
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(2), 0, pipelineName(p3));
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(1), 0, pipelineName(p1));
-        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, new CaseInsensitiveString(g1.getFingerprint()), new CaseInsensitiveString(g2.getFingerprint()));
+        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, cis(g1.getFingerprint()), cis(g2.getFingerprint()));
 
         // PDG for P2/1, remains same after config change
         nodesAtEachLevel = valueStreamMapService.getValueStreamMap(pipelineName(p2), 1, username, result).getNodesAtEachLevel();
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(2), 0, pipelineName(p2));
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(1), 0, pipelineName(p1));
-        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, new CaseInsensitiveString(g1.getFingerprint()), new CaseInsensitiveString(g2.getFingerprint()));
+        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, cis(g1.getFingerprint()), cis(g2.getFingerprint()));
 
         String p1_2 = u.runAndPassWithGivenMDUTimestampAndRevisionStrings(p1, u.d(i++), "g1-1", "g2-1", "g3-1");
         String p3_1 = u.runAndPassWithGivenMDUTimestampAndRevisionStrings(p3, u.d(i++), p1_2);
@@ -275,28 +275,28 @@ public class ValueStreamMapServiceIntegrationTest {
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(3), 0, pipelineName(p2));
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(2), 0, pipelineName(p3));
         VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(1), 0, pipelineName(p1));
-        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, new CaseInsensitiveString(g1.getFingerprint()), new CaseInsensitiveString(g2.getFingerprint()));
+        VSMTestHelper.assertThatLevelHasNodes(nodesAtEachLevel.get(0), 0, cis(g1.getFingerprint()), cis(g2.getFingerprint()));
 
     }
 
     @Test
     public void shouldReturnNullIfThePipelineHasNeverEverRun() {
         GitMaterial git = new GitMaterial("git");
-        CaseInsensitiveString pipeline = new CaseInsensitiveString("NewlyCreated");
+        CaseInsensitiveString pipeline = cis("NewlyCreated");
 
         u.saveConfigWith("P1", u.m(git));
 
         assertThat(valueStreamMapService.getValueStreamMap(pipeline, 1, username, result)).isNull();
         assertThat(result.isSuccessful()).isFalse();
-        assertThat(result.httpCode()).isEqualTo(SC_NOT_FOUND);
+        assertThat(result.httpCode()).isEqualTo(HTTP_NOT_FOUND);
         assertThat(result.message()).isEqualTo("Pipeline 'NewlyCreated' with counter '1' not found.");
     }
 
     @Test
     public void shouldNotReturnGraphForNonExistentPipeline() {
-        assertThat(valueStreamMapService.getValueStreamMap(new CaseInsensitiveString("does_not_exist"), 1, username, result)).isNull();
+        assertThat(valueStreamMapService.getValueStreamMap(cis("does_not_exist"), 1, username, result)).isNull();
         assertThat(result.isSuccessful()).isFalse();
-        assertThat(result.httpCode()).isEqualTo(SC_NOT_FOUND);
+        assertThat(result.httpCode()).isEqualTo(HTTP_NOT_FOUND);
         assertThat(result.message()).isEqualTo("Pipeline 'does_not_exist' with counter '1' not found.");
     }
 
@@ -329,18 +329,18 @@ public class ValueStreamMapServiceIntegrationTest {
 
         configHelper.addStageToPipeline("p2", "unrun_stage");
 
-        ValueStreamMapPresentationModel graph = valueStreamMapService.getValueStreamMap(new CaseInsensitiveString("p"), 1, username, result);
+        ValueStreamMapPresentationModel graph = valueStreamMapService.getValueStreamMap(cis("p"), 1, username, result);
 
         List<List<Node>> allLevels = graph.getNodesAtEachLevel();
         int CURRENT_PIPELINE_LEVEL = 2;
-        Node currentNode = allLevels.get(CURRENT_PIPELINE_LEVEL).get(0);
-        assertEquals(currentNode.revisions().get(0), new PipelineRevision(currentNode.getName(), 1, "1"));
+        Node currentNode = allLevels.get(CURRENT_PIPELINE_LEVEL).getFirst();
+        assertEquals(currentNode.revisions().getFirst(), new PipelineRevision(currentNode.getName(), 1, "1"));
 
         Node p1_node = allLevels.get(CURRENT_PIPELINE_LEVEL - 1).get(1);
         assertInstances(p1_node, "p1", 1);
         assertStageDetails(p1_node, 1, "s", 1, StageState.Passed);
 
-        assertInstances(allLevels.get(CURRENT_PIPELINE_LEVEL + 1).get(0), "p3", 1);
+        assertInstances(allLevels.get(CURRENT_PIPELINE_LEVEL + 1).getFirst(), "p3", 1);
 
         Node p2_node = allLevels.get(CURRENT_PIPELINE_LEVEL + 1).get(1);
         assertInstances(p2_node, "p2", 1, 2);
@@ -349,7 +349,7 @@ public class ValueStreamMapServiceIntegrationTest {
         assertStageDetails(p2_node, 1, "unrun_stage", 0, StageState.Unknown);
         assertStageDetails(p2_node, 2, "unrun_stage", 0, StageState.Unknown);
 
-        assertInstances(allLevels.get(CURRENT_PIPELINE_LEVEL + 2).get(0), "p4", 1);
+        assertInstances(allLevels.get(CURRENT_PIPELINE_LEVEL + 2).getFirst(), "p4", 1);
     }
 
     @Test
@@ -379,11 +379,11 @@ public class ValueStreamMapServiceIntegrationTest {
         String p3_1 = u.runAndPass(p3, p_1);
         String p4_1 = u.runAndPass(p4, p2_1);
 
-        Username groupAdmin = new Username(new CaseInsensitiveString("pg2-admin"));
+        Username groupAdmin = new Username(cis("pg2-admin"));
         configHelper.addAuthorizedUserForPipelineGroup("pg1-admin", "g1");
         configHelper.addAuthorizedUserForPipelineGroup("pg2-admin", "g2");
 
-        ValueStreamMapPresentationModel graph = valueStreamMapService.getValueStreamMap(new CaseInsensitiveString("p"), 1, groupAdmin, result);
+        ValueStreamMapPresentationModel graph = valueStreamMapService.getValueStreamMap(cis("p"), 1, groupAdmin, result);
 
         List<List<Node>> allLevels = graph.getNodesAtEachLevel();
         int CURRENT_PIPELINE_LEVEL = 2;
@@ -435,11 +435,11 @@ public class ValueStreamMapServiceIntegrationTest {
         String p3_1 = u.runAndPass(p3, p_1);
         String p4_1 = u.runAndPass(p4, p2_1);
 
-        Username viewOnlyUser = new Username(new CaseInsensitiveString("pg2-view"));
+        Username viewOnlyUser = new Username(cis("pg2-view"));
         configHelper.setViewPermissionForGroup("g1", "pg1-view");
         configHelper.setViewPermissionForGroup("g2", "pg2-view");
 
-        ValueStreamMapPresentationModel graph = valueStreamMapService.getValueStreamMap(new CaseInsensitiveString("p"), 1, viewOnlyUser, result);
+        ValueStreamMapPresentationModel graph = valueStreamMapService.getValueStreamMap(cis("p"), 1, viewOnlyUser, result);
 
         List<List<Node>> allLevels = graph.getNodesAtEachLevel();
         int CURRENT_PIPELINE_LEVEL = 2;
@@ -478,10 +478,10 @@ public class ValueStreamMapServiceIntegrationTest {
         String p2_1 = u.runAndPass(p2, "g1-2");
         String p3_1 = u.runAndPass(p3, p1_1, p2_1);
 
-        ValueStreamMapPresentationModel graph = valueStreamMapService.getValueStreamMap(new CaseInsensitiveString("p3"), 1, username, result);
-        Node nodeForGit = graph.getNodesAtEachLevel().get(0).get(0);
+        ValueStreamMapPresentationModel graph = valueStreamMapService.getValueStreamMap(cis("p3"), 1, username, result);
+        Node nodeForGit = graph.getNodesAtEachLevel().getFirst().getFirst();
         assertThat(nodeForGit.revisions().size()).isEqualTo(2);
-        Collection<String> revisionStrings = collect(nodeForGit.revisions(), Revision::getRevisionString);
+        Stream<String> revisionStrings = nodeForGit.revisions().stream().map(Revision::getRevisionString);
         assertThat(revisionStrings).contains("g1-1", "g1-2");
     }
 
@@ -518,9 +518,9 @@ public class ValueStreamMapServiceIntegrationTest {
 
         String p1_2 = u.runAndPass(p1, "g2-1", p2_1);
 
-        valueStreamMapService.getValueStreamMap(new CaseInsensitiveString("p1"), 2, username, result);
+        valueStreamMapService.getValueStreamMap(cis("p1"), 2, username, result);
         assertThat(result.isSuccessful()).isFalse();
-        assertThat(result.httpCode()).isEqualTo(SC_NOT_IMPLEMENTED);
+        assertThat(result.httpCode()).isEqualTo(HTTP_NOT_IMPLEMENTED);
         assertThat(result.message()).isEqualTo(String.format(
                 "Value Stream Map of Pipeline 'p1' with counter '2' can not be rendered. Changes to the configuration have introduced complex dependencies for this instance which are not supported currently.",
                 "p1", 2));

@@ -21,11 +21,12 @@ import com.thoughtworks.go.config.StageConfig;
 import com.thoughtworks.go.config.TrackingTool;
 import com.thoughtworks.go.config.remote.ConfigOrigin;
 import com.thoughtworks.go.config.security.Permissions;
-import com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModel;
 import com.thoughtworks.go.presentation.pipelinehistory.PipelineModel;
-import com.thoughtworks.go.presentation.pipelinehistory.StageInstanceModel;
 
+import java.util.Objects;
 import java.util.Optional;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 
 /* Represents a pipeline on the dashboard. Cacheable, since the permissions are not specific to a user. */
 public class GoDashboardPipeline {
@@ -34,9 +35,9 @@ public class GoDashboardPipeline {
     private final String groupName;
     private final TrackingTool trackingTool;
     private final long lastUpdatedTimeStamp;
-    private ConfigOrigin origin;
-    private int displayOrderWeight;
-    private PipelineConfig pipelineConfig;
+    private final ConfigOrigin origin;
+    private final int displayOrderWeight;
+    private final PipelineConfig pipelineConfig;
 
     public GoDashboardPipeline(PipelineModel pipelineModel, Permissions permissions, String groupName, Counter timeStampBasedCounter, PipelineConfig pipelineConfig) {
         this.pipelineModel = pipelineModel;
@@ -69,16 +70,8 @@ public class GoDashboardPipeline {
         return pipelineConfig;
     }
 
-    public StageInstanceModel getLatestStage() {
-        PipelineInstanceModel latestPipelineInstance = pipelineModel.getLatestPipelineInstance();
-        if (latestPipelineInstance == null) {
-            return null;
-        }
-        return latestPipelineInstance.latestStage();
-    }
-
     public CaseInsensitiveString name() {
-        return new CaseInsensitiveString(pipelineModel.getName());
+        return cis(pipelineModel.getName());
     }
 
     public boolean canBeViewedBy(String userName) {
@@ -112,16 +105,19 @@ public class GoDashboardPipeline {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         GoDashboardPipeline that = (GoDashboardPipeline) o;
 
-        if (lastUpdatedTimeStamp != that.lastUpdatedTimeStamp) return false;
-        if (pipelineModel != null ? !pipelineModel.equals(that.pipelineModel) : that.pipelineModel != null)
-            return false;
-        if (permissions != null ? !permissions.equals(that.permissions) : that.permissions != null) return false;
-        return groupName != null ? groupName.equals(that.groupName) : that.groupName == null;
+        return lastUpdatedTimeStamp == that.lastUpdatedTimeStamp &&
+            Objects.equals(pipelineModel, that.pipelineModel) &&
+            Objects.equals(permissions, that.permissions) &&
+            Objects.equals(groupName, that.groupName);
     }
 
     @Override
@@ -129,7 +125,7 @@ public class GoDashboardPipeline {
         int result = pipelineModel != null ? pipelineModel.hashCode() : 0;
         result = 31 * result + (permissions != null ? permissions.hashCode() : 0);
         result = 31 * result + (groupName != null ? groupName.hashCode() : 0);
-        result = 31 * result + (int) (lastUpdatedTimeStamp ^ (lastUpdatedTimeStamp >>> 32));
+        result = 31 * result + Long.hashCode(lastUpdatedTimeStamp);
         return result;
     }
 
@@ -141,7 +137,7 @@ public class GoDashboardPipeline {
         return origin == null || origin.isLocal();
     }
 
-    public Integer getdisplayOrderWeight() {
+    public int getdisplayOrderWeight() {
         return displayOrderWeight;
     }
 

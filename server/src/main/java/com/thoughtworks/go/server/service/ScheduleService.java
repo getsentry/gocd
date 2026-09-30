@@ -42,7 +42,8 @@ import com.thoughtworks.go.serverhealth.HealthStateType;
 import com.thoughtworks.go.serverhealth.ServerHealthService;
 import com.thoughtworks.go.serverhealth.ServerHealthState;
 import com.thoughtworks.go.util.TimeProvider;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
+import org.jetbrains.annotations.TestOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,12 +52,15 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallbackWithoutResult;
 import org.springframework.transaction.support.TransactionSynchronizationAdapter;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
-import static com.thoughtworks.go.util.GoConstants.DEFAULT_APPROVED_BY;
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static com.thoughtworks.go.domain.buildcause.BuildCause.APPROVER_AUTOMATICALLY_TRIGGERED;
+import static java.lang.String.join;
 
 @Service
 public class ScheduleService {
@@ -176,9 +180,9 @@ public class ScheduleService {
             PipelineConfig pipelineConfig = goConfigService.pipelineConfigNamed(pipelineName);
 
             if (canSchedule(pipelineConfig)) {
-                final Pipeline pipelineInstance = pipelineScheduleQueue.createPipeline(buildCause, pipelineConfig, schedulingContext(buildCause.getApprover(), pipelineConfig, pipelineConfig.first()),
+                final Pipeline pipelineInstance = pipelineScheduleQueue.createPipeline(buildCause, pipelineConfig, schedulingContext(buildCause.getApprover(), pipelineConfig, pipelineConfig.getFirst()),
                         goConfigService.getCurrentConfig().getMd5(), timeProvider);
-                serverHealthService.update(stageSchedulingSuccessfulState(pipelineName.toString(), CaseInsensitiveString.str(pipelineConfig.get(0).name())));
+                serverHealthService.update(stageSchedulingSuccessfulState(pipelineName.toString(), CaseInsensitiveString.str(pipelineConfig.getFirst().name())));
                 return pipelineInstance;
             }
         } catch (RecordNotFoundException e) {
@@ -195,7 +199,11 @@ public class ScheduleService {
     }
 
     private ServerHealthState stageSchedulingFailedState(String pipelineName, CannotScheduleException e) {
-        return ServerHealthState.failedToScheduleStage(HealthStateType.general(HealthStateScope.forStage(pipelineName, e.getStageName())), pipelineName, e.getStageName(), e.getMessage());
+        return stageSchedulingFailedState(pipelineName, e.getStageName(), e.getMessage(), HealthStateType.general(HealthStateScope.forStage(pipelineName, e.getStageName())));
+    }
+
+    static ServerHealthState stageSchedulingFailedState(String pipelineName, String stageName, String description, HealthStateType healthStateType) {
+        return ServerHealthState.error(String.format("Failed to trigger stage [%s] pipeline [%s]", stageName, pipelineName), description, healthStateType, Duration.ofMinutes(2));
     }
 
     private ServerHealthState stageSchedulingSuccessfulState(String pipelineName, String stageName) {
@@ -213,8 +221,8 @@ public class ScheduleService {
     public Stage scheduleStage(final Pipeline pipeline, final String stageName, final String username, final StageInstanceCreator creator, final ErrorConditionHandler errorHandler) {
         return transactionTemplate.execute(status -> {
             String pipelineName = pipeline.getName();
-            PipelineConfig pipelineConfig = goConfigService.pipelineConfigNamed(new CaseInsensitiveString(pipelineName));
-            StageConfig stageConfig = pipelineConfig.findBy(new CaseInsensitiveString(stageName));
+            PipelineConfig pipelineConfig = goConfigService.pipelineConfigNamed(cis(pipelineName));
+            StageConfig stageConfig = pipelineConfig.findBy(cis(stageName));
             if (stageConfig == null) {
                 throw new StageNotFoundException(pipelineName, stageName);
             }
@@ -246,24 +254,26 @@ public class ScheduleService {
         return schedulingChecker.canAutoTriggerConsumer(pipelineConfig);
     }
 
+    @TestOnly
     public boolean rerunStage(Pipeline pipeline, StageConfig stageConfig, String approvedBy) {
         internalRerun(pipeline, CaseInsensitiveString.str(stageConfig.name()), approvedBy, new NewStageInstanceCreator(goConfigService), new ExceptioningErrorHandler());
         return true;
     }
 
-    public Stage rerunStage(String pipelineName, Integer pipelineCounter, String stageName) {
+    @TestOnly
+    public Stage rerunStage(String pipelineName, int pipelineCounter, String stageName) {
         return rerunStage(pipelineName, pipelineCounter, stageName, new ExceptioningErrorHandler());
     }
 
-    public Stage rerunStage(String pipelineName, Integer pipelineCounter, String stageName, ErrorConditionHandler errorHandler) {
+    public Stage rerunStage(String pipelineName, int pipelineCounter, String stageName, ErrorConditionHandler errorHandler) {
         return lockAndRerunStage(pipelineName, pipelineCounter, stageName, new NewStageInstanceCreator(goConfigService), errorHandler);
     }
 
     /**
      * Top-level operation only; consumes exceptions
      */
-    public Stage rerunStage(String pipelineName, Integer pipelineCounter, String stageName, HttpOperationResult result) {
-        String identifier = StringUtils.join(List.of(pipelineName, pipelineCounter, stageName), "/");
+    public Stage rerunStage(String pipelineName, int pipelineCounter, String stageName, HttpOperationResult result) {
+        String identifier = String.format("%s/%s/%s", pipelineName, pipelineCounter, stageName);
         HealthStateType healthStateType = HealthStateType.general(HealthStateScope.forStage(pipelineName, stageName));
         Stage stage = null;
 
@@ -289,7 +299,7 @@ public class ScheduleService {
         return stage;
     }
 
-    private Stage lockAndRerunStage(String pipelineName, Integer counter, String stageName, StageInstanceCreator creator, final ErrorConditionHandler errorHandler) {
+    private Stage lockAndRerunStage(String pipelineName, int counter, String stageName, StageInstanceCreator creator, final ErrorConditionHandler errorHandler) {
         synchronized (mutexForPipeline(pipelineName)) {
             OperationResult result = new ServerHealthStateOperationResult();
             if (!schedulingChecker.canSchedule(result)) {
@@ -350,11 +360,11 @@ public class ScheduleService {
                 }
             }, new ResultUpdatingErrorHandler(result));
 
-            result.accepted(String.format("Request to rerun jobs accepted", identifier), "", healthStateForStage);
+            result.accepted(String.format("Request to rerun jobs for %s accepted", identifier), "", healthStateForStage);
             return resultStage;
         } catch (RuntimeException e) {
             if (result.canContinue()) {
-                String message = String.format("Job rerun request for job(s) [%s] could not be completed because of unexpected failure. Cause: %s", StringUtils.join(jobNames.toArray(), ", "),
+                String message = String.format("Job rerun request for job(s) [%s] could not be completed because of unexpected failure. Cause: %s", join(", ", jobNames),
                         e.getMessage());
                 result.internalServerError(message, healthStateForStage);
                 LOGGER.error(message, e);
@@ -384,7 +394,7 @@ public class ScheduleService {
         return s.intern(); // interned because we synchronize on it
     }
 
-    private void triggerNextStageInPipeline(Pipeline pipeline, String stageName, String approvedBy) {
+    private void triggerNextStageInPipeline(Pipeline pipeline, String stageName) {
         StageConfig nextStage = stageOrderService.getNextStage(pipeline, stageName);
         if (nextStage == null) {
             return;
@@ -395,7 +405,7 @@ public class ScheduleService {
         if (isStageActive(pipeline, nextStage)) {
             return;
         }
-        scheduleStage(pipeline, CaseInsensitiveString.str(nextStage.name()), approvedBy, new NewStageInstanceCreator(goConfigService), new ExceptioningErrorHandler());
+        scheduleStage(pipeline, CaseInsensitiveString.str(nextStage.name()), APPROVER_AUTOMATICALLY_TRIGGERED, new NewStageInstanceCreator(goConfigService), new ExceptioningErrorHandler());
     }
 
     //this method checks if specified stage is active in all pipelines
@@ -425,7 +435,7 @@ public class ScheduleService {
             }
             // if this stage completed successfully, we should try to trigger the next stage in this pipeline
             if (stage.isCompletedAndPassed()) {
-                triggerNextStageInPipeline(pipeline, stage.getName(), DEFAULT_APPROVED_BY);
+                triggerNextStageInPipeline(pipeline, stage.getName());
             }
         } catch (Exception ex) {
             String message = String.format("Failed to trigger next stage for %s.", stage.getName());
@@ -450,7 +460,7 @@ public class ScheduleService {
 
     private boolean shouldTriggerThisStageInNewerPipeline(Pipeline pipeline, Stage stage) {
         return !goConfigService.isFirstStage(pipeline.getName(), stage.getName())
-                && !goConfigService.requiresApproval(new CaseInsensitiveString(pipeline.getName()), new CaseInsensitiveString(stage.getName()));
+                && !goConfigService.requiresApproval(cis(pipeline.getName()), cis(stage.getName()));
     }
 
     private void triggerCurrentStageInNewerPipeline(String pipelineName, Stage currentStage) {
@@ -461,14 +471,14 @@ public class ScheduleService {
         if (mostRecentPassed != null && mostRecentPassed.getPipelineId() > currentStage.getPipelineId()) {
             Pipeline mostRecentEligiblePipeline = pipelineDao.loadPipeline(mostRecentPassed.getPipelineId());
             if (!mostRecentEligiblePipeline.hasStageBeenRun(currentStage.getName())) {
-                triggerNextStageInPipeline(mostRecentEligiblePipeline, mostRecentPassed.getName(), DEFAULT_APPROVED_BY);
+                triggerNextStageInPipeline(mostRecentEligiblePipeline, mostRecentPassed.getName());
             }
         }
     }
 
     // synchronized for updating job
 
-    public Stage cancelAndTriggerRelevantStages(Long stageId, Username username, LocalizedOperationResult result) throws Exception {
+    public Stage cancelAndTriggerRelevantStages(long stageId, Username username, LocalizedOperationResult result) {
         Stage stageForId;
         LocalizedOperationResult opResult = result == null ? new DefaultLocalizedOperationResult() : result;
         try {
@@ -535,7 +545,7 @@ public class ScheduleService {
 
     // synchronized for updating job
 
-    public void updateJobStatus(final JobIdentifier jobIdentifier, final JobState jobState) throws Exception {
+    public void updateJobStatus(final JobIdentifier jobIdentifier, final JobState jobState) {
         // have to synchronize at stage-level because cancellation happens at stage-level
         final String stageMutex = mutexForStageInstance(jobIdentifier);
         synchronized (stageMutex) {
@@ -550,8 +560,6 @@ public class ScheduleService {
                         }
 
                         job.changeState(jobState);
-                        //TODO: #2318 JobInstance should contain identifier after it's loaded from database
-                        job.setIdentifier(jobIdentifier);
                         jobInstanceService.updateStateAndResult(job);
 
                         synchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
@@ -591,7 +599,7 @@ public class ScheduleService {
         return mutexForStageInstance(id.getPipelineName(), id.getPipelineCounter(), id.getStageName(), id.getStageCounter());
     }
 
-    private String mutexForStageInstance(String pipelineName, Integer pipelineCounter, String stageName, String stageCounter) {
+    private String mutexForStageInstance(String pipelineName, int pipelineCounter, String stageName, String stageCounter) {
         String s = String.format("%s_forStageInstance_%s_%s_%s_%s", getClass().getName(), pipelineName, pipelineCounter, stageName, stageCounter);
         return s.intern(); // interned because we synchronize on it
     }
@@ -655,12 +663,12 @@ public class ScheduleService {
                 transactionTemplate.execute(new TransactionCallbackWithoutResult() {
                     @Override
                     protected void doInTransactionWithoutResult(TransactionStatus status) {
-                        LOGGER.warn("[Job Reschedule] Rescheduling and marking old job as ignored: {}", toBeRescheduled);
                         //Reloading it because we want to see the latest committed state after acquiring the mutex.
                         JobInstance oldJob = jobInstanceService.buildById(toBeRescheduled.getId());
-                        if (oldJob.isCompleted() || oldJob.isRescheduled()) {
+                        if (oldJob.getState().isInactiveOnAgent()) {
                             return;
                         }
+                        LOGGER.warn("[Job Reschedule] Rescheduling and marking old job as ignored: {}", toBeRescheduled);
                         JobInstance newJob = oldJob.clone();
                         oldJob.changeState(JobState.Rescheduled);
                         jobInstanceService.updateStateAndResult(oldJob);
@@ -694,12 +702,9 @@ public class ScheduleService {
                 if (jobInstance.isNull() || jobInstance.getResult() == JobResult.Cancelled || jobInstance.getState() == JobState.Rescheduled) {
                     return;
                 }
-                //TODO: #2318 JobInstance should contain identifier after it's loaded from database
-                jobInstance.setIdentifier(jobIdentifier);
-                if (!StringUtils.equals(jobInstance.getAgentUuid(), agentUuid)) {
+                if (!Strings.CS.equals(jobInstance.getAgentUuid(), agentUuid)) {
                     LOGGER.error("Build Instance is using agent [{}] but status updating from agent [{}]", jobInstance.getAgentUuid(), agentUuid);
-                    throw new InvalidAgentException("AgentUUID has changed in the middle of a job. AgentUUID:"
-                            + agentUuid + ", Build: " + jobInstance.toString());
+                    throw new InvalidAgentException("AgentUUID has changed in the middle of a job. AgentUUID:" + agentUuid + ", Build: " + jobInstance);
                 }
                 jobInstance.completing(result);
                 jobInstanceService.updateStateAndResult(jobInstance);
@@ -716,7 +721,7 @@ public class ScheduleService {
                 LOGGER.info("[Agent Assignment] Not assigning a completed job [{}] to agent {}", instance.getIdentifier(), agentUuid);
                 return true;
             }
-            instance.assign(agentUuid, timeProvider.currentTime());
+            instance.assign(agentUuid, timeProvider.currentUtilDate());
             jobInstanceService.updateAssignedInfo(instance);
             return false;
         }
@@ -761,7 +766,7 @@ public class ScheduleService {
 
         void noOperatePermission(String pipelineName, String stageName);
 
-        void nullPipeline(String pipelineName, Integer pipelineCounter, String stageName);
+        void nullPipeline(String pipelineName, int pipelineCounter, String stageName);
 
         void previousStageNotRun(String pipelineName, String stageName);
 
@@ -785,7 +790,7 @@ public class ScheduleService {
         }
 
         @Override
-        public void nullPipeline(String pipelineName, Integer pipelineCounter, String stageName) {
+        public void nullPipeline(String pipelineName, int pipelineCounter, String stageName) {
             throw new RecordNotFoundException(String.format("Pipeline instance [%s/%s] not found", pipelineName, pipelineCounter));
         }
 

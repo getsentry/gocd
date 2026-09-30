@@ -18,15 +18,15 @@ package com.thoughtworks.go.apiv1.currentuser;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv1.user.representers.UserRepresenter;
 import com.thoughtworks.go.domain.User;
 import com.thoughtworks.go.server.service.UserService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import com.thoughtworks.go.util.TriState;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import spark.Request;
@@ -35,18 +35,19 @@ import spark.Spark;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static spark.Spark.*;
 
 @Component
 public class CurrentUserController extends ApiController implements SparkSpringController {
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final UserService userService;
 
     @Autowired
-    public CurrentUserController(ApiAuthenticationHelper apiAuthenticationHelper, UserService userService) {
+    public CurrentUserController(ApiAuthorizationHelper apiAuthorizationHelper, UserService userService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.userService = userService;
     }
 
@@ -56,15 +57,15 @@ public class CurrentUserController extends ApiController implements SparkSpringC
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         Spark.path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
             before("/*", mimeType, this::verifyContentType);
 
-            before("", mimeType, apiAuthenticationHelper::checkNonAnonymousUser);
-            before("/*", mimeType, apiAuthenticationHelper::checkNonAnonymousUser);
+            before("", mimeType, apiAuthorizationHelper::checkNonAnonymousUser);
+            before("/*", mimeType, apiAuthorizationHelper::checkNonAnonymousUser);
 
             get("", mimeType, this::show);
             head("", mimeType, this::show);
@@ -74,7 +75,7 @@ public class CurrentUserController extends ApiController implements SparkSpringC
     }
 
     public String show(Request req, Response res) {
-        User user = userService.findUserByName(currentUserLoginName().toString());
+        User user = userService.findUserByName(currentUsernameCis().toString());
         String json = jsonizeAsTopLevelObject(req, writer -> UserRepresenter.toJSON(writer, user));
         String etag = etagFor(json);
 
@@ -87,21 +88,18 @@ public class CurrentUserController extends ApiController implements SparkSpringC
     }
 
     public String update(Request req, Response res) {
-        User user = userService.findUserByName(currentUserLoginName().toString());
+        User user = userService.findUserByName(currentUsernameCis().toString());
 
         HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
 
         Map<String, Object> map = readRequestBodyAsJSON(req);
+
         String checkinAliases = null;
-
-        if (map.containsKey("checkin_aliases")) {
-            Object newAliases = map.get("checkin_aliases");
-
-            if (newAliases instanceof Collection<?> aliasCollection) {
-                checkinAliases = StringUtils.join(aliasCollection, ", ");
-            } else if (newAliases instanceof String) {
-                checkinAliases = (String) newAliases;
-            }
+        Object rawAliases = map.get("checkin_aliases");
+        if (rawAliases instanceof Collection<?> aliasCollection) {
+            checkinAliases = aliasCollection.stream().map(Object::toString).collect(Collectors.joining(", "));
+        } else if (rawAliases instanceof String asString) {
+            checkinAliases = asString;
         }
 
         TriState emailMe = TriState.from(String.valueOf(map.get("email_me")));

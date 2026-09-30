@@ -49,20 +49,18 @@ public class AgentAssignmentTest {
     @Autowired private MaterialRepository materialRepository;
     @Autowired private TransactionTemplate transactionTemplate;
 
-    private PipelineWithTwoStages fixture;
-    private GoConfigFileHelper configHelper;
+    private PipelineWithTwoStages pipelineFixture;
 
     @BeforeEach
     public void setUp(@TempDir Path tempDir) throws Exception {
-        configHelper = new GoConfigFileHelper();
-        fixture = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
-        fixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
+        pipelineFixture = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
+        pipelineFixture.usingConfigHelper(new GoConfigFileHelper()).usingDbHelper(dbHelper).onSetUp();
         agentAssignment.clear();
     }
 
     @AfterEach
     public void tearDown() throws Exception {
-        fixture.onTearDown();
+        pipelineFixture.onTearDown();
         agentAssignment.clear();
     }
 
@@ -72,22 +70,30 @@ public class AgentAssignmentTest {
         agentAssignment.jobStatusChanged(assigned);
 
         assertThat(agentAssignment.latestActiveJobOnAgent("uuid")).isEqualTo(assigned);
+        assertThat(agentAssignment.size()).isEqualTo(1);
     }
 
     @Test
     public void shouldIgnoreScheduledJob() {
         JobInstance scheduled = JobInstanceMother.scheduled("dev");
         agentAssignment.jobStatusChanged(scheduled);
-
-        assertThat(agentAssignment.latestActiveJobOnAgent("uuid")).isNull();
+        assertThat(agentAssignment.size()).isZero();
     }
 
     @Test
     public void shouldGetLatestActiveJobOnAgentFromDatabase() {
-        Pipeline pipeline = fixture.createPipelineWithFirstStageAssigned("uuid");
-        JobInstance expected = pipeline.getFirstStage().getJobInstances().first();
+        Pipeline pipeline = pipelineFixture.createPipelineWithFirstStageAssigned("uuid");
+        JobInstance expected = pipeline.getFirstStage().getJobInstances().getFirst();
 
         assertThat(agentAssignment.latestActiveJobOnAgent("uuid").getId()).isEqualTo(expected.getId());
+        assertThat(agentAssignment.size()).isEqualTo(1);
+    }
+
+    @Test
+    public void shouldIgnoreJobNotAssignedToAgent() {
+        JobInstance created = new JobInstance();
+        agentAssignment.jobStatusChanged(created);
+        assertThat(agentAssignment.size()).isZero();
     }
 
     @Test
@@ -97,14 +103,19 @@ public class AgentAssignmentTest {
         agentAssignment.jobStatusChanged(completed);
 
         assertThat(agentAssignment.latestActiveJobOnAgent("uuid")).isNull();
+        assertThat(agentAssignment.size()).isZero();
     }
 
     @Test
     public void shouldReturnNullAfterJobIsRescheduled() {
+        JobInstance assigned = JobInstanceMother.assignedWithAgentId("dev", "uuid");
+        agentAssignment.jobStatusChanged(assigned);
+
         JobInstance rescheduled = JobInstanceMother.rescheduled("dev", "uuid");
         agentAssignment.jobStatusChanged(rescheduled);
 
         assertThat(agentAssignment.latestActiveJobOnAgent("uuid")).isNull();
+        assertThat(agentAssignment.size()).isZero();
     }
 }
 

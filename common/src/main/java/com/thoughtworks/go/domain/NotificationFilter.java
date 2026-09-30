@@ -15,28 +15,28 @@
  */
 package com.thoughtworks.go.domain;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.PipelineConfig;
 import com.thoughtworks.go.config.Validatable;
 import com.thoughtworks.go.config.ValidationContext;
-import com.thoughtworks.go.util.GoConstants;
+import org.apache.commons.lang3.Strings;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Objects;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static java.lang.String.format;
-import static org.apache.commons.lang3.StringUtils.equalsIgnoreCase;
 
 public class NotificationFilter extends PersistentObject implements Validatable {
+    public static final String ANY_PIPELINE = "[Any Pipeline]";
+    public static final String ANY_STAGE = "[Any Stage]";
     private String pipelineName;
     private String stageName;
     private StageEvent event;
     private boolean myCheckin;
 
-    private transient ConfigErrors errors = new ConfigErrors();
+    private final transient ConfigErrors errors = new ConfigErrors();
 
-    private NotificationFilter() {
-    }
+    @SuppressWarnings("unused") // for Hibernate
+    private NotificationFilter() {}
 
     public NotificationFilter(String pipelineName, String stageName, StageEvent event, boolean myCheckin) {
         this.pipelineName = pipelineName;
@@ -86,16 +86,13 @@ public class NotificationFilter extends PersistentObject implements Validatable 
         return !myCheckin;
     }
 
-    public boolean matchStage(StageConfigIdentifier stageIdentifier, StageEvent event) {
-        return this.event.include(event) && appliesTo(stageIdentifier.getPipelineName(), stageIdentifier.getStageName());
+    public boolean appliesTo(StageEvent event, StageConfigIdentifier stageIdentifier) {
+        return this.event.include(event) && appliesTo(stageIdentifier);
     }
 
-    public boolean appliesTo(String pipelineName, String stageName) {
-        boolean pipelineMatches = this.pipelineName.equals(pipelineName) ||
-            this.pipelineName.equals(GoConstants.ANY_PIPELINE);
-        boolean stageMatches = this.stageName.equals(stageName) ||
-            this.stageName.equals(GoConstants.ANY_STAGE);
-
+    public boolean appliesTo(StageConfigIdentifier stageIdentifier) {
+        boolean pipelineMatches = this.pipelineName.equals(ANY_PIPELINE) || this.pipelineName.equals(stageIdentifier.getPipelineName());
+        boolean stageMatches = this.stageName.equals(ANY_STAGE) || this.stageName.equals(stageIdentifier.getStageName());
         return pipelineMatches && stageMatches;
     }
 
@@ -109,23 +106,6 @@ public class NotificationFilter extends PersistentObject implements Validatable 
         return "NotificationFilter[" + description() + "]";
     }
 
-    /**
-     * Used for JSON serialization in Rails
-     *
-     * @return a Map representation of this {@link NotificationFilter} instance that is serializable by JRuby
-     */
-    public Map<String, Object> toMap() {
-        Map<String, Object> map = new HashMap<>();
-
-        map.put("id", id);
-        map.put("pipelineName", pipelineName);
-        map.put("stageName", stageName);
-        map.put("myCheckin", myCheckin);
-        map.put("event", event.toString());
-
-        return map;
-    }
-
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -137,20 +117,10 @@ public class NotificationFilter extends PersistentObject implements Validatable 
 
         NotificationFilter filter = (NotificationFilter) o;
 
-        if (myCheckin != filter.myCheckin) {
-            return false;
-        }
-        if (event != filter.event) {
-            return false;
-        }
-        if (pipelineName != null ? !pipelineName.equals(filter.pipelineName) : filter.pipelineName != null) {
-            return false;
-        }
-        if (stageName != null ? !stageName.equals(filter.stageName) : filter.stageName != null) {
-            return false;
-        }
-
-        return true;
+        return myCheckin == filter.myCheckin &&
+            event == filter.event &&
+            Objects.equals(pipelineName, filter.pipelineName) &&
+            Objects.equals(stageName, filter.stageName);
     }
 
     @Override
@@ -171,18 +141,17 @@ public class NotificationFilter extends PersistentObject implements Validatable 
 
     @Override
     public void validate(ValidationContext validationContext) {
-        if (equalsIgnoreCase(this.pipelineName, "[Any Pipeline]")) {
+        if (Strings.CI.equals(this.pipelineName, "[Any Pipeline]")) {
             return;
         }
 
-        PipelineConfig pipelineConfig = validationContext.getCruiseConfig()
-            .getPipelineConfigByName(new CaseInsensitiveString(this.pipelineName));
+        PipelineConfig pipelineConfig = validationContext.getCruiseConfig().getPipelineConfigByName(cis(this.pipelineName));
         if (pipelineConfig == null) {
             addError("pipelineName", format("Pipeline with name '%s' was not found!", this.pipelineName));
             return;
         }
 
-        if (equalsIgnoreCase(this.stageName, "[Any Stage]")) {
+        if (Strings.CI.equals(this.stageName, "[Any Stage]")) {
             return;
         }
 

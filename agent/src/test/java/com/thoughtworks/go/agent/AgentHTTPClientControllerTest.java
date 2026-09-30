@@ -27,18 +27,16 @@ import com.thoughtworks.go.plugin.access.scm.SCMExtension;
 import com.thoughtworks.go.plugin.infra.PluginManager;
 import com.thoughtworks.go.plugin.infra.PluginManagerReference;
 import com.thoughtworks.go.plugin.infra.monitor.PluginJarLocationMonitor;
-import com.thoughtworks.go.publishers.GoArtifactsManipulator;
-import com.thoughtworks.go.remote.work.AgentWorkContext;
+import com.thoughtworks.go.publishers.GoArtifactManipulator;
 import com.thoughtworks.go.remote.work.DeniedAgentWork;
 import com.thoughtworks.go.remote.work.NoWork;
 import com.thoughtworks.go.remote.work.Work;
-import com.thoughtworks.go.server.service.AgentRuntimeInfo;
 import com.thoughtworks.go.util.SubprocessLogger;
 import com.thoughtworks.go.util.SystemEnvironment;
-import com.thoughtworks.go.util.command.EnvironmentVariableContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -50,7 +48,7 @@ public class AgentHTTPClientControllerTest {
     @Mock
     private RemotingClient loopServer;
     @Mock
-    private GoArtifactsManipulator artifactsManipulator;
+    private GoArtifactManipulator artifactManipulator;
     @Mock
     private SslInfrastructureService sslInfrastructureService;
     @Mock
@@ -90,16 +88,16 @@ public class AgentHTTPClientControllerTest {
     }
 
     @Test
-    void shouldRetrieveWorkFromServerAndDoIt() {
+    void shouldRetrieveWorkFromServerAndDoIt() throws Exception {
         prepareForWork();
         agentController.ping();
         assertThat(agentController.tryDoWork()).isEqualTo(WorkAttempt.OK);
-        verify(work).doWork(any(EnvironmentVariableContext.class), any(AgentWorkContext.class));
+        verify(work).doWork(any(), any());
         verify(sslInfrastructureService).createSslInfrastructure();
     }
 
     @Test
-    void shouldRetrieveCookieIfNotPresent() {
+    void shouldRetrieveCookieIfNotPresent() throws Exception {
         agentController = createAgentController();
         agentController.init();
 
@@ -107,13 +105,19 @@ public class AgentHTTPClientControllerTest {
         when(sslInfrastructureService.isRegistered()).thenReturn(true);
         when(loopServer.getWork(agentController.getAgentRuntimeInfo())).thenReturn(work);
         when(agentRegistry.uuid()).thenReturn(agentUuid);
-        when(pluginJarLocationMonitor.hasRunAtLeastOnce()).thenReturn(true);
+
         assertThat(agentController.performWork()).isEqualTo(WorkAttempt.OK);
-        verify(work).doWork(any(), any());
+
+        InOrder inOrder = inOrder(agentUpgradeService, sslInfrastructureService, loopServer, pluginJarLocationMonitor, work);
+        inOrder.verify(agentUpgradeService).checkForUpgradeAndExtraProperties();
+        inOrder.verify(sslInfrastructureService).registerIfNecessary(agentController.getAgentAutoRegistrationProperties());
+        inOrder.verify(loopServer).getCookie(any());
+        inOrder.verify(pluginJarLocationMonitor).awaitFirstLoad();
+        inOrder.verify(work).doWork(any(), any());
     }
 
     @Test
-    void shouldNotTellServerWorkIsCompletedWhenThereIsNoWork() {
+    void shouldNotTellServerWorkIsCompletedWhenThereIsNoWork() throws Exception {
         prepareForWork();
         assertThat(agentController.tryDoWork()).isEqualTo(WorkAttempt.OK);
         verify(work).doWork(any(), any());
@@ -121,7 +125,7 @@ public class AgentHTTPClientControllerTest {
     }
 
     @Test
-    void workStatusShouldBeFailedWhenUnregisteredAgentExceptionThrown() {
+    void workStatusShouldBeFailedWhenUnregisteredAgentExceptionThrown() throws Exception {
         prepareForWork();
 
         doThrow(UnregisteredAgentException.class).when(work).doWork(any(), any());
@@ -130,21 +134,21 @@ public class AgentHTTPClientControllerTest {
     }
 
     @Test
-    void workStatusShouldDeriveFromWorkTypeForNoWork() {
+    void workStatusShouldDeriveFromWorkTypeForNoWork() throws Exception {
         work = mock(NoWork.class);
         prepareForWork();
         assertThat(agentController.tryDoWork()).isEqualTo(WorkAttempt.NOTHING_TO_DO);
     }
 
     @Test
-    void workStatusShouldDeriveFromWorkTypeForDeniedWork() {
+    void workStatusShouldDeriveFromWorkTypeForDeniedWork() throws Exception {
         work = mock(DeniedAgentWork.class);
         prepareForWork();
         assertThat(agentController.tryDoWork()).isEqualTo(WorkAttempt.NOTHING_TO_DO);
     }
 
     private void prepareForWork() {
-        when(loopServer.getWork(any(AgentRuntimeInfo.class))).thenReturn(work);
+        when(loopServer.getWork(any())).thenReturn(work);
         when(agentRegistry.uuid()).thenReturn(agentUuid);
         agentController = createAgentController();
         agentController.init();
@@ -164,8 +168,20 @@ public class AgentHTTPClientControllerTest {
 
         agentController = createAgentController();
         agentController.init();
+        agentController.getAgentRuntimeInfo().setCookie("some-cookie");
         agentController.ping();
         verify(sslInfrastructureService).createSslInfrastructure();
+    }
+
+    @Test
+    void shouldNotPingIfNoCookie() {
+        when(agentRegistry.uuid()).thenReturn(agentUuid);
+
+        agentController = createAgentController();
+        agentController.init();
+        agentController.ping();
+        verify(sslInfrastructureService).createSslInfrastructure();
+        verifyNoMoreInteractions(sslInfrastructureService);
     }
 
     @Test
@@ -174,16 +190,17 @@ public class AgentHTTPClientControllerTest {
         when(sslInfrastructureService.isRegistered()).thenReturn(true);
         agentController = createAgentController();
         agentController.init();
+        agentController.getAgentRuntimeInfo().setCookie("some-cookie");
         agentController.ping();
         verify(sslInfrastructureService).createSslInfrastructure();
-        verify(loopServer).ping(any(AgentRuntimeInfo.class));
+        verify(loopServer).ping(any());
     }
 
     private AgentHTTPClientController createAgentController() {
 
         return new AgentHTTPClientController(
             loopServer,
-            artifactsManipulator,
+            artifactManipulator,
             sslInfrastructureService,
             agentRegistry,
             agentUpgradeService,

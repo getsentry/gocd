@@ -21,9 +21,13 @@ import com.thoughtworks.go.config.Validatable;
 import com.thoughtworks.go.config.ValidationContext;
 import com.thoughtworks.go.domain.BaseCollection;
 import com.thoughtworks.go.domain.ConfigErrors;
-import org.apache.commons.lang3.StringUtils;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.Collections;
+
+import static java.util.stream.Collectors.groupingBy;
+import static java.util.stream.Collectors.joining;
 
 @ConfigTag("scms")
 @ConfigCollection(value = SCM.class)
@@ -36,30 +40,12 @@ public class SCMs extends BaseCollection<SCM> implements Validatable {
         Collections.addAll(this, scms);
     }
 
-    public SCM find(final String scmId) {
+    public @Nullable SCM find(final String scmId) {
         return stream().filter(scm -> scm.getId().equals(scmId)).findFirst().orElse(null);
     }
 
-    public boolean canAdd(final SCM scm) {
-        return findDuplicate(scm) == null &&
-                findByName(scm.getName()) == null;
-    }
-
-    public SCM findDuplicate(final SCM scm) {
-         if (find(scm.getSCMId()) != null) {
-             return find(scm.getSCMId());
-         } else if (findByFingerprint(scm.getFingerprint()) != null) {
-             return findByFingerprint(scm.getFingerprint());
-         }
-        return null;
-    }
-
-    public SCM findByFingerprint(String fingerprint) {
-        return stream().filter(scm -> scm.getFingerprint().equals(fingerprint)).findFirst().orElse(null);
-    }
-
-    public SCM findByName(final String name) {
-        return stream().filter(scm -> scm.getName().equalsIgnoreCase(name)).findFirst().orElse(null);
+    public @Nullable SCM findDuplicate(final SCM other) {
+        return stream().filter(current -> current.equalsByIdOrFingerprint(other)).findFirst().orElse(null);
     }
 
     @Override
@@ -79,58 +65,27 @@ public class SCMs extends BaseCollection<SCM> implements Validatable {
     }
 
     public void removeSCM(String id) {
-        SCM scmToBeDeleted = this.find(id);
-        if (scmToBeDeleted == null) {
+        if (!removeFirstIf(scm ->  scm.getId().equals(id))) {
             throw new RuntimeException(String.format("Could not find SCM with id '%s'", id));
         }
-        this.remove(scmToBeDeleted);
     }
 
     private void validateNameUniqueness() {
-        Map<String, SCMs> map = new HashMap<>();
-
-        for (SCM scm : this) {
-            String name = scm.getName().toLowerCase();
-            if (!map.containsKey(name)) {
-                map.put(name, new SCMs());
-            }
-            map.get(name).add(scm);
-        }
-
-        for (String name : map.keySet()) {
-            SCMs scmsWithSameName = map.get(name);
-            if (scmsWithSameName.size() > 1) {
-                for (SCM scm : scmsWithSameName) {
-                    scm.addError(SCM.NAME, String.format("Cannot save SCM, found multiple SCMs called '%s'. SCM names are case-insensitive and must be unique.", scm.getName()));
-                }
-            }
-        }
+        this.stream().collect(groupingBy(scm -> scm.getName().toLowerCase())).values().stream()
+            .filter(scmList -> scmList.size() > 1)
+            .flatMap(Collection::stream)
+            .forEach(scm -> scm.addError(SCM.NAME, String.format("Cannot save SCM, found multiple SCMs called '%s'. SCM names are case-insensitive and must be unique.", scm.getName())));
     }
 
     private void validateFingerprintUniqueness() {
-        Map<String, SCMs> map = new HashMap<>();
-
-        for (SCM scm : this) {
-            String fingerprint = scm.getFingerprint();
-            if (!map.containsKey(fingerprint)) {
-                map.put(fingerprint, new SCMs());
-            }
-
-            map.get(fingerprint).add(scm);
-        }
-
-        for (String fingerprint : map.keySet()) {
-            SCMs scmsWithSameFingerprint = map.get(fingerprint);
-            if (scmsWithSameFingerprint.size() > 1) {
-                List<String> scmNames = new ArrayList<>();
-                for (SCM scm : scmsWithSameFingerprint) {
-                    scmNames.add(scm.getName());
-                }
+        this.stream().collect(groupingBy(SCM::getFingerprint)).values().stream()
+            .filter(scmList -> scmList.size() > 1)
+            .forEach(scmsWithSameFingerprint -> {
+                String errorMessage = scmsWithSameFingerprint.stream().map(SCM::getName).collect(joining(", ", "Cannot save SCM, found duplicate SCMs. ", ""));
 
                 for (SCM scm : scmsWithSameFingerprint) {
-                    scm.addError(SCM.SCM_ID, String.format("Cannot save SCM, found duplicate SCMs. %s", StringUtils.join(scmNames, ", ")));
+                    scm.addError(SCM.SCM_ID, errorMessage);
                 }
-            }
-        }
+            });
     }
 }

@@ -17,7 +17,7 @@ package com.thoughtworks.go.apiv2.materials;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv2.materials.representers.ModificationsRepresenter;
 import com.thoughtworks.go.domain.materials.MaterialConfig;
 import com.thoughtworks.go.domain.materials.Modifications;
@@ -25,6 +25,7 @@ import com.thoughtworks.go.server.service.MaterialConfigService;
 import com.thoughtworks.go.server.service.MaterialService;
 import com.thoughtworks.go.server.service.result.HttpOperationResult;
 import com.thoughtworks.go.server.util.Pagination;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,21 +34,22 @@ import spark.Request;
 import spark.Response;
 
 import java.io.IOException;
+import java.util.Optional;
 
 import static spark.Spark.*;
 
 @Component
 public class MaterialModificationsControllerV2 extends ApiController implements SparkSpringController {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final MaterialConfigService materialConfigService;
     private final MaterialService materialService;
 
     @Autowired
-    public MaterialModificationsControllerV2(ApiAuthenticationHelper apiAuthenticationHelper, MaterialConfigService materialConfigService,
+    public MaterialModificationsControllerV2(ApiAuthorizationHelper apiAuthorizationHelper, MaterialConfigService materialConfigService,
                                              MaterialService materialService) {
         super(ApiVersion.v2);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.materialConfigService = materialConfigService;
         this.materialService = materialService;
     }
@@ -58,14 +60,14 @@ public class MaterialModificationsControllerV2 extends ApiController implements 
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
             before("/*", mimeType, this::verifyContentType);
-            before("", this.mimeType, this.apiAuthenticationHelper::checkUserAnd403);
-            before("/*", this.mimeType, this.apiAuthenticationHelper::checkUserAnd403);
+            before("", this.mimeType, this.apiAuthorizationHelper::checkUserAnd403);
+            before("/*", this.mimeType, this.apiAuthorizationHelper::checkUserAnd403);
             get("", mimeType, this::modifications);
             get(Routes.MaterialModifications.OFFSET, mimeType, this::modifications);
         });
@@ -73,12 +75,12 @@ public class MaterialModificationsControllerV2 extends ApiController implements 
 
     public String modifications(Request req, Response res) throws IOException {
         String fingerprint = req.params("fingerprint");
-        Integer offset = req.params("offset") == null ? null : Integer.parseInt(req.params("offset"));
+        Integer offset = Optional.ofNullable(req.params("offset")).map(Integer::valueOf).orElse(null);
         HttpOperationResult result = new HttpOperationResult();
         MaterialConfig materialConfig = materialConfigService.getMaterialConfig(currentUsernameString(), fingerprint, result);
         if (result.canContinue()) {
             Long modificationsCount = materialService.getTotalModificationsFor(materialConfig);
-            Pagination pagination = Pagination.pageStartingAt(offset, modificationsCount.intValue(), 10);
+            Pagination pagination = Pagination.pageByOffsetNullSafe(offset, modificationsCount == null ? null : modificationsCount.intValue(), null);
             Modifications modifications = materialService.getModificationsFor(materialConfig, pagination);
             return writerForTopLevelObject(req, res, writer -> ModificationsRepresenter.toJSON(writer, modifications, pagination, fingerprint));
         } else {

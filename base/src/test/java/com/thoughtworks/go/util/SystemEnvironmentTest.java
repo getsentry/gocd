@@ -15,16 +15,16 @@
  */
 package com.thoughtworks.go.util;
 
-import ch.qos.logback.classic.Level;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.slf4j.event.Level;
 import uk.org.webcompere.systemstubs.jupiter.SystemStub;
 import uk.org.webcompere.systemstubs.jupiter.SystemStubsExtension;
 import uk.org.webcompere.systemstubs.properties.SystemProperties;
 
 import java.io.File;
+import java.time.Duration;
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,11 +43,6 @@ class SystemEnvironmentTest {
         systemEnvironment.clearProperty("any");
     }
 
-    @AfterEach
-    void after() {
-        new SystemEnvironment().reset(SystemEnvironment.ENABLE_CONFIG_MERGE_FEATURE);
-    }
-
     @Test
     void shouldFindJettyConfigInTheConfigDir() {
         assertThat(systemEnvironment.getJettyConfigFile()).isEqualTo(new File(systemEnvironment.getConfigDir(), "jetty.xml"));
@@ -58,18 +53,18 @@ class SystemEnvironmentTest {
     @Test
     void shouldUnderstandWhetherToUseCompressedJs() {
         assertThat(systemEnvironment.useCompressedJs()).isTrue();
-        systemEnvironment.setProperty(GoConstants.USE_COMPRESSED_JAVASCRIPT, Boolean.FALSE.toString());
+        systemEnvironment.setProperty(SystemEnvironment.USE_COMPRESSED_JAVASCRIPT, Boolean.FALSE.toString());
         assertThat(systemEnvironment.useCompressedJs()).isFalse();
-        systemEnvironment.setProperty(GoConstants.USE_COMPRESSED_JAVASCRIPT, Boolean.TRUE.toString());
+        systemEnvironment.setProperty(SystemEnvironment.USE_COMPRESSED_JAVASCRIPT, Boolean.TRUE.toString());
         assertThat(systemEnvironment.useCompressedJs()).isTrue();
     }
 
     @Test
     void shouldCacheAgentConnectionSystemPropertyOnFirstAccess() {
         System.setProperty(SystemEnvironment.AGENT_CONNECTION_TIMEOUT_IN_SECONDS, "1");
-        assertThat(systemEnvironment.getAgentConnectionTimeout()).isEqualTo(1);
+        assertThat(systemEnvironment.getAgentConnectionTimeout()).isEqualTo(Duration.ofSeconds(1));
         System.setProperty(SystemEnvironment.AGENT_CONNECTION_TIMEOUT_IN_SECONDS, "2");
-        assertThat(systemEnvironment.getAgentConnectionTimeout()).isEqualTo(1);
+        assertThat(systemEnvironment.getAgentConnectionTimeout()).isEqualTo(Duration.ofSeconds(1));
     }
 
     @Test
@@ -86,35 +81,28 @@ class SystemEnvironmentTest {
         assertThat(systemEnvironment.getConfigDir()).isEqualTo("config");
     }
 
-
     @Test
     void shouldCacheDatabaseDiskFullOnFirstAccess() {
         System.setProperty(SystemEnvironment.DATABASE_FULL_SIZE_LIMIT, "100");
-        assertThat(systemEnvironment.getDatabaseDiskSpaceFullLimit()).isEqualTo(100L);
+        assertThat(systemEnvironment.getDatabaseDiskSpaceFullLimitMegabytes()).isEqualTo(100L);
         System.setProperty(SystemEnvironment.DATABASE_FULL_SIZE_LIMIT, "50M");
-        assertThat(systemEnvironment.getDatabaseDiskSpaceFullLimit()).isEqualTo(100L);
+        assertThat(systemEnvironment.getDatabaseDiskSpaceFullLimitMegabytes()).isEqualTo(100L);
     }
 
     @Test
     void shouldCacheArtifactDiskFullOnFirstAccess() {
         System.setProperty(SystemEnvironment.ARTIFACT_FULL_SIZE_LIMIT, "100");
-        assertThat(systemEnvironment.getArtifactRepositoryFullLimit()).isEqualTo(100L);
+        assertThat(systemEnvironment.getArtifactRepositoryFullLimitMegabytes()).isEqualTo(100L);
         System.setProperty(SystemEnvironment.ARTIFACT_FULL_SIZE_LIMIT, "50M");
-        assertThat(systemEnvironment.getArtifactRepositoryFullLimit()).isEqualTo(100L);
+        assertThat(systemEnvironment.getArtifactRepositoryFullLimitMegabytes()).isEqualTo(100L);
     }
 
     @Test
     void shouldClearCachedValuesOnSettingNewProperty() {
         System.setProperty(SystemEnvironment.ARTIFACT_FULL_SIZE_LIMIT, "100");
-        assertThat(systemEnvironment.getArtifactRepositoryFullLimit()).isEqualTo(100L);
+        assertThat(systemEnvironment.getArtifactRepositoryFullLimitMegabytes()).isEqualTo(100L);
         systemEnvironment.setProperty(SystemEnvironment.ARTIFACT_FULL_SIZE_LIMIT, "50");
-        assertThat(systemEnvironment.getArtifactRepositoryFullLimit()).isEqualTo(50L);
-    }
-
-    @Test
-    void shouldPrefixApplicationPathWithContext() {
-        assertThat(systemEnvironment.pathFor("foo/bar")).isEqualTo("/go/foo/bar");
-        assertThat(systemEnvironment.pathFor("/baz/quux")).isEqualTo("/go/baz/quux");
+        assertThat(systemEnvironment.getArtifactRepositoryFullLimitMegabytes()).isEqualTo(50L);
     }
 
     @Test
@@ -135,9 +123,9 @@ class SystemEnvironmentTest {
 
     @Test
     void shouldReturnTheJobWarningLimit() {
-        assertThat(systemEnvironment.getUnresponsiveJobWarningThreshold()).isEqualTo(5 * 60 * 1000L);
+        assertThat(systemEnvironment.getUnresponsiveJobWarningThreshold()).isEqualTo(Duration.ofMinutes(5));
         System.setProperty(SystemEnvironment.UNRESPONSIVE_JOB_WARNING_THRESHOLD, "30");
-        assertThat(systemEnvironment.getUnresponsiveJobWarningThreshold()).isEqualTo(30 * 60 * 1000L);
+        assertThat(systemEnvironment.getUnresponsiveJobWarningThreshold()).isEqualTo(Duration.ofMinutes(30));
     }
 
     @Test
@@ -175,32 +163,6 @@ class SystemEnvironmentTest {
     }
 
     @Test
-    void shouldTurnOnConfigMergeFeature_byDefault() {
-        assertThat(System.getProperty(SystemEnvironment.ENABLE_CONFIG_MERGE_PROPERTY)).isNull();
-        assertThat(new SystemEnvironment().get(SystemEnvironment.ENABLE_CONFIG_MERGE_FEATURE)).isTrue();
-    }
-
-    @Test
-    void should_NOT_TurnOnConfigMergeFeature_whenExplicitlyDisabled() {
-        System.setProperty(SystemEnvironment.ENABLE_CONFIG_MERGE_PROPERTY, SystemEnvironment.CONFIGURATION_NO);
-        assertThat(new SystemEnvironment().get(SystemEnvironment.ENABLE_CONFIG_MERGE_FEATURE)).isFalse();
-    }
-
-    @Test
-    void shouldTurnOnConfigMergeFeature_whenEnabledExplicitly() {
-        System.setProperty(SystemEnvironment.ENABLE_CONFIG_MERGE_PROPERTY, SystemEnvironment.CONFIGURATION_YES);
-        assertThat(new SystemEnvironment().get(SystemEnvironment.ENABLE_CONFIG_MERGE_FEATURE)).isTrue();
-    }
-
-    @Test
-    void should_cache_whetherToTurnOnConfigMergeFeature() {//because access to properties is synchronized
-        assertThat(System.getProperty(SystemEnvironment.ENABLE_CONFIG_MERGE_PROPERTY)).isNull();
-        assertThat(new SystemEnvironment().get(SystemEnvironment.ENABLE_CONFIG_MERGE_FEATURE)).isTrue();
-        System.setProperty(SystemEnvironment.ENABLE_CONFIG_MERGE_PROPERTY, SystemEnvironment.CONFIGURATION_NO);
-        assertThat(new SystemEnvironment().get(SystemEnvironment.ENABLE_CONFIG_MERGE_FEATURE)).isTrue();
-    }
-
-    @Test
     void shouldGetTfsSocketTimeOut() {
         assertThat(systemEnvironment.getTfsSocketTimeout()).isEqualTo(SystemEnvironment.TFS_SOCKET_TIMEOUT_IN_MILLIS);
         System.setProperty(SystemEnvironment.TFS_SOCKET_TIMEOUT_PROPERTY, "100000000");
@@ -234,41 +196,13 @@ class SystemEnvironmentTest {
 
     @Test
     void shouldGetDefaultLandingPageAsPipelines() {
-        String landingPage = systemEnvironment.landingPage();
-        assertThat(landingPage).isEqualTo("/pipelines");
+        assertThat(systemEnvironment.getLandingPage()).isEqualTo("/go/pipelines");
     }
 
     @Test
     void shouldAbleToOverrideDefaultLandingPageAsPipelines() {
-        try {
-            System.setProperty("go.landing.page", "/admin/pipelines");
-            String landingPage = systemEnvironment.landingPage();
-            assertThat(landingPage).isEqualTo("/admin/pipelines");
-        } finally {
-            System.clearProperty("go.landing.page");
-        }
-    }
-
-    @Test
-    void ShouldRemoveWhiteSpacesForStringArraySystemProperties() {
-        String[] defaultValue = {"junk", "funk"};
-        String propertyName = "property.name";
-        SystemEnvironment.GoStringArraySystemProperty property = new SystemEnvironment.GoStringArraySystemProperty(propertyName, defaultValue);
-        System.setProperty(propertyName, " foo    ,  bar  ");
-        assertThat(systemEnvironment.get(property).length).isEqualTo(2);
-        assertThat(systemEnvironment.get(property)[0]).isEqualTo("foo");
-        assertThat(systemEnvironment.get(property)[1]).isEqualTo("bar");
-    }
-
-    @Test
-    void ShouldUseDefaultValueForStringArraySystemPropertiesWhenTheValueIsSetToEmptyString() {
-        String[] defaultValue = {"junk", "funk"};
-        String propertyName = "property.name";
-        SystemEnvironment.GoStringArraySystemProperty property = new SystemEnvironment.GoStringArraySystemProperty(propertyName, defaultValue);
-        System.clearProperty(propertyName);
-        assertThat(systemEnvironment.get(property)).isEqualTo(defaultValue);
-        System.setProperty(propertyName, " ");
-        assertThat(systemEnvironment.get(property)).isEqualTo(defaultValue);
+        systemProperties.set("go.landing.page", "/admin/pipelines");
+        assertThat(systemEnvironment.getLandingPage()).isEqualTo("/go/admin/pipelines");
     }
 
     @Test
@@ -282,22 +216,6 @@ class SystemEnvironmentTest {
     }
 
     @Test
-    void shouldGetUpdateServerPublicKeyFilePath() {
-        assertThat(SystemEnvironment.GO_UPDATE_SERVER_PUBLIC_KEY_FILE_NAME.propertyName()).isEqualTo("go.update.server.public.key.file.name");
-
-        System.setProperty("go.update.server.public.key.file.name", "public_key");
-        assertThat(systemEnvironment.getUpdateServerPublicKeyPath()).isEqualTo(systemEnvironment.getConfigDir() + "/public_key");
-    }
-
-    @Test
-    void shouldGetUpdateServerUrl() {
-        assertThat(SystemEnvironment.GO_UPDATE_SERVER_URL.propertyName()).isEqualTo("go.update.server.url");
-
-        System.setProperty("go.update.server.url", "http://update_server_url");
-        assertThat(systemEnvironment.getUpdateServerUrl()).isEqualTo("http://update_server_url");
-    }
-
-    @Test
     void shouldGetMaxNumberOfRequestsForEncryptionApi() {
         assertThat(SystemEnvironment.GO_ENCRYPTION_API_MAX_REQUESTS.propertyName()).isEqualTo("go.encryption.api.max.requests");
         assertThat(SystemEnvironment.getMaxEncryptionAPIRequestsPerMinute()).isEqualTo(30);
@@ -305,27 +223,6 @@ class SystemEnvironmentTest {
         System.setProperty("go.encryption.api.max.requests", "50");
 
         assertThat(SystemEnvironment.getMaxEncryptionAPIRequestsPerMinute()).isEqualTo(50);
-    }
-
-    @Test
-    void shouldCheckIfGOUpdatesIsEnabled() {
-        assertThat(SystemEnvironment.GO_CHECK_UPDATES.propertyName()).isEqualTo("go.check.updates");
-        assertThat(systemEnvironment.isGOUpdateCheckEnabled()).isTrue();
-
-        System.setProperty("go.check.updates", "false");
-        assertThat(systemEnvironment.isGOUpdateCheckEnabled()).isFalse();
-    }
-
-    @Test
-    void shouldEnableTemplateAutoSuggestByDefault() {
-        assertThat(SystemEnvironment.GO_FETCH_ARTIFACT_TEMPLATE_AUTO_SUGGEST.propertyName()).isEqualTo("go.fetch-artifact.template.auto-suggest");
-        assertThat(systemEnvironment.isFetchArtifactTemplateAutoSuggestEnabled()).isTrue();
-    }
-
-    @Test
-    void shouldDisableTemplateAutoSuggest() {
-        System.setProperty("go.fetch-artifact.template.auto-suggest", "false");
-        assertThat(systemEnvironment.isFetchArtifactTemplateAutoSuggestEnabled()).isFalse();
     }
 
     @Test

@@ -17,11 +17,11 @@ package com.thoughtworks.go.util.command;
 
 import com.thoughtworks.go.config.SecretParamAware;
 import com.thoughtworks.go.config.SecretParams;
-import com.thoughtworks.go.util.GoConstants;
 
 import java.io.Serializable;
 import java.util.*;
 
+import static com.thoughtworks.go.work.GoPublisher.PRODUCT_NAME;
 import static java.lang.String.format;
 
 /**
@@ -30,8 +30,8 @@ import static java.lang.String.format;
 public class EnvironmentVariableContext implements Serializable, SecretParamAware {
 
 
-    public List<SecretString> secrets() {
-        List<SecretString> passwordArguments = new ArrayList<>();
+    public List<SecretRedactor> secrets() {
+        List<SecretRedactor> passwordArguments = new ArrayList<>();
 
         for (EnvironmentVariable secureEnvironmentVariable : getSecureEnvironmentVariables()) {
             passwordArguments.add(new PasswordArgument(secureEnvironmentVariable.value()));
@@ -52,11 +52,12 @@ public class EnvironmentVariableContext implements Serializable, SecretParamAwar
     }
 
     public static class EnvironmentVariable implements Serializable, SecretParamAware {
+        public static final String MASK_VALUE = "********";
+
         private final String name;
         private final String value;
         private final boolean secure;
-        public static final String MASK_VALUE = "********";
-        private SecretParams secretParams;
+        private final SecretParams secretParams;
 
         EnvironmentVariable() {
             this(null, null, false);
@@ -69,7 +70,7 @@ public class EnvironmentVariableContext implements Serializable, SecretParamAwar
         public EnvironmentVariable(String name, String value, boolean secure) {
             this.name = name;
             this.value = value;
-            secretParams = SecretParams.parse(this.value);
+            this.secretParams = SecretParams.parse(this.value);
             this.secure = secure || secretParams.hasSecretParams();
         }
 
@@ -106,14 +107,8 @@ public class EnvironmentVariableContext implements Serializable, SecretParamAwar
 
             EnvironmentVariable that = (EnvironmentVariable) o;
 
-            if (!name.equals(that.name)) {
-                return false;
-            }
-            if (!value.equals(that.value)) {
-                return false;
-            }
-
-            return true;
+            return name.equals(that.name) &&
+                value.equals(that.value);
         }
 
         @Override
@@ -163,14 +158,6 @@ public class EnvironmentVariableContext implements Serializable, SecretParamAwar
             return environmentVariable.value();
         }
         return null;
-    }
-
-    public List<String> getPropertyKeys() {
-        List<String> keys = new ArrayList<>(properties.size());
-        for (EnvironmentVariable property : properties) {
-            keys.add(property.name());
-        }
-        return keys;
     }
 
     public List<EnvironmentVariable> getSecureEnvironmentVariables() {
@@ -256,20 +243,12 @@ public class EnvironmentVariableContext implements Serializable, SecretParamAwar
             return false;
         }
 
-        return equals((EnvironmentVariableContext) that);
-    }
-
-    private boolean equals(EnvironmentVariableContext that) {
-        if (!this.properties.equals(that.properties)) {
-            return false;
-        }
-
-        return true;
+        return this.properties.equals(((EnvironmentVariableContext) that).properties);
     }
 
     @Override
     public int hashCode() {
-        return properties != null ? properties.hashCode() : 0;
+        return properties.hashCode();
     }
 
     public List<String> report(Collection<String> predefinedEnvs) {
@@ -280,9 +259,9 @@ public class EnvironmentVariableContext implements Serializable, SecretParamAwar
             String value = property.value;
             if (value != null) {
                 if (existing.contains(name)) {
-                    lines.add(format("[%s] overriding environment variable '%s' with value '%s'", GoConstants.PRODUCT_NAME, name, property.valueForDisplay()));
+                    lines.add(format("[%s] overriding environment variable '%s' with value '%s'", PRODUCT_NAME, name, property.valueForDisplay()));
                 } else {
-                    lines.add(format("[%s] setting environment variable '%s' to value '%s'", GoConstants.PRODUCT_NAME, name, property.valueForDisplay()));
+                    lines.add(format("[%s] setting environment variable '%s' to value '%s'", PRODUCT_NAME, name, property.valueForDisplay()));
                 }
                 existing.add(name);
             }

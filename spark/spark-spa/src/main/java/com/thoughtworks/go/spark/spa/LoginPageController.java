@@ -15,9 +15,9 @@
  */
 package com.thoughtworks.go.spark.spa;
 
-import com.google.common.collect.ImmutableMap;
 import com.thoughtworks.go.server.newsecurity.utils.SessionUtils;
 import com.thoughtworks.go.server.service.SecurityService;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.SparkController;
 import com.thoughtworks.go.util.Clock;
@@ -54,7 +54,7 @@ public class LoginPageController implements SparkController {
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         get(controllerBasePath(), this::show, engine);
     }
 
@@ -64,12 +64,10 @@ public class LoginPageController implements SparkController {
             return null;
         }
 
-        Map<String, Object> meta = loginLogoutHelper.buildMeta(request);
-
-        Map<String, Object> object = ImmutableMap.<String, Object>builder()
-                .put("viewTitle", "Login")
-                .put("meta", meta)
-                .build();
+        Map<String, Object> object = Map.of(
+                "viewTitle", "Login",
+                "meta", loginLogoutHelper.buildMeta(request)
+        );
 
         return new ModelAndView(object, null);
     }

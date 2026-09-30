@@ -18,7 +18,6 @@ package com.thoughtworks.go.server.dao;
 import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.materials.dependency.DependencyMaterial;
 import com.thoughtworks.go.domain.Stage;
-import com.thoughtworks.go.domain.StageAsDMR;
 import com.thoughtworks.go.domain.StageIdentifier;
 import com.thoughtworks.go.domain.Stages;
 import com.thoughtworks.go.domain.materials.Modification;
@@ -54,7 +53,7 @@ public class LocalDependencyMaterialSourceDao implements DependencyMaterialSourc
     }
 
     @Override
-    public List<Modification> getPassedStagesAfter(final String lastRevision, DependencyMaterial material, Pagination pagination) {
+    public List<Modification> getPassedStagesAfter(final String lastRevision, Pagination pagination) {
         StageIdentifier identifier = new StageIdentifier(lastRevision);
         List<StageAsDMR> passedStagesAfter = stageDao.getPassedStagesAfter(identifier, pagination.getPageSize(), pagination.getOffset());
         List<Modification> mods = new ArrayList<>();

@@ -21,7 +21,7 @@ import com.thoughtworks.go.config.materials.dependency.DependencyMaterial;
 import com.thoughtworks.go.domain.materials.*;
 import com.thoughtworks.go.domain.materials.dependency.DependencyMaterialRevision;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
@@ -29,6 +29,7 @@ import java.io.Serializable;
 import java.util.*;
 
 import static com.thoughtworks.go.util.ExceptionUtils.bombIfNull;
+import static java.util.stream.StreamSupport.stream;
 
 // Understands multiple materials each with their own revision
 public class MaterialRevisions implements Serializable, Iterable<MaterialRevision> {
@@ -107,7 +108,7 @@ public class MaterialRevisions implements Serializable, Iterable<MaterialRevisio
                 return revision;
             }
         }
-        return revisions.isEmpty() ? new NullMaterialRevision() : revisions.get(0);
+        return revisions.isEmpty() ? new NullMaterialRevision() : revisions.getFirst();
     }
 
     @Override
@@ -208,15 +209,9 @@ public class MaterialRevisions implements Serializable, Iterable<MaterialRevisio
     }
 
     public boolean containsMyCheckin(Matcher matcher) {
-        for (MaterialRevision materialRevision : this) {
-            for (Modification modification : materialRevision.getModifications()) {
-                String fullComment = String.format("%s %s", modification.getUserName(), Optional.ofNullable(modification.getComment()).orElse(""));
-                if (matcher.matches(fullComment)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return stream(spliterator(), true)
+            .flatMap(r -> r.getModifications().stream())
+            .anyMatch(m -> matcher.matches(m.getUserName()) || matcher.matches(m.getComment()));
     }
 
     public boolean isSameAs(MaterialRevisions other) {
@@ -257,7 +252,7 @@ public class MaterialRevisions implements Serializable, Iterable<MaterialRevisio
         Map<CaseInsensitiveString, String> results = new HashMap<>();
         for (MaterialRevision mr : revisions) {
             CaseInsensitiveString materialName = mr.getMaterial().getName();
-            if (!CaseInsensitiveString.isBlank(materialName)) {
+            if (!CaseInsensitiveString.isEmpty(materialName)) {
                 results.put(materialName, getRevisionValueOf(mr.getRevision()));
             }
         }
@@ -265,8 +260,8 @@ public class MaterialRevisions implements Serializable, Iterable<MaterialRevisio
     }
 
     private String getRevisionValueOf(Revision revision) {
-        if (revision instanceof DependencyMaterialRevision) {
-            return ((DependencyMaterialRevision) revision).getPipelineLabel();
+        if (revision instanceof DependencyMaterialRevision dependencyMaterialRevision) {
+            return dependencyMaterialRevision.getPipelineLabel();
         }
         return revision.getRevision();
     }
@@ -275,8 +270,8 @@ public class MaterialRevisions implements Serializable, Iterable<MaterialRevisio
         List<DependencyMaterial> mats = new ArrayList<>();
         for (MaterialRevision materialRevision : this) {
             Material material = materialRevision.getMaterial();
-            if (material instanceof DependencyMaterial) {
-                mats.add((DependencyMaterial) material);
+            if (material instanceof DependencyMaterial dependencyMaterial) {
+                mats.add(dependencyMaterial);
             }
         }
         return mats;
@@ -349,7 +344,7 @@ public class MaterialRevisions implements Serializable, Iterable<MaterialRevisio
 
     public MaterialRevision findRevisionForPipelineUniqueFingerprint(String fingerprint) {
         return revisions.stream()
-            .filter(revision -> StringUtils.equals(revision.getMaterial().getPipelineUniqueFingerprint(), fingerprint))
+            .filter(revision -> Strings.CS.equals(revision.getMaterial().getPipelineUniqueFingerprint(), fingerprint))
             .findFirst()
             .orElse(null);
     }

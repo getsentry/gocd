@@ -15,11 +15,14 @@
  */
 package com.thoughtworks.go.domain.materials.packagematerial;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.materials.PackageMaterial;
 import com.thoughtworks.go.domain.MaterialInstance;
 import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.util.json.JsonHelper;
+
+import java.util.Objects;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 
 public class PackageMaterialInstance extends MaterialInstance {
 
@@ -32,8 +35,8 @@ public class PackageMaterialInstance extends MaterialInstance {
 
     @Override
     public Material toOldMaterial(String name, String folder, String password) {
-        PackageMaterial packageMaterial = JsonHelper.fromJson(configuration, PackageMaterial.class);
-        packageMaterial.setName(new CaseInsensitiveString(name));
+        PackageMaterial packageMaterial = JsonHelper.fromJsonExposeOnly(configuration, PackageMaterial.class);
+        packageMaterial.setName(cis(name));
         packageMaterial.setId(id);
         packageMaterial.setFingerprint(getFingerprint());
         return packageMaterial;
@@ -44,19 +47,9 @@ public class PackageMaterialInstance extends MaterialInstance {
         if (this == o) {
             return true;
         }
-        if (!(o instanceof PackageMaterialInstance that)) {
-            return false;
-        }
-        if (!super.equals(o)) {
-            return false;
-        }
-
-
-        if (configuration != null ? !configuration.equals(that.configuration) : that.configuration != null) {
-            return false;
-        }
-
-        return true;
+        return o instanceof PackageMaterialInstance that &&
+            super.equals(o) &&
+            Objects.equals(configuration, that.configuration);
     }
 
     @Override
@@ -67,10 +60,7 @@ public class PackageMaterialInstance extends MaterialInstance {
     }
 
     public boolean shouldUpgradeTo(PackageMaterialInstance materialInstance) {
-        if(configuration == null && materialInstance.configuration == null){
-            return false;
-        }
-        return configuration == null || !configuration.equals(materialInstance.configuration);
+        return (configuration != null || materialInstance.configuration != null) && !Objects.equals(configuration, materialInstance.configuration);
     }
 
     public void upgradeTo(PackageMaterialInstance newMaterialInstance) {

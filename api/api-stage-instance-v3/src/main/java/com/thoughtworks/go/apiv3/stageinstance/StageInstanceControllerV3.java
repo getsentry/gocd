@@ -18,7 +18,7 @@ package com.thoughtworks.go.apiv3.stageinstance;
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.api.util.HaltApiResponses;
 import com.thoughtworks.go.apiv3.stageinstance.representers.StageInstancesRepresenter;
@@ -34,6 +34,7 @@ import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
 import com.thoughtworks.go.server.service.result.HttpOperationResult;
 import com.thoughtworks.go.serverhealth.HealthStateScope;
 import com.thoughtworks.go.serverhealth.HealthStateType;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,14 +53,14 @@ import static spark.Spark.*;
 @Component
 public class StageInstanceControllerV3 extends ApiController implements SparkSpringController {
     private final static String JOB_NAMES_PROPERTY = "jobs";
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final StageService stageService;
     private final ScheduleService scheduleService;
 
     @Autowired
-    public StageInstanceControllerV3(ApiAuthenticationHelper apiAuthenticationHelper, StageService stageService, ScheduleService scheduleService) {
+    public StageInstanceControllerV3(ApiAuthorizationHelper apiAuthorizationHelper, StageService stageService, ScheduleService scheduleService) {
         super(ApiVersion.v3);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.stageService = stageService;
         this.scheduleService = scheduleService;
     }
@@ -70,16 +71,16 @@ public class StageInstanceControllerV3 extends ApiController implements SparkSpr
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("/*", mimeType, this::setContentType);
             before("/*", mimeType, this::verifyContentType);
 
-            before(Routes.Stage.TRIGGER_FAILED_JOBS_PATH, mimeType, apiAuthenticationHelper::checkPipelineGroupOperateOfPipelineOrGroupInURLUserAnd403);
-            before(Routes.Stage.TRIGGER_SELECTED_JOBS_PATH, mimeType, apiAuthenticationHelper::checkPipelineGroupOperateOfPipelineOrGroupInURLUserAnd403);
-            before(Routes.Stage.CANCEL_STAGE_PATH, mimeType, apiAuthenticationHelper::checkPipelineGroupOperateOfPipelineOrGroupInURLUserAnd403);
-            before(Routes.Stage.INSTANCE_V2, mimeType, apiAuthenticationHelper::checkPipelineViewPermissionsAnd403);
-            before(Routes.Stage.STAGE_HISTORY, mimeType, apiAuthenticationHelper::checkPipelineViewPermissionsAnd403);
+            before(Routes.Stage.TRIGGER_FAILED_JOBS_PATH, mimeType, apiAuthorizationHelper::checkPipelineGroupOperateViaNameParamsAnd403);
+            before(Routes.Stage.TRIGGER_SELECTED_JOBS_PATH, mimeType, apiAuthorizationHelper::checkPipelineGroupOperateViaNameParamsAnd403);
+            before(Routes.Stage.CANCEL_STAGE_PATH, mimeType, apiAuthorizationHelper::checkPipelineGroupOperateViaNameParamsAnd403);
+            before(Routes.Stage.INSTANCE_V2, mimeType, apiAuthorizationHelper::checkPipelineViewPermissionsAnd403);
+            before(Routes.Stage.STAGE_HISTORY, mimeType, apiAuthorizationHelper::checkPipelineViewPermissionsAnd403);
 
             post(Routes.Stage.TRIGGER_FAILED_JOBS_PATH, mimeType, this::rerunFailedJobs);
             post(Routes.Stage.TRIGGER_SELECTED_JOBS_PATH, mimeType, this::rerunSelectedJobs);
@@ -138,7 +139,7 @@ public class StageInstanceControllerV3 extends ApiController implements SparkSpr
         }
 
         HttpLocalizedOperationResult localizedOperationResult = new HttpLocalizedOperationResult();
-        scheduleService.cancelAndTriggerRelevantStages(optionalStage.get().getId(), currentUsername(), localizedOperationResult);
+        scheduleService.cancelAndTriggerRelevantStages(optionalStage.orElseThrow().getId(), currentUsername(), localizedOperationResult);
         return renderHTTPOperationResult(localizedOperationResult, req, res);
     }
 
@@ -166,8 +167,8 @@ public class StageInstanceControllerV3 extends ApiController implements SparkSpr
     public String history(Request request, Response response) throws IOException {
         String pipelineName = request.params("pipeline_name");
         String stageName = request.params("stage_name");
-        Long after = getCursor(request, "after");
-        Long before = getCursor(request, "before");
+        long after = getCursor(request, "after");
+        long before = getCursor(request, "before");
         int pageSize = getPageSize(request);
 
         StageInstanceModels stageInstanceModels = stageService.findStageHistoryViaCursor(currentUsername(), pipelineName, stageName, after, before, pageSize);
@@ -198,7 +199,7 @@ public class StageInstanceControllerV3 extends ApiController implements SparkSpr
             return Optional.empty();
         }
 
-        return Optional.ofNullable(stage);
+        return Optional.of(stage);
     }
 
     private void haltIfRequestBodyDoesNotContainPropertyJobs(Request req) {

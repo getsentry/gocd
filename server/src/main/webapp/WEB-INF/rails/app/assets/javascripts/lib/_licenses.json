@@ -1,0 +1,199 @@
+{
+  "ansi_up": {
+    "moduleName": "ansi_up",
+    "moduleVersion": "6.1.0-gocd",
+    "moduleUrls": [
+      "https://github.com/gocd-contrib/ansi_up"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "MIT",
+        "moduleLicenseUrl": "https://spdx.org/licenses/MIT.html"
+      }
+    ]
+  },
+  "bootstrap-dropdown": {
+    "moduleName": "bootstrap-dropdown",
+    "moduleVersion": "2.3.2",
+    "moduleUrls": [
+      "https://github.com/twbs/bootstrap",
+      "https://getbootstrap.com/2.3.2/"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "Apache-2.0",
+        "moduleLicenseUrl": "https://spdx.org/licenses/Apache-2.0.html"
+      }
+    ]
+  },
+  "component-emitter": {
+    "moduleName": "component-emitter",
+    "moduleVersion": "1.3.0",
+    "moduleUrls": [
+      "https://github.com/sindresorhus/component-emitter"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "MIT",
+        "moduleLicenseUrl": "https://spdx.org/licenses/MIT.html"
+      }
+    ]
+  },
+  "crel": {
+    "moduleName": "crel",
+    "moduleVersion": "4.2.1",
+    "moduleUrls": [
+      "https://github.com/KoryNunn/crel"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "MIT",
+        "moduleLicenseUrl": "https://spdx.org/licenses/MIT.html"
+      }
+    ]
+  },
+  "d3": {
+    "moduleName": "d3",
+    "moduleVersion": "3.5.17",
+    "moduleUrls": [
+      "https://github.com/d3/d3"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "BSD-3-Clause",
+        "moduleLicenseUrl": "https://spdx.org/licenses/BSD-3-Clause.html"
+      }
+    ]
+  },
+  "jquery": {
+    "moduleName": "jquery",
+    "moduleVersion": "3.7.1",
+    "moduleUrls": [
+      "https://github.com/jquery/jquery"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "MIT",
+        "moduleLicenseUrl": "https://spdx.org/licenses/MIT.html"
+      }
+    ]
+  },
+  "jquery-ui": {
+    "moduleName": "jquery-ui",
+    "moduleVersion": "1.14.2",
+    "moduleUrls": [
+      "https://github.com/jquery/jquery-ui"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "MIT",
+        "moduleLicenseUrl": "https://spdx.org/licenses/MIT.html"
+      }
+    ]
+  },
+  "lodash": {
+    "moduleName": "lodash",
+    "moduleVersion": "4.18.1",
+    "moduleUrls": [
+      "https://github.com/lodash/lodash"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "MIT",
+        "moduleLicenseUrl": "https://spdx.org/licenses/MIT.html"
+      }
+    ]
+  },
+  "momentjs": {
+    "moduleName": "momentjs",
+    "moduleVersion": "2.30.1",
+    "moduleUrls": [
+      "https://github.com/moment/moment"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "MIT",
+        "moduleLicenseUrl": "https://spdx.org/licenses/MIT.html"
+      }
+    ]
+  },
+  "moment-duration-format": {
+    "moduleName": "moment-duration-format",
+    "moduleVersion": "2.3.2",
+    "moduleUrls": [
+      "https://github.com/jsmreese/moment-duration-format"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "MIT",
+        "moduleLicenseUrl": "https://spdx.org/licenses/MIT.html"
+      }
+    ]
+  },
+  "often": {
+    "moduleName": "often",
+    "moduleVersion": "0.3.2",
+    "moduleUrls": [
+      "https://github.com/ryanve/often"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "MIT",
+        "moduleLicenseUrl": "https://spdx.org/licenses/MIT.html"
+      }
+    ]
+  },
+  "pako-inflate": {
+    "moduleName": "pako-inflate",
+    "moduleVersion": "1.0.11",
+    "moduleUrls": [
+      "https://github.com/nodeca/pako"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "MIT",
+        "moduleLicenseUrl": "https://spdx.org/licenses/MIT.html"
+      }
+    ]
+  },
+  "trimpath-template": {
+    "moduleName": "trimpath-template",
+    "moduleVersion": "1.0.38",
+    "moduleUrls": [
+      "https://code.google.com/archive/p/trimpath/downloads"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "Apache-2.0",
+        "moduleLicenseUrl": "https://spdx.org/licenses/Apache-2.0.html"
+      }
+    ]
+  },
+  "nanoajax": {
+    "moduleName": "nanoajax",
+    "moduleVersion": "0.4.3",
+    "moduleUrls": [
+      "https://github.com/yanatan16/nanoajax"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "MIT",
+        "moduleLicenseUrl": "https://spdx.org/licenses/MIT.html"
+      }
+    ]
+  },
+  "glide.js": {
+    "moduleName": "glide.js",
+    "moduleVersion": "3.7.1",
+    "moduleUrls": [
+      "https://github.com/glidejs/glide",
+      "https://glidejs.com/"
+    ],
+    "moduleLicenses": [
+      {
+        "moduleLicense": "MIT",
+        "moduleLicenseUrl": "https://spdx.org/licenses/MIT.html"
+      }
+    ]
+  }
+}

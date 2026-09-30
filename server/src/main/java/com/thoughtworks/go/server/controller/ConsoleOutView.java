@@ -21,13 +21,16 @@ import org.springframework.web.servlet.View;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.Charset;
 import java.nio.file.NoSuchFileException;
 import java.util.Map;
 
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+
 public class ConsoleOutView implements View {
-    private ConsoleConsumer consumer;
+    private final ConsoleConsumer consumer;
     private final Charset charset;
 
     public ConsoleOutView(ConsoleConsumer consumer, Charset charset) {
@@ -41,14 +44,14 @@ public class ConsoleOutView implements View {
     }
 
     @Override
-    public void render(Map model, HttpServletRequest request, HttpServletResponse response) throws Exception {
+    public void render(Map<String, ?> model, HttpServletRequest request, HttpServletResponse response) throws IOException {
         response.setContentType(getContentType());
         response.setCharacterEncoding(charset.name());
         try (final PrintWriter writer = response.getWriter()) {
             try {
                 consumer.stream(line -> writer.write(line + "\n"));
             } catch (FileNotFoundException | NoSuchFileException e) {
-                response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                response.setStatus(HTTP_NOT_FOUND);
             }
         } finally {
             consumer.close();

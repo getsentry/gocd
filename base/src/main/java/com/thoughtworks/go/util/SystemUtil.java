@@ -84,17 +84,13 @@ public class SystemUtil {
                 isLocal = isLocal || address.isLoopbackAddress();
             }
             return isLocal || isLocalhostWithNonLoopbackIpAddress(ipAddress);
-        } catch (Exception e) {
+        } catch (UnknownHostException e) {
             throw new RuntimeException(e);
         }
     }
 
     static boolean isLocalhost(String hostname, String ipAddress) {
-        try {
-            return isLocalhostWithLoopbackIpAddress(hostname, ipAddress) || isLocalhostWithNonLoopbackIpAddress(ipAddress);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        return isLocalhostWithLoopbackIpAddress(hostname, ipAddress) || isLocalhostWithNonLoopbackIpAddress(ipAddress);
     }
 
     public static boolean isLocalhost(String ipAddress) {
@@ -133,8 +129,9 @@ public class SystemUtil {
         return reachable(null, port);
     }
 
+    @SuppressWarnings("try")
     public static boolean reachable(String name, int port) {
-        try(Socket ignored = new Socket(InetAddress.getByName(name), port)) {
+        try (Socket ignored = new Socket(InetAddress.getByName(name), port)) {
             return true;
         } catch (Exception e) {
             return false;
@@ -163,12 +160,8 @@ public class SystemUtil {
 
     public static String getClientIp(String serviceUrl) {
         try {
-            URL url = new URL(serviceUrl);
-            int port = url.getPort();
-            if (port == -1) {
-                port = url.getDefaultPort();
-            }
-            try (Socket socket = new Socket(url.getHost(), port)) {
+            URL url = URI.create(serviceUrl).toURL();
+            try (Socket socket = new Socket(url.getHost(), url.getPort() == -1 ? url.getDefaultPort() : url.getPort())) {
                 return socket.getLocalAddress().getHostAddress();
             }
         } catch (Exception e) {

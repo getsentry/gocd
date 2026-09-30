@@ -54,61 +54,57 @@ public class StageOrderTest {
     @Autowired private MaterialRepository materialRepository;
     @Autowired private TransactionTemplate transactionTemplate;
 
-    private PipelineWithTwoStages preCondition;
-    private static GoConfigFileHelper configHelper = new GoConfigFileHelper();
+    private PipelineWithTwoStages pipelineFixture;
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
 
     @BeforeEach
     public void setUp(@TempDir Path tempDir) throws Exception {
-        preCondition = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
-        configHelper.onSetUp();
         configHelper.usingCruiseConfigDao(goConfigDao);
-
-        dbHelper.onSetUp();
-        preCondition.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
+        pipelineFixture = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
+        pipelineFixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
     }
 
     @AfterEach
     public void teardown() throws Exception {
-        dbHelper.onTearDown();
-        preCondition.onTearDown();
+        pipelineFixture.onTearDown();
     }
 
     @Test
     public void shouldSetOrderTo1ForUnScheduledFirstStage() {
-        pipelineService.save(preCondition.schedulePipeline());
-        Pipeline pipeline = pipelineService.mostRecentFullPipelineByName(preCondition.pipelineName);
-        assertThat(pipeline.getStages().first().getOrderId()).isEqualTo(1);
+        pipelineService.save(pipelineFixture.schedulePipeline());
+        Pipeline pipeline = pipelineService.mostRecentFullPipelineByName(pipelineFixture.pipelineName);
+        assertThat(pipeline.getStages().getFirst().getOrderId()).isEqualTo(1);
     }
 
     @Test
     public void shouldIncreaseOrderBy1ForUnScheduledNextStage() {
         schedulePipelineWithFirstStage();
 
-        Pipeline pipeline = pipelineService.mostRecentFullPipelineByName(preCondition.pipelineName);
+        Pipeline pipeline = pipelineService.mostRecentFullPipelineByName(pipelineFixture.pipelineName);
         dbHelper.passStage(pipeline.getFirstStage());
 
         scheduleService.automaticallyTriggerRelevantStagesFollowingCompletionOf(pipeline.getFirstStage());
 
-        Pipeline mostRecent = pipelineService.mostRecentFullPipelineByName(preCondition.pipelineName);
-        assertThat(mostRecent.getStages().byName(preCondition.ftStage).getOrderId()).isEqualTo(1001);
+        Pipeline mostRecent = pipelineService.mostRecentFullPipelineByName(pipelineFixture.pipelineName);
+        assertThat(mostRecent.getStages().byName(pipelineFixture.ftStage).getOrderId()).isEqualTo(1001);
     }
 
     @Test
     public void shouldKeepOrderForScheduledStage() {
         schedulePipelineWithFirstStage();
 
-        Pipeline pipeline = pipelineService.mostRecentFullPipelineByName(preCondition.pipelineName);
+        Pipeline pipeline = pipelineService.mostRecentFullPipelineByName(pipelineFixture.pipelineName);
         dbHelper.passStage(pipeline.getFirstStage());
 
-        Pipeline mostRecent = pipelineService.mostRecentFullPipelineByName(preCondition.pipelineName);
-        scheduleService.rerunStage(mostRecent, preCondition.devStage(), "anyone");
+        Pipeline mostRecent = pipelineService.mostRecentFullPipelineByName(pipelineFixture.pipelineName);
+        scheduleService.rerunStage(mostRecent, pipelineFixture.devStage(), "anyone");
 
-        mostRecent = pipelineService.mostRecentFullPipelineByName(preCondition.pipelineName);
+        mostRecent = pipelineService.mostRecentFullPipelineByName(pipelineFixture.pipelineName);
         assertThat(mostRecent.getFirstStage().getOrderId()).isEqualTo(1000);
     }
 
     private void schedulePipelineWithFirstStage() {
-        Pipeline pipeline = preCondition.schedulePipeline();
+        Pipeline pipeline = pipelineFixture.schedulePipeline();
         pipelineDao.save(pipeline);
         pipeline.getFirstStage().setOrderId(1000);
         stageDao.saveWithJobs(pipeline, pipeline.getFirstStage());

@@ -20,11 +20,9 @@ import com.thoughtworks.go.domain.JobInstance;
 import com.thoughtworks.go.domain.JobResult;
 import com.thoughtworks.go.domain.JobState;
 import com.thoughtworks.go.domain.NullAgent;
-import com.thoughtworks.go.dto.DurationBean;
 import com.thoughtworks.go.server.web.JsonView;
-import com.thoughtworks.go.util.TimeConverter;
-import org.joda.time.DateTime;
 
+import java.time.Duration;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -32,13 +30,16 @@ import java.util.Map;
 import static com.thoughtworks.go.domain.JobState.*;
 import static java.lang.String.valueOf;
 
-
 public class JobStatusJsonPresentationModel {
-    private Agent agent;
+    private final Agent agent;
     private final JobInstance instance;
-    private DurationBean durationBean;
+    private final Duration lastCompletedDuration;
 
-    public JobStatusJsonPresentationModel(JobInstance instance, Agent agent, DurationBean durationBean) {
+    public JobStatusJsonPresentationModel(JobInstance instance, Agent agent) {
+        this(instance, agent, Duration.ZERO);
+    }
+
+    public JobStatusJsonPresentationModel(JobInstance instance, Agent agent, Duration lastCompletedDuration) {
         this.instance = instance;
 
         if (null == instance.getAgentUuid()) {
@@ -50,11 +51,11 @@ public class JobStatusJsonPresentationModel {
         }
 
         this.agent = agent;
-        this.durationBean = durationBean;
+        this.lastCompletedDuration = lastCompletedDuration;
     }
 
     public JobStatusJsonPresentationModel(JobInstance instance) {
-        this(instance, null, new DurationBean(instance.getId()));
+        this(instance, null);
     }
 
     public Map<String, Object> toJsonHash() {
@@ -69,8 +70,8 @@ public class JobStatusJsonPresentationModel {
         jsonParams.put("build_completing_date", getPreciseDateFor(Completing));
         jsonParams.put("build_completed_date", getPreciseDateFor(Completed));
         jsonParams.put("current_status", instance.displayStatusWithResult());
-        jsonParams.put("current_build_duration", instance.getCurrentBuildDuration());
-        jsonParams.put("last_build_duration", Long.toString(this.durationBean.getDuration()));
+        jsonParams.put("current_build_duration", String.valueOf(instance.getElapsedTime().toSeconds()));
+        jsonParams.put("last_build_duration", String.valueOf(lastCompletedDuration.toSeconds()));
         jsonParams.put("id", Long.toString(getBuildInstanceId()));
         jsonParams.put("is_completed", valueOf(instance.isCompleted()));
         jsonParams.put("name", getName());
@@ -98,18 +99,10 @@ public class JobStatusJsonPresentationModel {
         return this.instance.getResult();
     }
 
-    public String getCurrentStatus() {
-        return instance.currentStatus().toString();
-    }
-
     public String getStatus() {
-        JobState currentstatus = instance.currentStatus();
-        return (currentstatus == JobState.Scheduled || currentstatus == JobState.Waiting)
-                ? getResult().toString() : currentstatus.toString().toLowerCase();
-    }
-
-    public String getBuildInstanceCompletedTimestamp() {
-        return TimeConverter.getHumanReadableDate(new DateTime(instance.getStartedDateFor(JobState.Completed)));
+        JobState currentStatus = instance.currentStatus();
+        return currentStatus == JobState.Scheduled || currentStatus == JobState.Waiting
+                ? getResult().toString() : currentStatus.toString().toLowerCase();
     }
 
     public long getBuildInstanceId() {

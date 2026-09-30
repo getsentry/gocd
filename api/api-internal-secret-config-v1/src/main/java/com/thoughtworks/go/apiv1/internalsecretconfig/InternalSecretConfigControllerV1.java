@@ -18,7 +18,7 @@ package com.thoughtworks.go.apiv1.internalsecretconfig;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv1.internalsecretconfig.models.SecretConfigsViewModel;
 import com.thoughtworks.go.apiv1.internalsecretconfig.representers.SecretConfigsViewModelRepresenter;
 import com.thoughtworks.go.config.PipelineConfigs;
@@ -32,6 +32,7 @@ import com.thoughtworks.go.server.service.PipelineConfigService;
 import com.thoughtworks.go.server.service.SecretConfigService;
 import com.thoughtworks.go.server.service.materials.PackageRepositoryService;
 import com.thoughtworks.go.server.service.materials.PluggableScmService;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,6 +40,7 @@ import org.springframework.stereotype.Component;
 import spark.Request;
 import spark.Response;
 
+import java.io.IOException;
 import java.util.List;
 
 import static com.thoughtworks.go.util.CachedDigestUtils.sha512_256Hex;
@@ -47,7 +49,7 @@ import static spark.Spark.*;
 
 @Component
 public class InternalSecretConfigControllerV1 extends ApiController implements SparkSpringController {
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private SecretConfigService secretConfigService;
     private final PipelineConfigService pipelineConfigService;
     private final EnvironmentConfigService environmentConfigService;
@@ -56,12 +58,12 @@ public class InternalSecretConfigControllerV1 extends ApiController implements S
     private final ClusterProfilesService clusterProfilesService;
 
     @Autowired
-    public InternalSecretConfigControllerV1(ApiAuthenticationHelper apiAuthenticationHelper, SecretConfigService secretConfigService,
+    public InternalSecretConfigControllerV1(ApiAuthorizationHelper apiAuthorizationHelper, SecretConfigService secretConfigService,
                                             PipelineConfigService pipelineConfigService, EnvironmentConfigService environmentConfigService,
                                             PluggableScmService pluggableScmService, PackageRepositoryService packageRepositoryService,
                                             ClusterProfilesService clusterProfilesService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.secretConfigService = secretConfigService;
         this.pipelineConfigService = pipelineConfigService;
         this.environmentConfigService = environmentConfigService;
@@ -76,18 +78,18 @@ public class InternalSecretConfigControllerV1 extends ApiController implements S
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
 
-            before("", mimeType, this.apiAuthenticationHelper::checkAdminUserAnd403);
+            before("", mimeType, this.apiAuthorizationHelper::checkAdminUserAnd403);
 
             get("", mimeType, this::index);
         });
     }
 
-    public String index(Request request, Response response) throws Exception {
+    public String index(Request request, Response response) throws IOException {
         SecretConfigs secretConfigs = secretConfigService.getAllSecretConfigs();
         SecretConfigsViewModel configsViewModel = new SecretConfigsViewModel().setSecretConfigs(secretConfigs);
 

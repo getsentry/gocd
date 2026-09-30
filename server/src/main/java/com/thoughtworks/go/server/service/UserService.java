@@ -19,12 +19,9 @@ import com.thoughtworks.go.config.*;
 import com.thoughtworks.go.config.exceptions.EntityType;
 import com.thoughtworks.go.config.exceptions.RecordNotFoundException;
 import com.thoughtworks.go.config.exceptions.UnprocessableEntityException;
-import com.thoughtworks.go.domain.Users;
 import com.thoughtworks.go.domain.*;
+import com.thoughtworks.go.domain.Users;
 import com.thoughtworks.go.domain.exception.ValidationException;
-import com.thoughtworks.go.presentation.TriStateSelection;
-import com.thoughtworks.go.presentation.UserModel;
-import com.thoughtworks.go.presentation.UserSearchModel;
 import com.thoughtworks.go.server.dao.UserDao;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.exceptions.UserEnabledException;
@@ -33,11 +30,11 @@ import com.thoughtworks.go.server.service.result.BulkUpdateUsersOperationResult;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
 import com.thoughtworks.go.server.service.result.LocalizedOperationResult;
 import com.thoughtworks.go.server.transaction.TransactionTemplate;
-import com.thoughtworks.go.util.SystemEnvironment;
 import com.thoughtworks.go.util.TriState;
-import com.thoughtworks.go.util.comparator.AlphaAsciiCollectionComparator;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,14 +42,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallbackWithoutResult;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.serverhealth.HealthStateScope.GLOBAL;
 import static com.thoughtworks.go.serverhealth.HealthStateType.general;
-import static com.thoughtworks.go.util.SystemEnvironment.ALLOW_EVERYONE_TO_VIEW_OPERATE_GROUPS_WITH_NO_GROUP_AUTHORIZATION_SETUP;
-import static org.apache.commons.lang3.StringUtils.isNotBlank;
-import static org.apache.commons.lang3.StringUtils.join;
+import static java.lang.String.join;
 
 @Service
 public class UserService {
@@ -61,7 +60,6 @@ public class UserService {
     private final SecurityService securityService;
     private final GoConfigService goConfigService;
     private final TransactionTemplate transactionTemplate;
-    private final SystemEnvironment systemEnvironment;
 
     private final DelegatingValidationContext validationContext = new DelegatingValidationContext(null) {
         @Override
@@ -77,13 +75,11 @@ public class UserService {
     public UserService(UserDao userDao,
                        SecurityService securityService,
                        GoConfigService goConfigService,
-                       TransactionTemplate transactionTemplate,
-                       SystemEnvironment systemEnvironment) {
+                       TransactionTemplate transactionTemplate) {
         this.userDao = userDao;
         this.securityService = securityService;
         this.goConfigService = goConfigService;
         this.transactionTemplate = transactionTemplate;
-        this.systemEnvironment = systemEnvironment;
     }
 
     public void disable(final List<String> usersToBeDisabled, LocalizedOperationResult result) {
@@ -101,46 +97,28 @@ public class UserService {
         }
     }
 
-    public boolean canUserTurnOffAutoLogin() {
-        return !willDisableAllAdmins(new ArrayList<>());
-    }
-
     private boolean willDisableAllAdmins(List<String> usersToBeDisabled) {
         List<String> enabledUserNames = toUserNames(userDao.enabledUsers());
         enabledUserNames.removeAll(usersToBeDisabled);
         return !userNameListContainsAdmin(enabledUserNames);
     }
 
-    private List<String> toUserNames(List<User> enabledUsers) {
-        List<String> enabledUserNames = new ArrayList<>();
-        for (User enabledUser : enabledUsers) {
-            enabledUserNames.add(enabledUser.getName());
-        }
-        return enabledUserNames;
+    private List<String> toUserNames(List<User> users) {
+        return users.stream().map(User::getName).collect(Collectors.toList());
     }
 
     private boolean userNameListContainsAdmin(List<String> enabledUserNames) {
-        for (String enabledUserName : enabledUserNames) {
-            if (securityService.isUserAdmin(new Username(new CaseInsensitiveString(enabledUserName)))) {
-                return true;
-            }
-        }
-        return false;
+        return enabledUserNames.stream().anyMatch(name -> securityService.isUserAdmin(new Username(cis(name))));
     }
 
     public User save(final User user,
                      TriState enabled,
                      TriState emailMe,
-                     String email,
-                     String checkinAliases,
+                     @Nullable String email,
+                     @Nullable String checkinAliases,
                      LocalizedOperationResult result) {
-        if (enabled.isTrue()) {
-            user.enable();
-        }
 
-        if (enabled.isFalse()) {
-            user.disable();
-        }
+        enabled.ifPresent(user::setEnabled);
 
         if (email != null) {
             user.setEmail(email);
@@ -150,13 +128,7 @@ public class UserService {
             user.setMatcher(checkinAliases);
         }
 
-        if (emailMe.isTrue()) {
-            user.setEmailMe(true);
-        }
-
-        if (emailMe.isFalse()) {
-            user.setEmailMe(false);
-        }
+        emailMe.ifPresent(user::setEmailMe);
 
         if (validate(result, user)) {
             return user;
@@ -177,93 +149,24 @@ public class UserService {
         }
     }
 
-    public long enabledUserCount() {
-        return userDao.enabledUserCount();
-    }
-
-    public long disabledUserCount() {
-        return allUsersForDisplay().size() - enabledUserCount();
-    }
-
-    public void modifyRolesAndUserAdminPrivileges(final List<String> users,
-                                                  final TriStateSelection adminPrivilege,
-                                                  final List<TriStateSelection> roleSelections,
-                                                  LocalizedOperationResult result) {
-        Users allUsers = userDao.allUsers();
-        for (String user : users) {
-            if (!allUsers.containsUserNamed(user)) {
-                result.badRequest("User '" + user + "' does not exist in the database.");
-                return;
-            }
-        }
-        try {
-            final GoConfigDao.CompositeConfigCommand command = new GoConfigDao.CompositeConfigCommand();
-            command.addCommand(goConfigService.modifyRolesCommand(users, roleSelections));
-            command.addCommand(goConfigService.modifyAdminPrivilegesCommand(users, adminPrivilege));
-            goConfigService.updateConfig(command);
-        } catch (Exception e) {
-            result.badRequest("Failed to add role. Reason - '" + e.getMessage() + "'");
-        }
-    }
-
-    private Set<String> allAdmins() {
-        return allUsersForDisplay().stream().filter(UserModel::isAdmin).map(userModel -> userModel.getUser().getName()).collect(Collectors.toSet());
-    }
-
     public Set<String> allUsernames() {
-        return allUsersForDisplay().stream().map(userModel -> userModel.getUser().getName()).collect(Collectors.toSet());
+        return allUsers().stream().map(User::getName).collect(Collectors.toSet());
     }
 
-    public Collection<String> allRoleNames(CruiseConfig cruiseConfig) {
+    public List<User> allUsers() {
+        return userDao.allUsers();
+    }
+
+    public Collection<String> allRoleNames() {
         List<String> roles = new ArrayList<>();
-        for (Role role : allRoles(cruiseConfig)) {
+        for (Role role : allRoles()) {
             roles.add(CaseInsensitiveString.str(role.getName()));
         }
         return roles;
     }
 
-    public Collection<String> allRoleNames() {
-        return allRoleNames(goConfigService.cruiseConfig());
-    }
-
-    public Collection<Role> allRoles(CruiseConfig cruiseConfig) {
-        return cruiseConfig.server().security().getRoles();
-    }
-
-    public Set<String> usersThatCanOperateOnStage(CruiseConfig cruiseConfig, PipelineConfig pipelineConfig) {
-        SortedSet<String> users = new TreeSet<>();
-        PipelineConfigs group = cruiseConfig.findGroupOfPipeline(pipelineConfig);
-        if (group.hasAuthorizationDefined()) {
-            if (group.hasOperationPermissionDefined()) {
-                users.addAll(group.getOperateUserNames());
-                List<String> roles = group.getOperateRoleNames();
-                for (Role role : cruiseConfig.server().security().getRoles()) {
-                    if (roles.contains(CaseInsensitiveString.str(role.getName()))) {
-                        users.addAll(role.usersOfRole());
-                    }
-                }
-            }
-        } else {
-            boolean everyoneIsAllowedToOperateGroupsWithNoAuth = systemEnvironment.get(ALLOW_EVERYONE_TO_VIEW_OPERATE_GROUPS_WITH_NO_GROUP_AUTHORIZATION_SETUP);
-            Set<String> operatorsWhenNoAuthIsDefined = everyoneIsAllowedToOperateGroupsWithNoAuth ? allUsernames() : allAdmins();
-            users.addAll(operatorsWhenNoAuthIsDefined);
-        }
-        return users;
-    }
-
-    public Set<String> rolesThatCanOperateOnStage(CruiseConfig cruiseConfig, PipelineConfig pipelineConfig) {
-        PipelineConfigs group = cruiseConfig.findGroupOfPipeline(pipelineConfig);
-        SortedSet<String> roles = new TreeSet<>();
-        if (group.hasAuthorizationDefined()) {
-            if (group.hasOperationPermissionDefined()) {
-                roles.addAll(group.getOperateRoleNames());
-            }
-        } else {
-            boolean everyoneIsAllowedToOperateGroupsWithNoAuth = systemEnvironment.get(ALLOW_EVERYONE_TO_VIEW_OPERATE_GROUPS_WITH_NO_GROUP_AUTHORIZATION_SETUP);
-            Collection<String> operatorRolesWhenNoAuthIsDefined = everyoneIsAllowedToOperateGroupsWithNoAuth ? allRoleNames(cruiseConfig) : Collections.emptyList();
-            roles.addAll(operatorRolesWhenNoAuthIsDefined);
-        }
-        return roles;
+    private Collection<Role> allRoles() {
+        return goConfigService.cruiseConfig().server().security().getRoles();
     }
 
     public User load(long id) {
@@ -305,7 +208,7 @@ public class UserService {
 
                 if (result.isSuccessful()) {
                     String enabledOrDisabled = shouldEnable ? "enabled" : "disabled";
-                    result.setMessage(String.format("Users '%s' were %s successfully.", join(userNames, ", "), enabledOrDisabled));
+                    result.setMessage(String.format("Users '%s' were %s successfully.", join(", ", userNames), enabledOrDisabled));
                 }
             }
         }
@@ -358,74 +261,6 @@ public class UserService {
         return true;
     }
 
-    public enum SortableColumn {
-        EMAIL {
-            @Override
-            protected String get(UserModel model) {
-                return model.getUser().getEmail();
-            }
-
-        },
-        USERNAME {
-            @Override
-            protected String get(UserModel model) {
-                return model.getUser().getName();
-            }
-        },
-        ROLES {
-            @Override
-            public Comparator<UserModel> sorter() {
-                return (one, other) -> STRING_COMPARATOR.compare(one.getRoles(), other.getRoles());
-            }
-        },
-        MATCHERS {
-            @Override
-            public Comparator<UserModel> sorter() {
-                return (one, other) -> STRING_COMPARATOR.compare(one.getUser().getMatchers(), other.getUser().getMatchers());
-            }
-        },
-        IS_ADMIN {
-            @Override
-            public Comparator<UserModel> sorter() {
-                return (one, other) -> Boolean.compare(one.isAdmin(), other.isAdmin());
-            }
-        },
-        ENABLED {
-            @Override
-            public Comparator<UserModel> sorter() {
-                return (one, other) -> Boolean.compare(one.isEnabled(), other.isEnabled());
-            }
-        };
-
-        private static final AlphaAsciiCollectionComparator<String> STRING_COMPARATOR = new AlphaAsciiCollectionComparator<>();
-
-
-        public Comparator<UserModel> sorter() {
-            return Comparator.comparing(this::get);
-        }
-
-        protected String get(UserModel model) {
-            return null;
-        }
-    }
-
-    public enum SortDirection {
-        ASC {
-            @Override
-            public Comparator<UserModel> forColumn(final SortableColumn column) {
-                return column.sorter();
-            }
-        },
-        DESC {
-            @Override
-            public Comparator<UserModel> forColumn(final SortableColumn column) {
-                return (one, other) -> column.sorter().compare(other, one);
-            }
-        };
-
-        public abstract Comparator<UserModel> forColumn(SortableColumn column);
-    }
-
     public void addOrUpdateUser(User user, SecurityAuthConfig authConfig) {
         synchronized (enableUserMutex) {
             if (!user.isAnonymous()) {
@@ -458,28 +293,8 @@ public class UserService {
         }
     }
 
-    private boolean userExists(User user) {
-        User foundUser = userDao.findUser(user.getName());
-        return !(foundUser instanceof NullUser);
-    }
-
     public User findUserByName(String username) {
         return userDao.findUser(username);
-    }
-
-    //Delete when remove notification filter api v1
-    @Deprecated
-    public void oldAddNotificationFilter(final long userId, final NotificationFilter filter) {
-        transactionTemplate.execute(new TransactionCallbackWithoutResult() {
-            @Override
-            protected void doInTransactionWithoutResult(TransactionStatus status) {
-                User user = userDao.load(userId);
-                user.addNotificationFilter(filter);
-                synchronized (enableUserMutex) {
-                    userDao.saveOrUpdate(user);
-                }
-            }
-        });
     }
 
     public void addNotificationFilter(final long userId, final NotificationFilter filter) {
@@ -534,99 +349,17 @@ public class UserService {
 
     }
 
-    public Users findValidSubscribers(final StageConfigIdentifier identifier) {
+    public Users findValidNotificationSubscribers(StageEvent event, StageConfigIdentifier identifier) {
         Users users = userDao.findNotificationSubscribingUsers();
-        return users.filter(user -> user.hasSubscribedFor(identifier.getPipelineName(), identifier.getStageName()) &&
+        return users.filter(user -> user.hasSubscribedFor(event, identifier) &&
             securityService.hasViewPermissionForPipeline(user.getUsername(), identifier.getPipelineName()));
     }
 
-    public void validate(User user) throws ValidationException {
+    @VisibleForTesting
+    void validate(User user) throws ValidationException {
         user.validateLoginName();
         user.validateMatcher();
         user.validateEmail();
-    }
-
-    public List<UserModel> allUsersForDisplay(SortableColumn column, SortDirection direction) {
-        List<UserModel> userModels = allUsersForDisplay();
-        Comparator<UserModel> userModelComparator = direction.forColumn(column);
-
-        userModels.sort(userModelComparator);
-        return userModels;
-    }
-
-    private List<UserModel> allUsersForDisplay() {
-        Collection<User> users = allUsers();
-        List<UserModel> userModels = new ArrayList<>();
-        for (User user : users) {
-            String userName = user.getName();
-
-            List<String> roles = new ArrayList<>();
-            for (Role role : goConfigService.rolesForUser(new CaseInsensitiveString(userName))) {
-                roles.add(CaseInsensitiveString.str(role.getName()));
-            }
-
-            userModels.add(new UserModel(user, roles, securityService.isUserAdmin(new Username(new CaseInsensitiveString(userName)))));
-        }
-        return userModels;
-    }
-
-    public Collection<User> allUsers() {
-        return new HashSet<>(userDao.allUsers());
-    }
-
-    public void create(List<UserSearchModel> userSearchModels, HttpLocalizedOperationResult result) {
-        if (userSearchModels.isEmpty()) {
-            result.badRequest("No users selected.");
-            return;
-        }
-        synchronized (enableUserMutex) {
-            for (UserSearchModel userSearchModel : userSearchModels) {
-                User user = userSearchModel.getUser();
-
-                if (userExists(user)) {
-                    result.conflict(EntityType.User.alreadyExists(user.getName()));
-                    return;
-                }
-
-                if (user.isAnonymous()) {
-                    result.badRequest("Failed to add user. Username '" + user.getName() + "' is not permitted.");
-                    return;
-                }
-
-                if (validate(result, user)) {
-                    return;
-                }
-                userDao.saveOrUpdate(user);
-                result.setMessage("User '" + user.getName() + "' successfully added.");
-            }
-        }
-    }
-
-    public static class AdminAndRoleSelections {
-        private final TriStateSelection adminSelection;
-        private final List<TriStateSelection> roleSelections;
-
-        public AdminAndRoleSelections(TriStateSelection adminSelection, List<TriStateSelection> roleSelections) {
-            this.adminSelection = adminSelection;
-            this.roleSelections = roleSelections;
-        }
-
-        public TriStateSelection getAdminSelection() {
-            return adminSelection;
-        }
-
-        public List<TriStateSelection> getRoleSelections() {
-            return roleSelections;
-        }
-    }
-
-    public AdminAndRoleSelections getAdminAndRoleSelections(List<String> users) {
-        final SecurityConfig securityConfig = goConfigService.security();
-        Set<Role> roles = new HashSet<>(securityConfig.getRoles().getRoleConfigs());
-        final List<TriStateSelection> roleSelections = TriStateSelection.forRoles(roles, users);
-        final TriStateSelection adminSelection = TriStateSelection.forSystemAdmin(securityConfig.adminsConfig(), roles, new SecurityService.UserRoleMatcherImpl(securityConfig),
-            users);
-        return new AdminAndRoleSelections(adminSelection, roleSelections);
     }
 
     private boolean validate(LocalizedOperationResult result, User user) {
@@ -640,8 +373,8 @@ public class UserService {
     }
 
     private boolean hasUserChanged(User newUser, User originalUser) {
-        boolean hasEmailChanged = isNotBlank(newUser.getEmail()) && !StringUtils.equals(originalUser.getEmail(), newUser.getEmail());
-        boolean hasDisplayNameChanged = !StringUtils.equals(originalUser.getDisplayName(), newUser.getDisplayName());
+        boolean hasEmailChanged = newUser.getEmail() != null && !newUser.getEmail().isBlank() && !Strings.CS.equals(originalUser.getEmail(), newUser.getEmail());
+        boolean hasDisplayNameChanged = !Strings.CS.equals(originalUser.getDisplayName(), newUser.getDisplayName());
         if (hasEmailChanged) {
             LOGGER.debug("User [{}] has an email change. Updating the same in the DB.", originalUser.getName());
         }
@@ -650,4 +383,5 @@ public class UserService {
         }
         return hasEmailChanged || hasDisplayNameChanged;
     }
+
 }

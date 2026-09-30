@@ -18,16 +18,16 @@ package com.thoughtworks.go.config;
 import com.thoughtworks.go.config.elastic.ClusterProfiles;
 import com.thoughtworks.go.config.materials.MaterialConfigs;
 import com.thoughtworks.go.config.policy.PolicyAware;
-import com.thoughtworks.go.config.policy.PolicyValidationContext;
 import com.thoughtworks.go.config.remote.ConfigReposConfig;
 import com.thoughtworks.go.config.rules.RulesAware;
-import com.thoughtworks.go.config.rules.RulesValidationContext;
 import com.thoughtworks.go.domain.materials.MaterialConfig;
 import com.thoughtworks.go.domain.packagerepository.PackageRepository;
 import com.thoughtworks.go.domain.scm.SCM;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Understands providing right state required to validate a given config element
@@ -35,8 +35,9 @@ import java.util.Map;
 public class ConfigSaveValidationContext implements ValidationContext {
     private final Validatable immediateParent;
     private final ConfigSaveValidationContext parentContext;
-    private final Map<Class<?>, Object> objectOfType;
-    private Map<String, MaterialConfigs> fingerprintToMaterials = null;
+
+    private final Map<Class<?>, Object> objectOfType = new HashMap<>();
+    private final Map<String, MaterialConfigs> fingerprintToMaterials = new HashMap<>();
 
     public ConfigSaveValidationContext(Validatable immediateParent) {
         this(immediateParent, null);
@@ -45,7 +46,6 @@ public class ConfigSaveValidationContext implements ValidationContext {
     public ConfigSaveValidationContext(Validatable immediateParent, ConfigSaveValidationContext parentContext) {
         this.immediateParent = immediateParent;
         this.parentContext = parentContext;
-        objectOfType = new HashMap<>();
     }
 
     @Override
@@ -53,18 +53,9 @@ public class ConfigSaveValidationContext implements ValidationContext {
         if (this == o) {
             return true;
         }
-        if (!(o instanceof ConfigSaveValidationContext that)) {
-            return false;
-        }
-
-        if (immediateParent != null ? !immediateParent.equals(that.immediateParent) : that.immediateParent != null) {
-            return false;
-        }
-        if (parentContext != null ? !parentContext.equals(that.parentContext) : that.parentContext != null) {
-            return false;
-        }
-
-        return true;
+        return o instanceof ConfigSaveValidationContext that &&
+            Objects.equals(immediateParent, that.immediateParent) &&
+            Objects.equals(parentContext, that.parentContext);
     }
 
     @Override
@@ -132,7 +123,7 @@ public class ConfigSaveValidationContext implements ValidationContext {
 
         if (immediateParent == null) {
             return null;
-        } else if (immediateParent.getClass().equals(klass)) {
+        } else if (immediateParent.getClass() == klass) {
             return (T) immediateParent;
         } else {
             // added because of higher hierarchy of configuration types.
@@ -177,18 +168,13 @@ public class ConfigSaveValidationContext implements ValidationContext {
     }
 
     @Override
-    public boolean doesTemplateExist(CaseInsensitiveString template) {
-        return getCruiseConfig().getTemplates().hasTemplateNamed(template);
-    }
-
-    @Override
     public SCM findScmById(String scmID) {
         return getCruiseConfig().getSCMs().find(scmID);
     }
 
     @Override
     public PackageRepository findPackageById(String packageId) {
-        return getCruiseConfig().getPackageRepositories().findPackageRepositoryHaving(packageId);
+        return getCruiseConfig().getPackageRepositories().findByPackageId(packageId);
     }
 
     @Override
@@ -215,17 +201,12 @@ public class ConfigSaveValidationContext implements ValidationContext {
         return hasParentOfType(PipelineConfigs.class);
     }
 
-    @Override
-    public boolean isWithinEnvironment() {
-        return hasParentOfType(EnvironmentConfig.class);
-    }
-
     private <T> boolean hasParentOfType(Class<T> validatable) {
         return getFirstOfType(validatable) != null;
     }
 
     @Override
-    public PipelineConfigs getPipelineGroup() {
+    public @NotNull PipelineConfigs getPipelineGroup() {
         return loadFirstOfType(PipelineConfigs.class);
     }
 
@@ -272,34 +253,18 @@ public class ConfigSaveValidationContext implements ValidationContext {
 
     @Override
     public MaterialConfigs getAllMaterialsByFingerPrint(String fingerprint) {
-        if (fingerprintToMaterials == null || fingerprintToMaterials.isEmpty()) {
+        if (fingerprintToMaterials.isEmpty()) {
             primeForMaterialValidations();
         }
-        MaterialConfigs matchingMaterials = fingerprintToMaterials.get(fingerprint);
-        return matchingMaterials == null ? new MaterialConfigs() : matchingMaterials;
-    }
-
-    @Override
-    public Map<CaseInsensitiveString, Boolean> getPipelineToMaterialAutoUpdateMapByFingerprint(String fingerprint) {
-        Map<CaseInsensitiveString, Boolean> map = new HashMap<>();
-        getCruiseConfig().getAllPipelineConfigs().forEach(pipeline -> pipeline.materialConfigs().stream()
-                .filter(materialConfig -> materialConfig.getFingerprint().equals(fingerprint))
-                .findFirst()
-                .ifPresent(expectedMaterialConfig -> map.put(pipeline.name(), expectedMaterialConfig.isAutoUpdate())));
-        return map;
+        return Objects.requireNonNullElseGet(fingerprintToMaterials.get(fingerprint), MaterialConfigs::new);
     }
 
     private void primeForMaterialValidations() {
         CruiseConfig cruiseConfig = getCruiseConfig();
-        fingerprintToMaterials = new HashMap<>();
         for (PipelineConfig pipelineConfig : cruiseConfig.getAllPipelineConfigs()) {
             for (MaterialConfig material : pipelineConfig.materialConfigs()) {
                 String fingerprint = material.getFingerprint();
-                if (!fingerprintToMaterials.containsKey(fingerprint)) {
-                    fingerprintToMaterials.put(fingerprint, new MaterialConfigs());
-                }
-                MaterialConfigs materialsForFingerprint = fingerprintToMaterials.get(fingerprint);
-                materialsForFingerprint.add(material);
+                fingerprintToMaterials.computeIfAbsent(fingerprint, k -> new MaterialConfigs()).add(material);
             }
         }
     }

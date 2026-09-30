@@ -28,8 +28,8 @@ import java.io.IOException;
 
 /* Set a short long-lived session. */
 public abstract class AbstractSessionReduceIdleTimeoutFilter extends OncePerRequestFilter {
+    private static final Logger LOGGER = LoggerFactory.getLogger(AbstractSessionReduceIdleTimeoutFilter.class);
     private final int maxInactiveInterval;
-    private final Logger LOGGER = LoggerFactory.getLogger(getClass());
 
     protected AbstractSessionReduceIdleTimeoutFilter(int maxInactiveInterval) {
         this.maxInactiveInterval = maxInactiveInterval;
@@ -47,7 +47,9 @@ public abstract class AbstractSessionReduceIdleTimeoutFilter extends OncePerRequ
             boolean hasSessionNow = session != null;
 
             if (hadNoSessionBeforeStarting && hasSessionNow) {
-                LOGGER.debug("Setting max inactive interval for request: {} to {}.", request.getRequestURI(), maxInactiveInterval);
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.debug("Setting max inactive interval for request: {} to {}.", request.getRequestURI(), maxInactiveInterval);
+                }
                 session.setMaxInactiveInterval(maxInactiveInterval);
             }
         }

@@ -29,8 +29,6 @@ import java.util.Properties;
 import java.util.ServiceLoader;
 import java.util.function.Function;
 
-import static org.apache.commons.lang3.StringUtils.isBlank;
-
 @Slf4j
 public class ConnectionManager {
     @Getter(lazy = true)
@@ -55,25 +53,35 @@ public class ConnectionManager {
         this.decrypter = decrypter;
     }
 
-    public void backup(File targetDir) throws Exception {
+    public void backup(File targetDir) {
         getBackupProcessor().backup(targetDir, getDataSourceInstance(), getDbProperties());
     }
 
     private BasicDataSource createDataSource() {
+
         final DbProperties dbProperties = getDbProperties();
-        BasicDataSource basicDataSource = new BasicDataSource();
+        BasicDataSource basicDataSource = isDefaultH2Database(dbProperties)
+            ? DefaultH2DataSource.forBasicConnection(dbProperties)
+            : forGenericBasicConnection(dbProperties);
 
-        if (isBlank(dbProperties.url())) {
-            return DefaultH2DataSource.defaultH2DataSource(basicDataSource, dbProperties);
-        }
+        // Set pool behaviour
+        basicDataSource.setMaxIdle(dbProperties.maxIdle());
+        basicDataSource.setMaxTotal(dbProperties.maxTotal());
 
+        return basicDataSource;
+    }
+
+    private static boolean isDefaultH2Database(DbProperties dbProperties) {
+        return dbProperties.url().isBlank();
+    }
+
+    private static BasicDataSource forGenericBasicConnection(DbProperties dbProperties) {
+        BasicDataSource basicDataSource;
+        basicDataSource = new BasicDataSource();
         basicDataSource.setDriverClassName(dbProperties.driver());
         basicDataSource.setUrl(dbProperties.url());
         basicDataSource.setUsername(dbProperties.user());
         basicDataSource.setPassword(dbProperties.password());
-
-        basicDataSource.setMaxTotal(dbProperties.maxTotal());
-        basicDataSource.setMaxIdle(dbProperties.maxIdle());
         basicDataSource.setConnectionProperties(dbProperties.connectionPropertiesAsString());
         return basicDataSource;
     }
@@ -106,9 +114,10 @@ public class ConnectionManager {
         Properties propertiesFromConfigFile = new Properties();
         propertiesFromConfigFile.putAll(systemProperties);
 
-        if (dbConfigFileExists(systemProperties, configDir)) {
-            log.info("Loading database config from file {}", dbConfigFile(propertiesFromConfigFile, configDir));
-            try (FileInputStream is = new FileInputStream(dbConfigFile(propertiesFromConfigFile, configDir))) {
+        File configFile = dbConfigFile(propertiesFromConfigFile, configDir);
+        if (configFile != null && configFile.exists()) {
+            log.info("Loading database config from file {}", configFile);
+            try (FileInputStream is = new FileInputStream(configFile)) {
                 propertiesFromConfigFile.load(is);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
@@ -119,17 +128,8 @@ public class ConnectionManager {
         return new DbProperties().initializeFrom(propertiesFromConfigFile, decrypter);
     }
 
-    private static boolean dbConfigFileExists(Properties properties, File configDir) {
-        File file = dbConfigFile(properties, configDir);
-        if (file != null) {
-            return file.exists();
-        } else {
-            return false;
-        }
-    }
-
     private static File dbConfigFile(Properties properties, File configDir) {
-        if (isBlank(dbConfigFilePath(properties))) {
+        if (dbConfigFilePath(properties).isBlank()) {
             return null;
         }
         return new File(configDir, dbConfigFilePath(properties));

@@ -18,9 +18,11 @@ package com.thoughtworks.go.server.ui;
 import com.thoughtworks.go.config.Agent;
 import com.thoughtworks.go.domain.*;
 import com.thoughtworks.go.server.domain.JobDurationStrategy;
-import org.joda.time.Duration;
+import org.apache.commons.lang3.time.DurationFormatUtils;
 
+import java.time.Duration;
 import java.util.Comparator;
+import java.util.Objects;
 
 public class JobInstanceModel {
     private final JobInstance instance;
@@ -82,26 +84,27 @@ public class JobInstanceModel {
 
     public int getPercentComplete() {
         Duration eta = eta();
-        if (eta.getMillis() == 0) {
+        if (eta.isZero()) {
             return 0;
         }
-        if (eta.isShorterThan(getElapsedTime())) {
+        Duration elapsedTime = getElapsedTime();
+        if (eta.compareTo(elapsedTime) < 0) {
             return 100;
         }
-        return (int) ((getElapsedTime().getMillis() * 100) / eta.getMillis());
-    }
-
-    public boolean isInprogress() {
-        int complete = getPercentComplete();
-        return complete > 0 && complete < 100;
+        return (int) (elapsedTime.toMillis() * 100 / eta.toMillis());
     }
 
     private Duration eta() {
-        return new Duration(jobDurationStrategy.getExpectedDurationMillis(getIdentifier().getPipelineName(), getIdentifier().getStageName(), instance));
+        return jobDurationStrategy.getExpectedDuration(instance);
     }
 
     public Duration getElapsedTime() {
         return instance.getElapsedTime();
+    }
+
+    public String getElapsedTimeForDisplay() {
+        Duration elapsedTime = getElapsedTime();
+        return elapsedTime.isZero() ? "" : DurationFormatUtils.formatDurationWords(elapsedTime.toMillis(), true, true);
     }
 
     public boolean isCompleted() {
@@ -114,15 +117,18 @@ public class JobInstanceModel {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         JobInstanceModel that = (JobInstanceModel) o;
 
-        if (instance != null ? !instance.equals(that.instance) : that.instance != null) return false;
-        if (jobDurationStrategy != null ? !jobDurationStrategy.equals(that.jobDurationStrategy) : that.jobDurationStrategy != null)
-            return false;
-        return agentInfo != null ? agentInfo.equals(that.agentInfo) : that.agentInfo == null;
+        return Objects.equals(instance, that.instance) &&
+            Objects.equals(jobDurationStrategy, that.jobDurationStrategy) &&
+            Objects.equals(agentInfo, that.agentInfo);
     }
 
     @Override
@@ -181,15 +187,19 @@ public class JobInstanceModel {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
 
             AgentInfo agentInfo = (AgentInfo) o;
 
-            if (isAgentLive != agentInfo.isAgentLive) return false;
-            if (!hostname.equals(agentInfo.hostname)) return false;
-            if (!ip.equals(agentInfo.ip)) return false;
-            return uuid.equals(agentInfo.uuid);
+            return isAgentLive == agentInfo.isAgentLive &&
+                hostname.equals(agentInfo.hostname) &&
+                ip.equals(agentInfo.ip) &&
+                uuid.equals(agentInfo.uuid);
         }
 
         @Override

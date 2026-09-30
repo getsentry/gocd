@@ -19,7 +19,7 @@ import com.thoughtworks.go.config.materials.MaterialConfigs;
 import com.thoughtworks.go.config.materials.svn.SvnMaterialConfig;
 import com.thoughtworks.go.domain.materials.svn.Subversion;
 import com.thoughtworks.go.helper.SvnTestRepoWithExternal;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -73,8 +73,8 @@ public class MaterialExpansionServiceCachingTest {
         materialExpansionService.expandForScheduling(svnMaterialConfig, materialConfigs);
 
         assertThat(materialConfigs.size()).isEqualTo(2);
-        assertThat(materialConfigs.get(0)).isEqualTo(svnMaterialConfig);
-        assertThat(((SvnMaterialConfig) materialConfigs.get(1)).getUrl()).endsWith("end2end/");
+        assertThat(materialConfigs.getFirst()).isEqualTo(svnMaterialConfig);
+        assertThat(((SvnMaterialConfig) materialConfigs.getLast()).getUrl()).endsWith("end2end/");
     }
 
     @Test

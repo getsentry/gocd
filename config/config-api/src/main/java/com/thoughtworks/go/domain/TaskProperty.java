@@ -15,6 +15,10 @@
  */
 package com.thoughtworks.go.domain;
 
+import org.springframework.util.StringUtils;
+
+import java.util.Objects;
+
 public final class TaskProperty {
     private final String name;
     private final String value;
@@ -25,7 +29,7 @@ public final class TaskProperty {
     }
 
     private static String defaultCssClass(String name) {
-        return name.toLowerCase().replaceAll(":$", "").replaceAll(" ", "_");
+        return StringUtils.trimTrailingCharacter(name.toLowerCase().replace(' ', '_'), ':');
     }
 
     @Override
@@ -51,14 +55,18 @@ public final class TaskProperty {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         TaskProperty that = (TaskProperty) o;
 
-        if (name != null ? !name.equals(that.name) : that.name != null) return false;
-        if (value != null ? !value.equals(that.value) : that.value != null) return false;
-        return cssClass != null ? cssClass.equals(that.cssClass) : that.cssClass == null;
+        return Objects.equals(name, that.name) &&
+            Objects.equals(value, that.value) &&
+            Objects.equals(cssClass, that.cssClass);
     }
 
     @Override

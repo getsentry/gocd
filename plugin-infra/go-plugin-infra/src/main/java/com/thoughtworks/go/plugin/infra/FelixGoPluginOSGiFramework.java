@@ -25,9 +25,6 @@ import com.thoughtworks.go.plugin.infra.service.DefaultPluginRegistryService;
 import com.thoughtworks.go.plugin.internal.api.LoggingService;
 import com.thoughtworks.go.plugin.internal.api.PluginRegistryService;
 import com.thoughtworks.go.util.SystemEnvironment;
-import org.apache.commons.collections4.IteratorUtils;
-import org.apache.commons.collections4.keyvalue.AbstractKeyValue;
-import org.apache.commons.collections4.keyvalue.DefaultKeyValue;
 import org.apache.felix.framework.cache.BundleCache;
 import org.apache.felix.framework.util.FelixConstants;
 import org.osgi.framework.*;
@@ -43,6 +40,7 @@ import java.util.*;
 
 import static java.lang.String.format;
 import static java.util.stream.Collectors.toMap;
+import static java.util.stream.StreamSupport.stream;
 
 @Component
 public class FelixGoPluginOSGiFramework implements GoPluginOSGiFramework {
@@ -59,7 +57,7 @@ public class FelixGoPluginOSGiFramework implements GoPluginOSGiFramework {
 
     @Override
     public void start() {
-        List<FrameworkFactory> frameworkFactories = IteratorUtils.toList(ServiceLoader.load(FrameworkFactory.class).iterator());
+        List<FrameworkFactory> frameworkFactories = stream(ServiceLoader.load(FrameworkFactory.class).spliterator(), false).toList();
 
         if (frameworkFactories.size() != 1) {
             throw new RuntimeException("One OSGi framework expected. Got " + frameworkFactories.size() + ": " + frameworkFactories);
@@ -98,7 +96,7 @@ public class FelixGoPluginOSGiFramework implements GoPluginOSGiFramework {
             pluginBundleDescriptor.setBundle(bundle);
             bundle.start();
             return bundle;
-        } catch (Exception e) {
+        } catch (BundleException e) {
             throw new RuntimeException(e);
         }
     }
@@ -108,7 +106,7 @@ public class FelixGoPluginOSGiFramework implements GoPluginOSGiFramework {
         Bundle bundle = pluginDescriptor.bundle();
 
         if (bundle == null || bundle.getState() == Bundle.UNINSTALLED) {
-            LOGGER.info(format("Skipping plugin '%s' uninstall as it is already uninstalled.", pluginDescriptor));
+            LOGGER.info("Skipping plugin '{}' uninstall as it is already uninstalled.", pluginDescriptor);
             return;
         }
 
@@ -126,7 +124,7 @@ public class FelixGoPluginOSGiFramework implements GoPluginOSGiFramework {
     }
 
     Framework getFelixFramework(List<FrameworkFactory> frameworkFactories) {
-        return frameworkFactories.get(0).newFramework(generateOSGiFrameworkConfig());
+        return frameworkFactories.getFirst().newFramework(generateOSGiFrameworkConfig());
     }
 
     protected Map<String, String> generateOSGiFrameworkConfig() {
@@ -187,13 +185,13 @@ public class FelixGoPluginOSGiFramework implements GoPluginOSGiFramework {
         final ServiceQuery serviceQuery = ServiceQuery.newQuery(pluginId);
         final Collection<ServiceReference<GoPlugin>> serviceReferences = new HashSet<>(listServices(bundleContext, GoPlugin.class, serviceQuery));
 
-        ActionWithReturn<GoPlugin, DefaultKeyValue<String, List<String>>> action = (goPlugin, descriptor) -> new DefaultKeyValue<>(goPlugin.pluginIdentifier().getExtension(), goPlugin.pluginIdentifier().getSupportedExtensionVersions());
+        ActionWithReturn<GoPlugin, Map.Entry<String, List<String>>> action = (goPlugin, descriptor) -> Map.entry(goPlugin.pluginIdentifier().getExtension(), goPlugin.pluginIdentifier().getSupportedExtensionVersions());
 
         return serviceReferences.stream()
                 .map(serviceReference -> {
                     GoPlugin service = bundleContext.getService(serviceReference);
                     return executeActionOnTheService(action, service, registry.getPlugin(pluginId));
-                }).collect(toMap(AbstractKeyValue::getKey, AbstractKeyValue::getValue));
+                }).collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
     private <T, R> R executeActionOnTheService(ActionWithReturn<T, R> action, T service, GoPluginDescriptor goPluginDescriptor) {

@@ -39,10 +39,10 @@ public class HibernateInformationProvider implements ServerInfoProvider {
     }
 
     @Override
-    public Map<String, Object> asJson() {
+    public Map<String, Object> asJsonCompatibleMap() {
         LinkedHashMap<String, Object> json = new LinkedHashMap<>();
         Statistics statistics = sessionFactory.getStatistics();
-        if (!statistics.isStatisticsEnabled()){
+        if (!statistics.isStatisticsEnabled()) {
             return json;
         }
         json.put("EntityDeleteCount", statistics.getEntityDeleteCount());

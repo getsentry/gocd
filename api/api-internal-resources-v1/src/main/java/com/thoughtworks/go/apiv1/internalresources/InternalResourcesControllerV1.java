@@ -18,9 +18,10 @@ package com.thoughtworks.go.apiv1.internalresources;
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.base.JsonOutputWriter;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.server.service.AgentService;
 import com.thoughtworks.go.server.service.GoConfigService;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,20 +31,21 @@ import spark.Response;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toList;
 import static spark.Spark.*;
 
 @Component
 public class InternalResourcesControllerV1 extends ApiController implements SparkSpringController {
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
-    private GoConfigService goConfigService;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
+    private final GoConfigService goConfigService;
     private final AgentService agentService;
 
     @Autowired
-    public InternalResourcesControllerV1(ApiAuthenticationHelper apiAuthenticationHelper, GoConfigService goConfigService, AgentService agentService) {
+    public InternalResourcesControllerV1(ApiAuthorizationHelper apiAuthorizationHelper, GoConfigService goConfigService, AgentService agentService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.goConfigService = goConfigService;
         this.agentService = agentService;
     }
@@ -54,22 +56,22 @@ public class InternalResourcesControllerV1 extends ApiController implements Spar
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
 
-            before("", mimeType, this.apiAuthenticationHelper::checkUserAnd403);
+            before("", mimeType, this.apiAuthorizationHelper::checkUserAnd403);
 
             get("", mimeType, this::index);
         });
     }
 
     public String index(Request request, Response response) throws IOException {
-        List<String> resourceListFromGoConfig = goConfigService.getResourceList();
-        List<String> resourceListFromAgentDB = agentService.getListOfResourcesAcrossAgents();
-        resourceListFromGoConfig.addAll(resourceListFromAgentDB);
-        List<String> finalResourceList = resourceListFromGoConfig.stream().distinct().collect(toList());
+        Stream<String> resourceListFromGoConfig = goConfigService.getResourceNames();
+        Stream<String> resourceListFromAgentDB = agentService.getDistinctResourcesAcrossAgents();
+
+        List<String> finalResourceList = Stream.concat(resourceListFromGoConfig, resourceListFromAgentDB).distinct().collect(toList());
         return JsonOutputWriter.OBJECT_MAPPER.writeValueAsString(finalResourceList);
     }
 }

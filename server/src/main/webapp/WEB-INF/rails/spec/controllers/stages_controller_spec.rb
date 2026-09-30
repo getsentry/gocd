@@ -44,7 +44,6 @@ describe StagesController do
     allow(controller).to receive(:job_presentation_service).and_return(@job_presentation_service)
     allow(controller).to receive(:go_config_service).and_return(@go_config_service)
     allow(controller).to receive(:system_environment).and_return(@system_environment)
-    allow(controller).to receive(:populate_config_validity)
 
     allow(@go_config_service).to receive(:findGroupNameByPipeline).and_return(nil)
     allow(@go_config_service).to receive(:isPipelineEditable)
@@ -59,7 +58,7 @@ describe StagesController do
   describe "stage" do
 
     before do
-      @stage_summary_model = StageSummaryModel.new(stage = StageMother.passedStageInstance("stage", "dev", "pipeline-name"), nil, JobDurationStrategy::ALWAYS_ZERO, nil)
+      @stage_summary_model = StageSummaryModel.new(stage = StageMother.passedStageInstance("pipeline-name", "stage", "dev"), nil, JobDurationStrategy::ALWAYS_ZERO, nil)
       stage.setPipelineId(100)
       allow(@stage_service).to receive(:findStageSummaryByIdentifier).and_return(@stage_summary_model)
       allow(@stage_service).to receive(:findLatestStage).and_return(:latest_stage)
@@ -151,7 +150,6 @@ describe StagesController do
     end
 
     it "should render response code returned by the api result" do
-      stage_identifier = StageIdentifier.new("pipeline", 2, "stage", "3")
       allow(@pipeline_history_service).to receive(:validate).with("pipeline", @user, @status)
 
       expect(@status).to receive(:canContinue).and_return(false)
@@ -185,31 +183,12 @@ describe StagesController do
       expect(:get => "/pipelines/pipeline_name/10/stage_name/5/jobs").to route_to({:controller => "stages", :pipeline_name => "pipeline_name", :pipeline_counter => "10", :stage_name => "stage_name", :stage_counter => "5", :action => "jobs"})
     end
 
-    it "should render action api/stages/index for :format xml" do
+    it "should load stage overview as json" do
       stub_current_config
-      stage_identifier = StageIdentifier.new("pipeline", 2, "stage", "3")
-
-      allow(@status).to receive(:canContinue).and_return(true)
-      expect(@stage_service).to receive(:findStageSummaryByIdentifier).with(stage_identifier, @user, @localized_result).and_return(@stage_summary_model)
-      expect(@pipeline_history_service).to receive(:findPipelineInstance).with("pipeline", 2, 100, @user, @status).and_return(:pim)
-      expect(@pipeline_lock_service).to receive(:lockedPipeline).with("pipeline").and_return(@pipeline_identifier)
-      get :overview, params:{:pipeline_name => "pipeline", :pipeline_counter => "2", :stage_name => "stage", :stage_counter => "3", :format => 'xml'}
-
-      redirect_url = "/go/api/feed/pipelines/#{@stage_summary_model.getPipelineName()}/#{@stage_summary_model.getPipelineCounter()}/#{@stage_summary_model.getName()}/#{@stage_summary_model.getStageCounter()}"
-      expect(response).to redirect_to redirect_url
-    end
-
-    it "should resolve pipelines/stage-locator to the stage action" do
-      expect(:get => "/pipelines/pipeline_name/10/stage_name/2.xml").to route_to({:controller => "stages", :action => 'overview', :pipeline_name => "pipeline_name", :stage_name => "stage_name", :pipeline_counter => "10", :stage_counter => "2", :format => "xml"})
-      expect(controller.send(:stage_detail_tab_path_for, :pipeline_name => "pipeline_name", :stage_name => "stage_name", :pipeline_counter => "10", :stage_counter => "2", :format => "xml")).to eq("/pipelines/pipeline_name/10/stage_name/2.xml")
-    end
-
-    it "should load pipeline instance " do
-      stub_current_config
-      now = org.joda.time.DateTime.new
-      pim = PipelineHistoryMother.singlePipeline("pipeline-name", PipelineHistoryMother.stagePerJob("stage-", [PipelineHistoryMother.job(JobState::Completed, JobResult::Cancelled, now.toDate()),
-                                                                                                              PipelineHistoryMother.job(JobState::Completed, JobResult::Cancelled, now.plusDays(1).toDate())]))
-      stage_summary_model=StageSummaryModel.new(stage_instance = StageMother.passedStageInstance("stage", "dev", "pipeline-name"), nil, JobDurationStrategy::ALWAYS_ZERO, nil)
+      now = ZonedDateTime.now
+      pim = PipelineHistoryMother.singlePipeline("pipeline-name", PipelineHistoryMother.stagePerJob("stage-", [PipelineHistoryMother.job(JobState::Completed, JobResult::Cancelled, now.to_instant),
+                                                                                                              PipelineHistoryMother.job(JobState::Completed, JobResult::Cancelled, now.plus_minutes(1).to_instant)]))
+      stage_summary_model = StageSummaryModel.new(stage_instance = StageMother.passedStageInstance("pipeline-name", "stage", "dev"), nil, JobDurationStrategy::ALWAYS_ZERO, nil)
       expect(@stage_service).to receive(:findStageSummaryByIdentifier).with(StageIdentifier.new("blah-pipeline-name", 12, "stage-0", "3"), @user, @localized_result).and_return(stage_summary_model)
       stage_instance.setPipelineId(100)
       expect(@pipeline_history_service).to receive(:findPipelineInstance).with("blah-pipeline-name", 12, 100, @user, @status).and_return(pim)
@@ -218,7 +197,7 @@ describe StagesController do
       allow(@status).to receive(:canContinue).and_return(true)
       expect(@localized_result).to receive(:isSuccessful).and_return(true)
 
-      get :overview, params:{:pipeline_name => "blah-pipeline-name", :pipeline_counter => "12", :stage_name => "stage-0", :stage_counter => "3", :format => 'xml'}
+      get :overview, params:{:pipeline_name => "blah-pipeline-name", :pipeline_counter => "12", :stage_name => "stage-0", :stage_counter => "3", :format => 'json'}
       expect(assigns(:stage)).to eq stage_summary_model
       expect(assigns(:pipeline)).to eq pim
     end
@@ -246,7 +225,6 @@ describe StagesController do
     describe "overview tab" do
       it "should assign stage_history" do
         stub_current_config
-        stage_identifier = StageIdentifier.new("pipeline", 2, "stage", "3")
         expect(@stage_service).to receive(:findStageHistoryPage).with(@stage_summary_model.getStage(), StagesController::STAGE_HISTORY_PAGE_SIZE).and_return(stage_history = stage_history_page(2))
         get :overview, params:{:pipeline_name => "pipeline", :pipeline_counter => "2", :stage_name => "stage", :stage_counter => "3"}
         expect(assigns(:stage_history_page)).to eq stage_history
@@ -254,7 +232,6 @@ describe StagesController do
 
       it "should honour page number" do
         stub_current_config
-        stage_identifier = StageIdentifier.new("pipeline", 2, "stage", "3")
         expect(@stage_service).to receive(:findStageHistoryPageByNumber).with("pipeline", "stage", 5, StagesController::STAGE_HISTORY_PAGE_SIZE).and_return(stage_history = stage_history_page(4))
         get :overview, params:{:pipeline_name => "pipeline", :pipeline_counter => "2", :stage_name => "stage", :stage_counter => "3", "stage-history-page" => "5"}
         expect(assigns(:stage_history_page)).to eq stage_history
@@ -369,12 +346,12 @@ describe StagesController do
     end
 
     it "should load the duration of last 10 stages in seconds along with start-end dates and chart scale" do
-      scheduledTime = org.joda.time.DateTime.new(2008, 2, 22, 10, 21, 23, 0, org.joda.time.DateTimeZone.forOffsetHoursMinutes(5, 30))
-      stage1 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 1, "stage", 1, "dev", scheduledTime, scheduledTime.plus_seconds(10))
+      scheduledTime = ZonedDateTime.of(2008, 2, 22, 10, 21, 23, 0, ZoneOffset.ofHoursMinutes(5, 30))
+      stage1 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 1, "stage", 1, "dev", scheduledTime.to_instant, scheduledTime.plus_seconds(10).to_instant)
       stage1.setPipelineId(100)
-      stage2 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 2, "stage", 1, "dev", scheduledTime, scheduledTime.plus_seconds(20))
+      stage2 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 2, "stage", 1, "dev", scheduledTime.to_instant, scheduledTime.plus_seconds(20).to_instant)
       stage2.setPipelineId(101)
-      stage3 = StageMother.createFailedStageWithFakeDuration("pipeline-name", 3, "stage", 1, "dev", scheduledTime, scheduledTime.plus_seconds(30))
+      stage3 = StageMother.createFailedStageWithFakeDuration("pipeline-name", 3, "stage", 1, "dev", scheduledTime.to_instant, scheduledTime.plus_seconds(30).to_instant)
       stage3.setPipelineId(102)
       stage_summary_model1 = StageSummaryModel.new(stage1, nil, JobDurationStrategy::ALWAYS_ZERO, nil)
       stage_summary_model2 = StageSummaryModel.new(stage2, nil, JobDurationStrategy::ALWAYS_ZERO, nil)
@@ -403,16 +380,16 @@ describe StagesController do
                         :status => "Failed"}]
 
       expect(assigns(:graph_data)).to eq(expected_data)
-      expect(assigns(:pagination)).to eq Pagination.pageStartingAt(12, 200, 10)
+      expect(assigns(:pagination)).to eq Pagination.pageByOffset(12, 200, 10)
       expect(assigns(:start_end_dates)).to eq ["22 Feb 2008", "22 Feb 2008"]
       expect(assigns(:no_chart_to_render)).to eq false
     end
 
     it "should load the duration of last 10 stages in minutes" do
-      scheduledTime = org.joda.time.DateTime.new(2008, 2, 22, 10, 21, 23, 0, org.joda.time.DateTimeZone.forOffsetHoursMinutes(5, 30))
-      stage1 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 1, "stage", 1, "dev", scheduledTime, scheduledTime.plus_minutes(10))
+      scheduledTime = ZonedDateTime.of(2008, 2, 22, 10, 21, 23, 0, ZoneOffset.ofHoursMinutes(5, 30))
+      stage1 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 1, "stage", 1, "dev", scheduledTime.to_instant, scheduledTime.plus_minutes(10).to_instant)
       stage1.setPipelineId(100)
-      stage2 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 2, "stage", 1, "dev", scheduledTime, scheduledTime.plus_minutes(20))
+      stage2 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 2, "stage", 1, "dev", scheduledTime.to_instant, scheduledTime.plus_minutes(20).to_instant)
       stage2.setPipelineId(101)
       stage_summary_model1 = StageSummaryModel.new(stage1, nil, JobDurationStrategy::ALWAYS_ZERO, nil)
       stage_summary_model2 = StageSummaryModel.new(stage2, nil, JobDurationStrategy::ALWAYS_ZERO, nil)
@@ -436,12 +413,12 @@ describe StagesController do
     end
 
     it "should load data in ascending order of pipeline counters" do
-      scheduledTime = org.joda.time.DateTime.new(2008, 2, 22, 10, 21, 23, 0, org.joda.time.DateTimeZone.forOffsetHoursMinutes(5, 30))
-      stage1 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 1, "stage", 1, "dev", scheduledTime, scheduledTime.plus_minutes(10))
+      scheduledTime = ZonedDateTime.of(2008, 2, 22, 10, 21, 23, 0, ZoneOffset.ofHoursMinutes(5, 30))
+      stage1 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 1, "stage", 1, "dev", scheduledTime.to_instant, scheduledTime.plus_minutes(10).to_instant)
       stage1.setPipelineId(100)
-      stage2 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 2, "stage", 1, "dev", scheduledTime, scheduledTime.plus_minutes(20))
+      stage2 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 2, "stage", 1, "dev", scheduledTime.to_instant, scheduledTime.plus_minutes(20).to_instant)
       stage2.setPipelineId(101)
-      stage3 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 3, "stage", 1, "dev", scheduledTime, scheduledTime.plus_minutes(20))
+      stage3 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 3, "stage", 1, "dev", scheduledTime.to_instant, scheduledTime.plus_minutes(20).to_instant)
       stage2.setPipelineId(102)
       stage_summary_model1 = StageSummaryModel.new(stage1, nil, JobDurationStrategy::ALWAYS_ZERO, nil)
       stage_summary_model2 = StageSummaryModel.new(stage2, nil, JobDurationStrategy::ALWAYS_ZERO, nil)
@@ -475,10 +452,10 @@ describe StagesController do
     end
 
     it "should load the correct pipeline label depending on stage run" do
-      scheduledTime = org.joda.time.DateTime.new(2008, 2, 22, 10, 21, 23, 0, org.joda.time.DateTimeZone.forOffsetHoursMinutes(5, 30))
-      stage1 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 1, "stage", 1, "dev", scheduledTime, scheduledTime.plus_minutes(10))
+      scheduledTime = ZonedDateTime.of(2008, 2, 22, 10, 21, 23, 0, ZoneOffset.ofHoursMinutes(5, 30))
+      stage1 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 1, "stage", 1, "dev", scheduledTime.to_instant, scheduledTime.plus_minutes(10).to_instant)
       stage1.setPipelineId(100)
-      stage2 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 1, "stage", 2, "dev", scheduledTime, scheduledTime.plus_minutes(20))
+      stage2 = StageMother.createPassedStageWithFakeDuration("pipeline-name", 1, "stage", 2, "dev", scheduledTime.to_instant, scheduledTime.plus_minutes(20).to_instant)
       stage2.setPipelineId(101)
       stage_summary_model1 = StageSummaryModel.new(stage1, nil, JobDurationStrategy::ALWAYS_ZERO, nil)
       stage_summary_model2 = StageSummaryModel.new(stage2, nil, JobDurationStrategy::ALWAYS_ZERO, nil)
@@ -512,10 +489,10 @@ describe StagesController do
     end
 
     it "should deal with stages when there are only failed stages" do
-      scheduledTime = org.joda.time.DateTime.new(2008, 2, 22, 10, 21, 23, 0, org.joda.time.DateTimeZone.forOffsetHoursMinutes(5, 30))
-      stage1 = StageMother.createFailedStageWithFakeDuration("pipeline-name", 1, "stage", 1, "dev", scheduledTime, scheduledTime.plus_minutes(10))
+      scheduledTime = ZonedDateTime.of(2008, 2, 22, 10, 21, 23, 0, ZoneOffset.ofHoursMinutes(5, 30))
+      stage1 = StageMother.createFailedStageWithFakeDuration("pipeline-name", 1, "stage", 1, "dev", scheduledTime.to_instant, scheduledTime.plus_minutes(10).to_instant)
       stage1.setPipelineId(100)
-      stage2 = StageMother.createFailedStageWithFakeDuration("pipeline-name", 2, "stage", 1, "dev", scheduledTime, scheduledTime.plus_minutes(20))
+      stage2 = StageMother.createFailedStageWithFakeDuration("pipeline-name", 2, "stage", 1, "dev", scheduledTime.to_instant, scheduledTime.plus_minutes(20).to_instant)
       stage2.setPipelineId(101)
       stage_summary_model1 = StageSummaryModel.new(stage1, nil, JobDurationStrategy::ALWAYS_ZERO, nil)
       stage_summary_model2 = StageSummaryModel.new(stage2, nil, JobDurationStrategy::ALWAYS_ZERO, nil)
@@ -542,7 +519,7 @@ describe StagesController do
     def setup_stubs(*stage_summary_models)
       models = StageSummaryModels.new
       models.addAll(stage_summary_models)
-      models.setPagination(Pagination.pageStartingAt(12, 200, 10))
+      models.setPagination(Pagination.pageByOffset(12, 200, 10))
       expect(@pipeline_lock_service).to receive(:lockedPipeline).with("pipeline-name").and_return("")
       stage_iden = stage_summary_models[0].getStage().getIdentifier()
       expect(@stage_service).to receive(:findStageSummaryByIdentifier).with(stage_iden, @user, @localized_result).and_return(stage_summary_models[0])
@@ -551,35 +528,6 @@ describe StagesController do
       allow(@status).to receive(:canContinue).and_return(true)
       allow(controller).to receive(:load_stage_history).with(no_args)
       expect(@stage_service).to receive(:findStageHistoryForChart).with(stage_iden.getPipelineName(), stage_iden.getStageName(), 2, StagesController::STAGE_DURATION_RANGE).and_return(models)
-    end
-  end
-
-  describe "config_tab" do
-    before do
-      scheduledTime = org.joda.time.DateTime.new(2008, 2, 22, 10, 21, 23, 0, org.joda.time.DateTimeZone.forOffsetHoursMinutes(5, 30))
-      stage = StageMother.createPassedStageWithFakeDuration("pipeline-name", 1, "stage", 1, "dev", scheduledTime, scheduledTime.plus_minutes(10))
-      stage.setPipelineId(100)
-      stage.setConfigVersion("some-config-md5")
-      @stage_summary_model = StageSummaryModel.new(stage, nil, JobDurationStrategy::ALWAYS_ZERO, nil)
-      setup_stubs(@stage_summary_model)
-      stub_current_config
-    end
-
-    it "should get config for the particular stage instance" do
-      get :stage_config, params:{:pipeline_name => "pipeline-name", :pipeline_counter => "1", :stage_name => "stage", :stage_counter => "1"}
-
-      expect(assigns(:stage)).to eq @stage_summary_model
-      expect(assigns(:ran_with_config_revision)).to eq :some_cruise_config_revision
-    end
-
-    def setup_stubs(stage_summary_model)
-      expect(@pipeline_lock_service).to receive(:lockedPipeline).with("pipeline-name").and_return("")
-      expect(@stage_service).to receive(:findStageSummaryByIdentifier).with(stage_summary_model.getStage().getIdentifier(), @user, @localized_result).and_return(stage_summary_model)
-      allow(@pipeline_history_service).to receive(:validate).with("pipeline-name", @user, @status)
-      expect(@pipeline_history_service).to receive(:findPipelineInstance).with("pipeline-name", 1, 100, @user, @status).and_return(:pim)
-      allow(@status).to receive(:canContinue).and_return(true)
-      expect(controller).to receive(:load_stage_history).with(no_args)
-      expect(@go_config_service).to receive(:getConfigAtVersion).with("some-config-md5").and_return(:some_cruise_config_revision)
     end
   end
 
@@ -619,7 +567,7 @@ describe StagesController do
     it 'should redirect to first stage of the pipeline instance' do
       pipeline_name = "pipeline_name"
       stage_name = "stage_name"
-      pim = PipelineHistoryMother.pipelineHistoryItemWithOneStage(pipeline_name, stage_name, java.util.Date.new)
+      pim = PipelineHistoryMother.pipelineHistoryItemWithOneStage(pipeline_name, stage_name, Instant.now)
       expect(@pipeline_history_service).to receive(:findPipelineInstance).with(pipeline_name, 1, @user, @status).and_return(pim)
 
       get :redirect_to_first_stage, params:{pipeline_name: 'pipeline_name', pipeline_counter: 1}

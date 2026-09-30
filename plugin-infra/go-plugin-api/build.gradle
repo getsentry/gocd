@@ -27,15 +27,18 @@ compileJava {
 }
 
 dependencies {
-  api project(path: ':plugin-infra:go-plugin-api-internal', configuration: 'runtimeElements')
-  testImplementation project.deps.junit5Api
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
-  testImplementation project.deps.mockitoCore
-  testImplementation project(path: ':test:test-utils', configuration: 'runtimeElements')
+  api project(':plugin-infra:go-plugin-api-internal')
+  testImplementation rootProject.deps.junit5Api
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.mockitoCore
+  testImplementation rootProject.deps.assertJ
+  testImplementation rootProject.deps.systemStubs
+  testImplementation(testFixtures(project(':test:test-utils')))
 }
 
-task sourcesJar(type: Jar, dependsOn: classes) {
+tasks.register('sourcesJar', Jar) {
+  dependsOn classes
   archiveClassifier = 'sources'
   from sourceSets.main.allSource
 }
@@ -48,10 +51,13 @@ javadoc {
     docTitle = 'GoCD Plugin API'
     header = 'GoCD Plugin API'
     bottom = "Copyright &copy; Thoughtworks, Inc. GoCD Version: ${project.version}"
+
+    addBooleanOption('Xdoclint:-missing', true)
   }
 }
 
-task javadocJar(type: Jar, dependsOn: javadoc) {
+tasks.register('javadocJar', Jar) {
+  dependsOn javadoc
   archiveClassifier = 'javadoc'
   from javadoc.destinationDir
 }
@@ -73,6 +79,6 @@ publishing {
   }
 }
 
-tasks.withType(GenerateModuleMetadata) {
+tasks.withType(GenerateModuleMetadata).configureEach {
   enabled = false
 }

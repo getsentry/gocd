@@ -33,7 +33,6 @@ import com.thoughtworks.go.serverhealth.HealthStateScope;
 import com.thoughtworks.go.serverhealth.HealthStateType;
 import com.thoughtworks.go.serverhealth.ServerHealthService;
 import com.thoughtworks.go.serverhealth.ServerHealthState;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,8 +41,7 @@ import org.springframework.transaction.TransactionStatus;
 
 import java.io.File;
 import java.util.List;
-
-import static org.apache.commons.text.StringEscapeUtils.escapeHtml4;
+import java.util.stream.Collectors;
 
 /**
  * Understands how to update materials on the database from the real SCMs
@@ -56,16 +54,16 @@ public class MaterialDatabaseUpdater {
 
     private final MaterialRepository materialRepository;
     private final ServerHealthService healthService;
-    private TransactionTemplate transactionTemplate;
+    private final TransactionTemplate transactionTemplate;
     private final DependencyMaterialUpdater dependencyMaterialUpdater;
     private final ScmMaterialUpdater scmMaterialUpdater;
-    private MaterialExpansionService materialExpansionService;
-    private GoConfigService goConfigService;
-    private PackageMaterialUpdater packageMaterialUpdater;
-    private PluggableSCMMaterialUpdater pluggableSCMMaterialUpdater;
+    private final MaterialExpansionService materialExpansionService;
+    private final GoConfigService goConfigService;
+    private final PackageMaterialUpdater packageMaterialUpdater;
+    private final PluggableSCMMaterialUpdater pluggableSCMMaterialUpdater;
 
     @Autowired
-    public MaterialDatabaseUpdater(MaterialRepository materialRepository, ServerHealthService healthService, TransactionTemplate transactionTemplate,
+    MaterialDatabaseUpdater(MaterialRepository materialRepository, ServerHealthService healthService, TransactionTemplate transactionTemplate,
                                    DependencyMaterialUpdater dependencyMaterialUpdater, ScmMaterialUpdater scmMaterialUpdater, PackageMaterialUpdater packageMaterialUpdater,
                                    PluggableSCMMaterialUpdater pluggableSCMMaterialUpdater, MaterialExpansionService materialExpansionService, GoConfigService goConfigService) {
         this.materialRepository = materialRepository;
@@ -79,7 +77,7 @@ public class MaterialDatabaseUpdater {
         this.goConfigService = goConfigService;
     }
 
-    public void updateMaterial(final Material material) throws Exception {
+    public void updateMaterial(final Material material) {
         String materialMutex = mutexForMaterial(material);
         HealthStateScope scope = HealthStateScope.forMaterial(material);
         try {
@@ -113,10 +111,10 @@ public class MaterialDatabaseUpdater {
             }
             healthService.removeByScope(scope);
         } catch (Exception e) {
-            String message = escapeHtml4("Modification check failed for material: " + material.getLongDescription());
+            String message = "Modification check failed for material: " + material.getLongDescription();
             String finalMessage = message + affectedPipelinesMessageFor(material);
-            String errorDescription = e.getMessage() == null ? "Unknown error" : escapeHtml4(e.getMessage());
-            healthService.update(ServerHealthState.errorWithHtml(finalMessage, errorDescription, HealthStateType.general(scope)));
+            String errorDescription = e.getMessage() == null ? "Unknown error" : e.getMessage();
+            healthService.update(ServerHealthState.error(finalMessage, errorDescription, HealthStateType.general(scope)));
 
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("[Material Update] {}", message, e);
@@ -131,7 +129,7 @@ public class MaterialDatabaseUpdater {
         List<CaseInsensitiveString> pipelineNames = goConfigService.pipelinesWithMaterial(material.config().getFingerprint());
         return pipelineNames.isEmpty()
             ? "\nNo pipelines affected, may only affect configuration repositories."
-            : "\nAffected pipelines are " + StringUtils.join(pipelineNames, ", ") + ".";
+            : pipelineNames.stream().map(CaseInsensitiveString::toString).collect(Collectors.joining(", ", "\nAffected pipelines are ", "."));
     }
 
     private void initializeMaterialWithLatestRevision(Material material) {

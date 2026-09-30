@@ -45,7 +45,6 @@ import com.thoughtworks.go.server.service.GoConfigService;
 import com.thoughtworks.go.server.service.SecretParamResolver;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
 import com.thoughtworks.go.server.service.result.LocalizedOperationResult;
-import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.TestOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,18 +53,20 @@ import org.springframework.stereotype.Service;
 
 import static com.thoughtworks.go.i18n.LocalizedMessage.entityConfigValidationFailed;
 import static com.thoughtworks.go.i18n.LocalizedMessage.saveFailedWithReason;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 
 @Service
 public class PackageRepositoryService {
-    private PluginManager pluginManager;
-    private GoConfigService goConfigService;
-    private EntityHashingService entityHashingService;
-    private final SecretParamResolver secretParamResolver;
-    private RepositoryMetadataStore repositoryMetadataStore;
-    private PackageRepositoryExtension packageRepositoryExtension;
+    private static final Logger LOGGER = LoggerFactory.getLogger(PackageRepositoryService.class);
 
-    public static final Logger LOGGER = LoggerFactory.getLogger(PackageRepositoryService.class);
+    private final GoConfigService goConfigService;
+    private final EntityHashingService entityHashingService;
+    private final SecretParamResolver secretParamResolver;
+    private final RepositoryMetadataStore repositoryMetadataStore;
+    private final PackageRepositoryExtension packageRepositoryExtension;
+    private PluginManager pluginManager;
+
 
     @Autowired
     public PackageRepositoryService(PluginManager pluginManager, PackageRepositoryExtension packageRepositoryExtension, GoConfigService goConfigService,
@@ -75,7 +76,7 @@ public class PackageRepositoryService {
         this.goConfigService = goConfigService;
         this.entityHashingService = entityHashingService;
         this.secretParamResolver = secretParamResolver;
-        repositoryMetadataStore = RepositoryMetadataStore.getInstance();
+        this.repositoryMetadataStore = RepositoryMetadataStore.getInstance();
     }
 
     public void checkConnection(final PackageRepository packageRepository, final LocalizedOperationResult result) {
@@ -88,7 +89,6 @@ public class PackageRepositoryService {
                 return;
             }
             result.setMessage("Connection OK. " + messages);
-            return;
         } catch (Exception e) {
             if (e instanceof RulesViolationException || e instanceof SecretResolutionFailureException) {
                 result.unprocessableEntity("Could not connect to package repository. Reason(s): " + e.getMessage());
@@ -136,7 +136,7 @@ public class PackageRepositoryService {
             if (property != null) {
                 property.addError(validationError.getKey(), validationError.getMessage());
             } else {
-                String validationErrorKey = StringUtils.isBlank(validationError.getKey()) ? PackageRepository.CONFIGURATION : validationError.getKey();
+                String validationErrorKey = isBlank(validationError.getKey()) ? PackageRepository.CONFIGURATION : validationError.getKey();
                 packageRepository.addError(validationErrorKey, validationError.getMessage());
             }
         }

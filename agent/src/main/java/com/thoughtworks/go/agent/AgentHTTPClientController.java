@@ -26,7 +26,7 @@ import com.thoughtworks.go.plugin.access.scm.SCMExtension;
 import com.thoughtworks.go.plugin.infra.PluginManager;
 import com.thoughtworks.go.plugin.infra.PluginRequestProcessorRegistry;
 import com.thoughtworks.go.plugin.infra.monitor.PluginJarLocationMonitor;
-import com.thoughtworks.go.publishers.GoArtifactsManipulator;
+import com.thoughtworks.go.publishers.GoArtifactManipulator;
 import com.thoughtworks.go.remote.AgentIdentifier;
 import com.thoughtworks.go.remote.AgentInstruction;
 import com.thoughtworks.go.remote.work.AgentWorkContext;
@@ -38,6 +38,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.lang.management.ManagementFactory;
+
 import static com.thoughtworks.go.remote.AgentInstruction.NONE;
 
 @Component
@@ -45,10 +47,11 @@ public class AgentHTTPClientController extends AgentController {
     private static final Logger LOG = LoggerFactory.getLogger(AgentHTTPClientController.class);
 
     private final RemotingClient client;
-    private final GoArtifactsManipulator manipulator;
+    private final GoArtifactManipulator manipulator;
     private final SslInfrastructureService sslInfrastructureService;
     private final ArtifactExtension artifactExtension;
     private final PluginRequestProcessorRegistry pluginRequestProcessorRegistry;
+    private final PluginJarLocationMonitor pluginJarLocationMonitor;
 
     private final SCMExtension scmExtension;
     private final TaskExtension taskExtension;
@@ -57,7 +60,7 @@ public class AgentHTTPClientController extends AgentController {
 
     @Autowired
     public AgentHTTPClientController(RemotingClient client,
-                                     GoArtifactsManipulator manipulator,
+                                     GoArtifactManipulator manipulator,
                                      SslInfrastructureService sslInfrastructureService,
                                      AgentRegistry agentRegistry,
                                      AgentUpgradeService agentUpgradeService,
@@ -70,7 +73,7 @@ public class AgentHTTPClientController extends AgentController {
                                      PluginRequestProcessorRegistry pluginRequestProcessorRegistry,
                                      AgentHealthHolder agentHealthHolder,
                                      PluginJarLocationMonitor pluginJarLocationMonitor) {
-        super(sslInfrastructureService, systemEnvironment, agentRegistry, pluginManager, subprocessLogger, agentUpgradeService, agentHealthHolder, pluginJarLocationMonitor);
+        super(sslInfrastructureService, agentRegistry, pluginManager, subprocessLogger, agentUpgradeService, agentHealthHolder);
         this.client = client;
         this.scmExtension = scmExtension;
         this.taskExtension = taskExtension;
@@ -78,12 +81,13 @@ public class AgentHTTPClientController extends AgentController {
         this.sslInfrastructureService = sslInfrastructureService;
         this.artifactExtension = artifactExtension;
         this.pluginRequestProcessorRegistry = pluginRequestProcessorRegistry;
+        this.pluginJarLocationMonitor = pluginJarLocationMonitor;
     }
 
     @Override
     public void ping() {
-        try {
-            if (sslInfrastructureService.isRegistered()) {
+        if (getAgentRuntimeInfo().hasCookie() && sslInfrastructureService.isRegistered()) {
+            try {
                 AgentIdentifier agent = agentIdentifier();
                 LOG.trace("{} is pinging server [{}]", agent, client);
 
@@ -92,9 +96,9 @@ public class AgentHTTPClientController extends AgentController {
                 agentInstruction = client.ping(getAgentRuntimeInfo());
                 pingSuccess();
                 LOG.trace("{} pinged server [{}]", agent, client);
+            } catch (Throwable e) {
+                LOG.error("Error occurred when agent tried to ping server: ", e);
             }
-        } catch (Throwable e) {
-            LOG.error("Error occurred when agent tried to ping server: ", e);
         }
     }
 
@@ -106,18 +110,21 @@ public class AgentHTTPClientController extends AgentController {
     }
 
     @Override
-    public WorkAttempt tryDoWork() {
-        retrieveCookieIfNecessary();
+    WorkAttempt tryDoWork() throws InterruptedException {
+        ensureReadyToIdle();
         return doWork();
     }
 
-    private void retrieveCookieIfNecessary() {
+    private void ensureReadyToIdle() throws InterruptedException {
         if (!getAgentRuntimeInfo().hasCookie() && sslInfrastructureService.isRegistered()) {
             LOG.info("[Agent Loop] Registered, but need new agent cookie - about to get cookie from the server.");
             String cookie = client.getCookie(getAgentRuntimeInfo());
             getAgentRuntimeInfo().setCookie(cookie);
             LOG.info("[Agent Loop] Got new cookie - ready to retrieve work.");
         }
+
+        // We can register the agent while plugins are loading; but we need to wait for plugins to load
+        pluginJarLocationMonitor.awaitFirstLoad();
     }
 
     private WorkAttempt doWork() {
@@ -126,10 +133,13 @@ public class AgentHTTPClientController extends AgentController {
         try {
             getAgentRuntimeInfo().idle();
             Work work = client.getWork(getAgentRuntimeInfo());
-            LOG.debug("[Agent Loop] Got work from server: [{}]", work.description());
-            runner = new JobRunner();
-            final AgentWorkContext agentWorkContext = new AgentWorkContext(agentIdentifier, client, manipulator, getAgentRuntimeInfo(), scmExtension, taskExtension, artifactExtension, pluginRequestProcessorRegistry);
-            runner.run(work, agentWorkContext);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("[Agent Loop] Got work from server: [{}]", work.description());
+            }
+            cacheRunner().run(
+                work,
+                new AgentWorkContext(agentIdentifier, client, manipulator, getAgentRuntimeInfo(), scmExtension, taskExtension, artifactExtension, pluginRequestProcessorRegistry)
+            );
             LOG.debug("[Agent Loop] Successfully executed work.");
             return WorkAttempt.fromWork(work);
         } catch (UnregisteredAgentException e) {
@@ -139,5 +149,13 @@ public class AgentHTTPClientController extends AgentController {
         } finally {
             getAgentRuntimeInfo().idle();
         }
+    }
+
+    private JobRunner cacheRunner() {
+        if (runner == null) {
+            LOG.info("Go Agent took {} ms (post-bootstrap) to get to first work request.", ManagementFactory.getRuntimeMXBean().getUptime());
+        }
+        runner = new JobRunner();
+        return runner;
     }
 }

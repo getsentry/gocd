@@ -15,13 +15,12 @@
  */
 package com.thoughtworks.go.server.materials;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.PipelineConfig;
 import com.thoughtworks.go.config.materials.dependency.DependencyMaterial;
 import com.thoughtworks.go.domain.Pipeline;
 import com.thoughtworks.go.domain.materials.Modification;
 import com.thoughtworks.go.helper.PipelineConfigMother;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.persistence.MaterialRepository;
 import com.thoughtworks.go.server.service.GoConfigService;
@@ -35,6 +34,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ExtendWith(SpringExtension.class)
@@ -51,7 +51,8 @@ public class MaterialDatabaseDependencyUpdaterIntegrationTest  {
     @Autowired private GoCache goCache;
     @Autowired private GoConfigService goConfigService;
     @Autowired private MaterialDatabaseUpdater updater;
-    private GoConfigFileHelper configHelper = new GoConfigFileHelper();
+
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
 
     @BeforeEach
     public void setUp() throws Exception {
@@ -67,24 +68,24 @@ public class MaterialDatabaseDependencyUpdaterIntegrationTest  {
     }
 
     @Test
-    public void shouldInsertAllRunsAfterLastKnownOfUpstreamStage() throws Exception {
+    public void shouldInsertAllRunsAfterLastKnownOfUpstreamStage() {
         PipelineConfig mingleConfig = PipelineConfigMother.createPipelineConfig("acceptance", "stage-name", "job");
-        goConfigService.addPipeline(mingleConfig, "pipeline-group");
+        configHelper.addPipeline("pipeline-group", mingleConfig);
 
         Pipeline passed1 = dbHelper.schedulePipeline(mingleConfig, new TimeProvider());
-        dbHelper.passStage(passed1.getStages().get(0));
+        dbHelper.passStage(passed1.getStages().getFirst());
 
-        DependencyMaterial dependencyMaterial = new DependencyMaterial(new CaseInsensitiveString("acceptance"), new CaseInsensitiveString("stage-name"));
+        DependencyMaterial dependencyMaterial = new DependencyMaterial(cis("acceptance"), cis("stage-name"));
         String revision1 = String.format("acceptance/%s/stage-name/1", passed1.getCounter());
 
         updater.updateMaterial(dependencyMaterial);
         assertThat(materialRepository.findModificationWithRevision(dependencyMaterial, revision1)).isNotNull();
 
         Pipeline cancelledPipeline = dbHelper.schedulePipeline(mingleConfig, new TimeProvider());
-        dbHelper.cancelStage(cancelledPipeline.getStages().get(0));
+        dbHelper.cancelStage(cancelledPipeline.getStages().getFirst());
 
         Pipeline passed2 = dbHelper.schedulePipeline(mingleConfig, new TimeProvider());
-        dbHelper.passStage(passed2.getStages().get(0));
+        dbHelper.passStage(passed2.getStages().getFirst());
 
         updater.updateMaterial(dependencyMaterial);
         assertThat(materialRepository.findModificationWithRevision(dependencyMaterial, String.format("acceptance/%s/stage-name/1", cancelledPipeline.getCounter()))).isNull();
@@ -92,14 +93,14 @@ public class MaterialDatabaseDependencyUpdaterIntegrationTest  {
         Modification modification1 = materialRepository.findModificationWithRevision(dependencyMaterial, revision1);
         assertThat(modification1).isNotNull();
         assertThat(modification1.getRevision()).isEqualTo(revision1);
-        assertThat(modification1.getPipelineLabel()).isEqualTo(passed1.getCounter().toString());
+        assertThat(modification1.getPipelineLabel()).isEqualTo(String.valueOf(passed1.getCounter()));
         assertThat(modification1.getPipelineId()).isEqualTo(passed1.getId());
 
         String revision2 = String.format("acceptance/%s/stage-name/1", passed2.getCounter());
         Modification modification2 = materialRepository.findModificationWithRevision(dependencyMaterial, revision2);
         assertThat(modification2).isNotNull();
         assertThat(modification2.getRevision()).isEqualTo(revision2);
-        assertThat(modification2.getPipelineLabel()).isEqualTo(passed2.getCounter().toString());
+        assertThat(modification2.getPipelineLabel()).isEqualTo(String.valueOf(passed2.getCounter()));
         assertThat(modification2.getPipelineId()).isEqualTo(passed2.getId());
     }
 }

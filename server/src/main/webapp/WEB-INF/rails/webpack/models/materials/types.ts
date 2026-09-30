@@ -19,6 +19,8 @@ import {JsonUtils} from "helpers/json_utils";
 import {SparkRoutes} from "helpers/spark_routes";
 import _ from "lodash";
 import Stream from "mithril/stream";
+import {ConfigReposCRUD} from "models/config_repos/config_repos_crud";
+import {ConfigRepo} from "models/config_repos/types";
 import {
   DependencyMaterialAttributesJSON,
   GitMaterialAttributesJSON,
@@ -39,6 +41,7 @@ import s from "underscore.string";
 import urlParse from "url-parse";
 import {EncryptedValue, plainOrCipherValue} from "views/components/forms/encrypted_value";
 import {Filter} from "../maintenance_mode/material";
+import {MaterialType} from "./materials";
 
 export const mapTypeToDisplayType: { [key: string]: string; } = {
   git:        "Git",
@@ -71,6 +74,10 @@ function urlForDisplay(url?: string) {
   return parsed.href;
 }
 
+export type MaterialTestContext =
+  | { configRepo: ConfigRepo; group?: never; pipeline?: never }
+  | { configRepo?: never; group: string; pipeline?: string };
+
 export class Materials {
   static fromJSON(material: MaterialJSON): Material {
     return new Material(material.type, MaterialAttributes.deserialize(material));
@@ -84,10 +91,10 @@ export class Materials {
 export class Material extends ValidatableMixin {
   private static API_VERSION_HEADER = ApiVersion.v1;
 
-  type: Stream<string | undefined>;
+  type: Stream<MaterialType | undefined>;
   attributes: Stream<MaterialAttributes | undefined>;
 
-  constructor(type?: string, attributes?: MaterialAttributes) {
+  constructor(type?: MaterialType, attributes?: MaterialAttributes) {
     super();
     this.attributes = Stream(attributes);
     this.type       = Stream(type);
@@ -103,9 +110,9 @@ export class Material extends ValidatableMixin {
       const newType = value;
       if (this.type() !== newType) {
         this.attributes(MaterialAttributes.deserialize({
-                                                         type:       newType,
-                                                         attributes: ({ auto_update: true } as MaterialAttributesJSON)
-                                                       }));
+          type: newType,
+          attributes: ({auto_update: true} as MaterialAttributesJSON)
+        }));
       }
       this.type(newType);
     }
@@ -158,22 +165,18 @@ export class Material extends ValidatableMixin {
     );
   }
 
-  checkConnection(pipelineName?: string, pipelineGroup?: string, configRepoId?: string) {
+  checkConnection(context: MaterialTestContext) {
     const payload = this.toApiPayload();
-    if (pipelineName) {
-      payload.pipeline_name = pipelineName;
-    }
-    if (pipelineGroup) {
-      payload.pipeline_group = pipelineGroup;
-    }
 
     let url: string, apiVersion: ApiVersion;
-    if (configRepoId) {
-      url        = SparkRoutes.configRepoConnectionCheck(configRepoId);
-      apiVersion = ApiVersion.v4;
-    } else {
-      url        = SparkRoutes.materialConnectionCheck();
+    if (context.configRepo) {
+      url        = SparkRoutes.configRepoConnectionCheck(context.configRepo.id());
+      apiVersion = ConfigReposCRUD.API_VERSION_HEADER;
+    } else if (context.group) {
+      url        = SparkRoutes.materialConnectionCheck(context.group, context.pipeline);
       apiVersion = Material.API_VERSION_HEADER;
+    } else {
+      throw new Error("Invalid material context for connection check");
     }
 
     return ApiRequestBuilder.POST(url, apiVersion, {payload});
@@ -309,13 +312,21 @@ class AuthNotSetInUrlAndUserPassFieldsValidator extends Validator {
   protected doValidate(entity: any, attr: string): void {
     const url = this.get(entity, attr) as string;
     if (!!url) {
-      const urlObj   = urlParse(url); // use url-parse instead of native URL() because MSEdge will not allow embedded credentials
-      const username = this.get(entity, "username") as string | undefined;
-      const password = this.get(entity, "password") as EncryptedValue | undefined;
+      try {
+        const urlObj = urlParse(url); // use url-parse instead of native URL() because MSEdge will not allow embedded credentials
+        const username = this.get(entity, "username") as string | undefined;
+        const password = this.get(entity, "password") as EncryptedValue | undefined;
 
-      if ((!!username || !!(password && password.value())) && (!!urlObj.username || !!urlObj.password || url.indexOf("@") !== -1)) {
-        entity.errors()
-              .add(attr, "URL credentials must be set in either the URL or the username+password fields, but not both.");
+        if ((!!username || !!(password && password.value())) && (!!urlObj.username || !!urlObj.password || url.indexOf("@") !== -1)) {
+          entity.errors()
+                .add(attr, "URL credentials must be set in either the URL or the username+password fields, but not both.");
+        }
+      } catch (err) {
+        if (err instanceof URIError) {
+          entity.errors().add(attr, "URL is malformed and could not be parsed.");
+        } else {
+          throw err;
+        }
       }
     }
   }

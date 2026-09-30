@@ -15,15 +15,12 @@
  */
 package com.thoughtworks.go.server.dashboard;
 
-import com.google.common.collect.Sets;
 import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.CruiseConfig;
 import com.thoughtworks.go.config.PipelineConfig;
 import com.thoughtworks.go.config.PipelineConfigs;
 import com.thoughtworks.go.config.security.GoConfigPipelinePermissionsAuthority;
 import com.thoughtworks.go.config.security.Permissions;
-import com.thoughtworks.go.config.security.permissions.NoOnePermission;
-import com.thoughtworks.go.config.security.users.NoOne;
 import com.thoughtworks.go.domain.PipelineGroupVisitor;
 import com.thoughtworks.go.domain.PipelinePauseInfo;
 import com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModel;
@@ -36,6 +33,7 @@ import com.thoughtworks.go.server.service.PipelineLockService;
 import com.thoughtworks.go.server.service.PipelinePauseService;
 import com.thoughtworks.go.server.service.PipelineUnlockApiService;
 import com.thoughtworks.go.server.service.SchedulingCheckerService;
+import org.apache.commons.collections4.SetUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,8 +41,9 @@ import org.springframework.stereotype.Component;
 
 import java.util.*;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.config.CaseInsensitiveString.str;
-import static com.thoughtworks.go.domain.buildcause.BuildCause.createWithEmptyModifications;
+import static com.thoughtworks.go.domain.buildcause.BuildCause.createEmpty;
 import static com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModel.createEmptyPipelineInstanceModel;
 import static com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModel.createPreparingToSchedule;
 import static com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModels.createPipelineInstanceModels;
@@ -85,8 +84,8 @@ public class GoDashboardCurrentStateLoader {
 
         HashSet<CaseInsensitiveString> currentPipelineNames = new HashSet<>(allPipelineNames);
 
-        Collection<CaseInsensitiveString> pipelinesToRemove = Sets.difference(lastKnownPipelineNames, currentPipelineNames);
-        Collection<CaseInsensitiveString> pipelinesToAdd = Sets.difference(currentPipelineNames, lastKnownPipelineNames);
+        Collection<CaseInsensitiveString> pipelinesToRemove = SetUtils.difference(lastKnownPipelineNames, currentPipelineNames);
+        Collection<CaseInsensitiveString> pipelinesToAdd = SetUtils.difference(currentPipelineNames, lastKnownPipelineNames);
 
         if (!pipelinesToAdd.isEmpty()) {
             historyForDashboard.addAll(loadHistoryForPipelines(new ArrayList<>(CaseInsensitiveString.toStringList(pipelinesToAdd))));
@@ -106,11 +105,12 @@ public class GoDashboardCurrentStateLoader {
         LOGGER.debug("Populating dashboard pipelines");
         config.accept((PipelineGroupVisitor) group -> group.accept(pipelineConfig -> {
             long start = System.currentTimeMillis();
-            Permissions permissions = permissionsFor(pipelineConfig, pipelinesAndTheirPermissions);
-
+            Permissions permissions = pipelinesAndTheirPermissions.getOrDefault(pipelineConfig.getName(), Permissions.NOONE);
             pipelines.add(createGoDashboardPipeline(pipelineConfig, permissions, historyForDashboard, group));
 
-            LOGGER.debug("It took {}ms to process pipeline {}", (System.currentTimeMillis() - start), pipelineConfig.getName());
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("It took {} ms to process pipeline {}", System.currentTimeMillis() - start, pipelineConfig.getName());
+            }
         }));
         LOGGER.debug("Done populating dashboard pipelines");
         this.everLoadedCurrentState = true;
@@ -122,8 +122,8 @@ public class GoDashboardCurrentStateLoader {
     }
 
     private PipelineInstanceModels loadHistoryForPipelines(List<String> pipelineNames) {
-        LOGGER.debug("Loading history for dashboard with {} pipelines", pipelineNames.size());
         try {
+            LOGGER.debug("Loading history for dashboard with {} pipelines", pipelineNames.size());
             return pipelineDao.loadHistoryForDashboard(pipelineNames);
         } finally {
             LOGGER.debug("Done loading history for dashboard");
@@ -188,7 +188,7 @@ public class GoDashboardCurrentStateLoader {
             return createPipelineInstanceModels(createPreparingToSchedule(pipelineName, new StageInstanceModels()));
         }
 
-        return createPipelineInstanceModels(createEmptyPipelineInstanceModel(pipelineName, createWithEmptyModifications(), new StageInstanceModels()));
+        return createPipelineInstanceModels(createEmptyPipelineInstanceModel(pipelineName, createEmpty(), new StageInstanceModels()));
     }
 
     private void populateStagesWhichHaventRunFromConfig(PipelineInstanceModel instanceModel, PipelineConfig pipelineConfig) {
@@ -202,13 +202,6 @@ public class GoDashboardCurrentStateLoader {
         instanceModel.setCanUnlock(canBeUnlocked);
     }
 
-    private Permissions permissionsFor(PipelineConfig pipelineConfig, Map<CaseInsensitiveString, Permissions> pipelinesAndTheirPermissions) {
-        if (pipelinesAndTheirPermissions.containsKey(pipelineConfig.name())) {
-            return pipelinesAndTheirPermissions.get(pipelineConfig.name());
-        }
-        return new Permissions(NoOne.INSTANCE, NoOne.INSTANCE, NoOne.INSTANCE, NoOnePermission.INSTANCE);
-    }
-
     public void reset() {
         historyForDashboard = PipelineInstanceModels.createPipelineInstanceModels();
         lastKnownPipelineNames = new HashSet<>();
@@ -216,6 +209,6 @@ public class GoDashboardCurrentStateLoader {
 
     public void clearEntryFor(CaseInsensitiveString pipeline) {
         lastKnownPipelineNames.remove(pipeline);
-        historyForDashboard.removeIf(pipelineInstanceModel -> pipeline.equals(new CaseInsensitiveString(pipelineInstanceModel.getName())));
+        historyForDashboard.removeIf(pipelineInstanceModel -> pipeline.equals(cis(pipelineInstanceModel.getName())));
     }
 }

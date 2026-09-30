@@ -20,19 +20,15 @@ import com.thoughtworks.go.config.StageConfig;
 import com.thoughtworks.go.config.exceptions.NotAuthorizedException;
 import com.thoughtworks.go.domain.*;
 import com.thoughtworks.go.domain.activity.AgentAssignment;
-import com.thoughtworks.go.domain.activity.JobStatusCache;
-import com.thoughtworks.go.domain.activity.StageStatusCache;
 import com.thoughtworks.go.fixture.PipelineWithTwoStages;
 import com.thoughtworks.go.fixture.SchedulerFixture;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.dao.JobInstanceDao;
 import com.thoughtworks.go.server.dao.PipelineDao;
 import com.thoughtworks.go.server.dao.StageDao;
 import com.thoughtworks.go.server.domain.StageStatusListener;
-import com.thoughtworks.go.server.messaging.JobResultMessage;
 import com.thoughtworks.go.server.messaging.JobResultTopic;
-import com.thoughtworks.go.server.messaging.StageStatusMessage;
 import com.thoughtworks.go.server.messaging.StageStatusTopic;
 import com.thoughtworks.go.server.perf.SchedulingPerformanceLogger;
 import com.thoughtworks.go.server.persistence.MaterialRepository;
@@ -88,124 +84,119 @@ public class ScheduleServiceStageTriggerTest {
     @Autowired private PipelineLockService pipelineLockService;
     @Autowired private ServerHealthService serverHealthService;
     @Autowired private TransactionTemplate transactionTemplate;
-    @Autowired private StageStatusCache stageStatusCache;
-    @Autowired private JobStatusCache jobStatusCache;
     @Autowired private ChangesetService changesetService;
     @Autowired private TransactionSynchronizationManager transactionSynchronizationManager;
     @Autowired private GoCache goCache;
 
-    private PipelineWithTwoStages preCondition;
+    private PipelineWithTwoStages pipelineFixture;
     private SchedulerFixture schedulerFixture;
-    private static GoConfigFileHelper configHelper = new GoConfigFileHelper();
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
 
     @BeforeEach
     public void setUp(@TempDir Path tempDir) throws Exception {
-        preCondition = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
-        configHelper.onSetUp();
+        pipelineFixture = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
         configHelper.usingCruiseConfigDao(goConfigDao);
 
-        dbHelper.onSetUp();
-        preCondition.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
+        pipelineFixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
         schedulerFixture = new SchedulerFixture(dbHelper, stageDao, scheduleService);
     }
 
     @AfterEach
     public void teardown() throws Exception {
-        dbHelper.onTearDown();
-        preCondition.onTearDown();
+        pipelineFixture.onTearDown();
     }
 
     @Test
     public void shouldTriggerNextStageByHistoricalOrder() {
         // having a pipeline with two stages both are completed
-        Pipeline pipeline = preCondition.createdPipelineWithAllStagesPassed();
+        Pipeline pipeline = pipelineFixture.createdPipelineWithAllStagesPassed();
         // now we reorder the two stages via config from dev -> ft to ft -> dev
         reOrderTwoStages();
 
         // and then rerun the devstage
-        scheduleService.rerunStage(pipeline, preCondition.devStage(), "anyone");
-        pipeline = pipelineService.mostRecentFullPipelineByName(preCondition.pipelineName);
+        scheduleService.rerunStage(pipeline, pipelineFixture.devStage(), "anyone");
+        pipeline = pipelineService.mostRecentFullPipelineByName(pipelineFixture.pipelineName);
         dbHelper.passStage(pipeline.getFirstStage());
-        Stage devStage = stageDao.mostRecentWithBuilds(preCondition.pipelineName, preCondition.devStage());
-        Stage oldFtStage = stageDao.mostRecentWithBuilds(preCondition.pipelineName, preCondition.ftStage());
+        Stage devStage = stageDao.mostRecentWithBuilds(pipelineFixture.pipelineName, pipelineFixture.devStage());
+        Stage oldFtStage = stageDao.mostRecentWithBuilds(pipelineFixture.pipelineName, pipelineFixture.ftStage());
 
         // after devStage passes, it should automatically trigger the NEXT stage according to historical order
         // (ftStage), but NOT according to what is currently defined in the config file (none)
         scheduleService.automaticallyTriggerRelevantStagesFollowingCompletionOf(devStage);
 
         // verifying that ftStage is rerun
-        Stage ftStage = stageDao.mostRecentWithBuilds(preCondition.pipelineName, preCondition.ftStage());
+        Stage ftStage = stageDao.mostRecentWithBuilds(pipelineFixture.pipelineName, pipelineFixture.ftStage());
         assertThat(ftStage.getId() > oldFtStage.getId()).describedAs(String.format("Should schedule new ft stage: old id: %s, new id: %s",
             oldFtStage.getId(), ftStage.getId())).isTrue();
-        assertThat(ftStage.getJobInstances().first().getState()).isEqualTo(JobState.Scheduled);
+        assertThat(ftStage.getJobInstances().getFirst().getState()).isEqualTo(JobState.Scheduled);
     }
 
     @Test
     public void shouldNotTriggerNextStageFromConfigIfItIsScheduled() {
         // having a pipeline with two stages both are completed
-        Pipeline pipeline = preCondition.createdPipelineWithAllStagesPassed();
-        Stage oldDevStage = pipeline.getStages().byName(preCondition.devStage);
+        Pipeline pipeline = pipelineFixture.createdPipelineWithAllStagesPassed();
+        Stage oldDevStage = pipeline.getStages().byName(pipelineFixture.devStage);
 
         // now we reorder the two stages via config from dev -> ft to ft -> dev
         reOrderTwoStages();
 
         // and then rerun the ftstage
-        schedulerFixture.rerunAndPassStage(pipeline, preCondition.ftStage());
+        schedulerFixture.rerunAndPassStage(pipeline, pipelineFixture.ftStage());
 
         // after ftStage passes, it should NOT trigger dev stage again otherwise this will
         // ends up in a deadlock
-        Stage ftStage = stageDao.mostRecentWithBuilds(preCondition.pipelineName, preCondition.ftStage());
+        Stage ftStage = stageDao.mostRecentWithBuilds(pipelineFixture.pipelineName, pipelineFixture.ftStage());
         scheduleService.automaticallyTriggerRelevantStagesFollowingCompletionOf(ftStage);
 
         // verifying that devStage is NOT rerun
-        Stage devStage = stageDao.mostRecentWithBuilds(preCondition.pipelineName, preCondition.devStage());
+        Stage devStage = stageDao.mostRecentWithBuilds(pipelineFixture.pipelineName, pipelineFixture.devStage());
         assertThat(devStage.getId()).isEqualTo(oldDevStage.getId());
     }
 
     @Test
     public void shouldNotRerunCurrentStageInNewerPipeline() {
-        Pipeline olderPipeline = preCondition.createdPipelineWithAllStagesPassed();
-        Pipeline newerPipeline = preCondition.createdPipelineWithAllStagesPassed();
-        Stage oldFtStage = newerPipeline.getStages().byName(preCondition.ftStage);
+        Pipeline olderPipeline = pipelineFixture.createdPipelineWithAllStagesPassed();
+        Pipeline newerPipeline = pipelineFixture.createdPipelineWithAllStagesPassed();
+        Stage oldFtStage = newerPipeline.getStages().byName(pipelineFixture.ftStage);
 
-        schedulerFixture.rerunAndPassStage(olderPipeline, preCondition.ftStage());
+        schedulerFixture.rerunAndPassStage(olderPipeline, pipelineFixture.ftStage());
         Stage passedFtStage = pipelineService.fullPipelineById(olderPipeline.getId()).getStages().byName(
-                preCondition.ftStage);
+                pipelineFixture.ftStage);
         scheduleService.automaticallyTriggerRelevantStagesFollowingCompletionOf(passedFtStage);
 
-        Stage ftStage = pipelineService.mostRecentFullPipelineByName(preCondition.pipelineName).getStages().byName(
-                preCondition.ftStage);
+        Stage ftStage = pipelineService.mostRecentFullPipelineByName(pipelineFixture.pipelineName).getStages().byName(
+                pipelineFixture.ftStage);
         assertThat(ftStage.getId()).isEqualTo(oldFtStage.getId());
     }
 
     @Test
-    public void cancelCurrentStageShouldTriggerSameStageInMostRecentPipeline() throws Exception {
-        Pipeline oldest = preCondition.createPipelineWithFirstStagePassedAndSecondStageRunning();
-        preCondition.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
-        preCondition.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
+    public void cancelCurrentStageShouldTriggerSameStageInMostRecentPipeline() {
+        Pipeline oldest = pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
+        pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
+        pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
 
-        long cancelledStageId = oldest.getStages().byName(preCondition.ftStage).getId();
+        long cancelledStageId = oldest.getStages().byName(pipelineFixture.ftStage).getId();
         scheduleService.cancelAndTriggerRelevantStages(cancelledStageId, null, null);
 
-        Pipeline mostRecent = pipelineService.mostRecentFullPipelineByName(preCondition.pipelineName);
+        Pipeline mostRecent = pipelineService.mostRecentFullPipelineByName(pipelineFixture.pipelineName);
         Stage cancelledStage = stageService.stageById(cancelledStageId);
         assertThat(cancelledStage.stageState()).isEqualTo(StageState.Cancelled);
-        assertThat(mostRecent.getStages().byName(preCondition.ftStage).stageState()).isEqualTo(StageState.Building);
+        assertThat(mostRecent.getStages().byName(pipelineFixture.ftStage).stageState()).isEqualTo(StageState.Building);
     }
 
     @Test
-    public void errorInSchedulingSubsequentStageShouldNotRollbackCancelAction() throws Exception {
-        Pipeline oldest = preCondition.createPipelineWithFirstStagePassedAndSecondStageRunning();
-        preCondition.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
-        long cancelledStageId = oldest.getStages().byName(preCondition.ftStage).getId();
-        preCondition.setRunOnAllAgentsForSecondStage();
+    public void errorInSchedulingSubsequentStageShouldNotRollbackCancelAction() {
+        Pipeline oldest = pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
+        pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
+        long cancelledStageId = oldest.getStages().byName(pipelineFixture.ftStage).getId();
+        pipelineFixture.setRunOnAllAgentsForSecondStage();
         try {
             scheduleService.cancelAndTriggerRelevantStages(cancelledStageId, null, null);
             fail("Must have failed scheduling the next stage as it has run on all agents");
         } catch (CannotScheduleException expected) {
         }
 
-        Pipeline mostRecent = pipelineService.mostRecentFullPipelineByName(preCondition.pipelineName);
+        Pipeline mostRecent = pipelineService.mostRecentFullPipelineByName(pipelineFixture.pipelineName);
         Stage cancelledStage = stageService.stageById(cancelledStageId);
         assertThat(cancelledStage.stageState()).isEqualTo(StageState.Cancelled);
         assertThat(mostRecent.getStages().size()).isEqualTo(1);
@@ -213,28 +204,27 @@ public class ScheduleServiceStageTriggerTest {
 
 
     @Test
-    public void cancelCurrentStageShouldNotTriggerSameStageInMostRecentPipelineWhenItIsScheduledAlready()
-                throws Exception {
-        Pipeline oldest = preCondition.createPipelineWithFirstStagePassedAndSecondStageRunning();
-        preCondition.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
-        preCondition.createdPipelineWithAllStagesPassed();
+    public void cancelCurrentStageShouldNotTriggerSameStageInMostRecentPipelineWhenItIsScheduledAlready() {
+        Pipeline oldest = pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
+        pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
+        pipelineFixture.createdPipelineWithAllStagesPassed();
 
-        long cancelledStageId = oldest.getStages().byName(preCondition.ftStage).getId();
+        long cancelledStageId = oldest.getStages().byName(pipelineFixture.ftStage).getId();
         scheduleService.cancelAndTriggerRelevantStages(cancelledStageId, null, null);
 
-        Pipeline mostRecent = pipelineService.mostRecentFullPipelineByName(preCondition.pipelineName);
+        Pipeline mostRecent = pipelineService.mostRecentFullPipelineByName(pipelineFixture.pipelineName);
         Stage cancelledStage = stageService.stageById(cancelledStageId);
         assertThat(cancelledStage.stageState()).isEqualTo(StageState.Cancelled);
-        assertThat(mostRecent.getStages().byName(preCondition.ftStage).stageState()).isEqualTo(StageState.Passed);
+        assertThat(mostRecent.getStages().byName(pipelineFixture.ftStage).stageState()).isEqualTo(StageState.Passed);
     }
 
     @Test
-    public void shouldDoCancellationInTransaction() throws Exception {
-        Pipeline oldest = preCondition.createPipelineWithFirstStagePassedAndSecondStageRunning();
-        preCondition.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
-        preCondition.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
+    public void shouldDoCancellationInTransaction() {
+        Pipeline oldest = pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
+        pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
+        pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
 
-        Stage stage = oldest.getStages().byName(preCondition.ftStage);
+        Stage stage = oldest.getStages().byName(pipelineFixture.ftStage);
 
         StageStatusTopic stageStatusTopic = mock(StageStatusTopic.class);
         JobResultTopic jobResultTopic = mock(JobResultTopic.class);
@@ -250,7 +240,7 @@ public class ScheduleServiceStageTriggerTest {
         StageOrderService stageOrderService = mock(StageOrderService.class);
         SchedulingPerformanceLogger schedulingPerformanceLogger = mock(SchedulingPerformanceLogger.class);
         scheduleService = new ScheduleService(goConfigService, pipelineService, stageService, schedulingCheckerService, pipelineDao, stageDao,
-                stageOrderService, securityService, pipelineScheduleQueue, this.jobInstanceService, jobInstanceDao, agentAssignment, environmentConfigService, pipelineLockService, serverHealthService,
+                stageOrderService, securityService, pipelineScheduleQueue, jobInstanceService, jobInstanceDao, agentAssignment, environmentConfigService, pipelineLockService, serverHealthService,
                 transactionTemplate, null, transactionSynchronizationManager, null, null, null, null, schedulingPerformanceLogger, null, null);
 
         try {
@@ -259,34 +249,32 @@ public class ScheduleServiceStageTriggerTest {
             //ignore
         }
 
-        verify(stageStatusTopic, never()).post(any(StageStatusMessage.class));
-        verify(jobResultTopic, never()).post(any(JobResultMessage.class));
-        verify(stageStatusListener, never()).stageStatusChanged(any(Stage.class));
+        verify(stageStatusTopic, never()).post(any());
+        verify(jobResultTopic, never()).post(any());
+        verify(stageStatusListener, never()).stageStatusChanged(any());
     }
 
     private JobInstanceService jobInstanceService(JobResultTopic jobResultTopic) {
         ServerHealthService serverHealthService = mock(ServerHealthService.class);
         when(serverHealthService.logsSorted()).thenReturn(new ServerHealthStates());
-        return new JobInstanceService(jobInstanceDao, jobResultTopic, jobStatusCache, transactionTemplate,
+        return new JobInstanceService(jobInstanceDao, jobResultTopic, transactionTemplate,
                 transactionSynchronizationManager, null, null, goConfigService, null, serverHealthService);
     }
 
     @Test
-    public void shouldNotNotifyListenersForWhenCancelStageTransactionRollsback() throws Exception {
-        Pipeline oldest = preCondition.createPipelineWithFirstStagePassedAndSecondStageRunning();
-        preCondition.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
-        preCondition.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
+    public void shouldNotNotifyListenersForWhenCancelStageTransactionRollsback() {
+        Pipeline oldest = pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
+        pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
+        pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
 
-        final Stage stage = oldest.getStages().byName(preCondition.ftStage);
-
-        final StageIdentifier identifier = stage.getIdentifier();
+        final Stage stage = oldest.getStages().byName(pipelineFixture.ftStage);
 
         StageStatusTopic stageStatusTopic = mock(StageStatusTopic.class);
         JobResultTopic jobResultTopic = mock(JobResultTopic.class);
         StageStatusListener stageStatusListener = mock(StageStatusListener.class);
 
         JobInstanceService jobInstanceService = jobInstanceService(jobResultTopic);
-        StageService stageService = new StageService(stageDao, jobInstanceService, stageStatusTopic, stageStatusCache, securityService, pipelineDao, changesetService, goConfigService,
+        StageService stageService = new StageService(stageDao, jobInstanceService, stageStatusTopic, securityService, pipelineDao, changesetService, goConfigService,
                 transactionTemplate,
                 transactionSynchronizationManager, goCache, stageStatusListener);
 
@@ -297,7 +285,7 @@ public class ScheduleServiceStageTriggerTest {
 
         try {
             transactionTemplate.executeWithExceptionHandling(new TransactionCallback() {
-                @Override public Object doInTransaction(TransactionStatus status) throws Exception {
+                @Override public Object doInTransaction(TransactionStatus status) {
                     scheduleService.cancelAndTriggerRelevantStages(stage.getId(), null, null);
                     throw new NotAuthorizedException("blah");
                 }
@@ -306,33 +294,32 @@ public class ScheduleServiceStageTriggerTest {
             //ignore
         }
 
-        verify(stageStatusTopic, never()).post(any(StageStatusMessage.class));
-        verify(jobResultTopic, never()).post(any(JobResultMessage.class));
-        verify(stageStatusListener, never()).stageStatusChanged(any(Stage.class));
+        verify(stageStatusTopic, never()).post(any());
+        verify(jobResultTopic, never()).post(any());
+        verify(stageStatusListener, never()).stageStatusChanged(any());
     }
 
     @Test
-    public void shouldBeAbletoCancelStageByName() throws Exception {
-        Pipeline oldest = preCondition.createPipelineWithFirstStagePassedAndSecondStageRunning();
-        preCondition.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
-        preCondition.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
+    public void shouldBeAbleToCancelStageByName() {
+        Pipeline oldest = pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
+        pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
+        pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageHasNotStarted();
 
-        Stage stage = oldest.getStages().byName(preCondition.ftStage);
+        Stage stage = oldest.getStages().byName(pipelineFixture.ftStage);
 
-        StageIdentifier identifier = stage.getIdentifier();
         HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
         Stage cancelledStage = scheduleService.cancelAndTriggerRelevantStages(stage.getId(), null, result);
 
-        Pipeline mostRecent = pipelineService.mostRecentFullPipelineByName(preCondition.pipelineName);
+        Pipeline mostRecent = pipelineService.mostRecentFullPipelineByName(pipelineFixture.pipelineName);
         assertThat(cancelledStage.stageState()).isEqualTo(StageState.Cancelled);
-        assertThat(mostRecent.getStages().byName(preCondition.ftStage).stageState()).isEqualTo(StageState.Building);
+        assertThat(mostRecent.getStages().byName(pipelineFixture.ftStage).stageState()).isEqualTo(StageState.Building);
         assertThat(result.message()).isEqualTo("Stage cancelled successfully.");
     }
 
     @Test
     public void shouldNotAllowManualTriggerIfPreviousStageFails() {
-        Pipeline pipeline = preCondition.createPipelineWithFirstStageFailedAndSecondStageHasNotStarted();
-        StageConfig stageConfig = preCondition.ftStage();
+        Pipeline pipeline = pipelineFixture.createPipelineWithFirstStageFailedAndSecondStageHasNotStarted();
+        StageConfig stageConfig = pipelineFixture.ftStage();
         configHelper.configureStageAsManualApproval(pipeline.getName(), stageConfig.name().toString(), true);
 
         Throwable exception = assertThrows(RuntimeException.class, () -> scheduleService.rerunStage(pipeline.getName(), 1, stageConfig.name().toString()));
@@ -341,7 +328,7 @@ public class ScheduleServiceStageTriggerTest {
     }
 
     private void reOrderTwoStages() {
-        configHelper.removeStage(preCondition.pipelineName, preCondition.devStage);
-        configHelper.addStageToPipeline(preCondition.pipelineName, preCondition.devStage);
+        configHelper.removeStage(pipelineFixture.pipelineName, pipelineFixture.devStage);
+        configHelper.addStageToPipeline(pipelineFixture.pipelineName, pipelineFixture.devStage);
     }
 }

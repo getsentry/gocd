@@ -45,6 +45,7 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 import java.io.File;
 import java.nio.file.Path;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.hg;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
@@ -58,7 +59,7 @@ import static org.mockito.Mockito.mock;
         "classpath:/spring-all-servlet.xml",
 })
 public class ConfigMaterialUpdateListenerIntegrationTest {
-    private static final GoConfigFileHelper configHelper = new GoConfigFileHelper();
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
 
     @Autowired
     private GoConfigDao goConfigDao;
@@ -76,8 +77,6 @@ public class ConfigMaterialUpdateListenerIntegrationTest {
     private GoConfigRepoConfigDataSource goConfigRepoConfigDataSource;
     @Autowired
     private SystemEnvironment systemEnvironment;
-    @Autowired
-    private ConfigCache configCache;
     @Autowired
     private CachedGoConfig cachedGoConfig;
 
@@ -110,7 +109,7 @@ public class ConfigMaterialUpdateListenerIntegrationTest {
                 stageService, configDbStateRepository);
         goDiskSpaceMonitor.initialize();
 
-        configTestRepo = new ConfigTestRepo(hgRepo, new MagicalGoConfigXmlWriter(configCache, ConfigElementImplementationRegistryMother.withNoPlugins()));
+        configTestRepo = new ConfigTestRepo(hgRepo, new MagicalGoConfigXmlWriter(ConfigElementImplementationRegistryMother.withNoPlugins()));
         this.material = configTestRepo.getMaterial();
     }
 
@@ -137,7 +136,8 @@ public class ConfigMaterialUpdateListenerIntegrationTest {
                 """
                         <?xml ve"?>
                         <cru>
-                        </cruise>""");
+                        </cruise>
+                        """);
 
         materialUpdateService.updateMaterial(material);
 
@@ -208,7 +208,7 @@ public class ConfigMaterialUpdateListenerIntegrationTest {
         String fileName = "pipe1.gocd.xml";
 
         GoConfigMother mother = new GoConfigMother();
-        PipelineConfig pipelineConfig = mother.cruiseConfigWithOnePipelineGroup().getAllPipelineConfigs().get(0);
+        PipelineConfig pipelineConfig = mother.cruiseConfigWithOnePipelineGroup().getAllPipelineConfigs().getFirst();
 
         configTestRepo.addPipelineToRepositoryAndPush(fileName, pipelineConfig);
 
@@ -217,8 +217,8 @@ public class ConfigMaterialUpdateListenerIntegrationTest {
         waitForMaterialNotInProgress();
         PartialConfig partial = goConfigRepoConfigDataSource.latestPartialConfigForMaterial(materialConfig);
         assertNotNull(partial);
-        assertThat(partial.getGroups().get(0).size()).isEqualTo(1);
-        assertThat(partial.getGroups().get(0).get(0)).isEqualTo(pipelineConfig);
+        assertThat(partial.getGroups().getFirst().size()).isEqualTo(1);
+        assertThat(partial.getGroups().getFirst().getFirst()).isEqualTo(pipelineConfig);
     }
 
     @Test
@@ -226,7 +226,7 @@ public class ConfigMaterialUpdateListenerIntegrationTest {
         String fileName = "pipe1.gocd.xml";
 
         GoConfigMother mother = new GoConfigMother();
-        PipelineConfig pipelineConfig = mother.cruiseConfigWithOnePipelineGroup().getAllPipelineConfigs().get(0);
+        PipelineConfig pipelineConfig = mother.cruiseConfigWithOnePipelineGroup().getAllPipelineConfigs().getFirst();
 
         configTestRepo.addPipelineToRepositoryAndPush(fileName, pipelineConfig);
 
@@ -244,7 +244,7 @@ public class ConfigMaterialUpdateListenerIntegrationTest {
     @Test
     public void shouldCheckoutNewMaterial() throws Exception {
         GoConfigMother mother = new GoConfigMother();
-        PipelineConfig pipelineConfig = mother.cruiseConfigWithOnePipelineGroup().getAllPipelineConfigs().get(0);
+        PipelineConfig pipelineConfig = mother.cruiseConfigWithOnePipelineGroup().getAllPipelineConfigs().getFirst();
 
         configTestRepo.addPipelineToRepositoryAndPush("pipe1.gocd.xml", pipelineConfig);
 
@@ -260,7 +260,7 @@ public class ConfigMaterialUpdateListenerIntegrationTest {
     @Test
     public void shouldCheckoutChangedInExistingMaterial() throws Exception {
         GoConfigMother mother = new GoConfigMother();
-        PipelineConfig pipelineConfig = mother.cruiseConfigWithOnePipelineGroup().getAllPipelineConfigs().get(0);
+        PipelineConfig pipelineConfig = mother.cruiseConfigWithOnePipelineGroup().getAllPipelineConfigs().getFirst();
 
         configTestRepo.addPipelineToRepositoryAndPush("pipe1.gocd.xml", pipelineConfig);
 
@@ -285,7 +285,7 @@ public class ConfigMaterialUpdateListenerIntegrationTest {
         String fileName = "pipe1.gocd.xml";
 
         GoConfigMother mother = new GoConfigMother();
-        PipelineConfig pipelineConfig = mother.cruiseConfigWithOnePipelineGroup().getAllPipelineConfigs().get(0);
+        PipelineConfig pipelineConfig = mother.cruiseConfigWithOnePipelineGroup().getAllPipelineConfigs().getFirst();
 
         configTestRepo.addPipelineToRepositoryAndPush(fileName, pipelineConfig);
 
@@ -308,7 +308,9 @@ public class ConfigMaterialUpdateListenerIntegrationTest {
                       <svn url="file:///tmp/foo" />
                     </materials>
                   </pipeline>
-                </pipelines></cruise>""");
+                </pipelines>
+                </cruise>
+                """);
         materialUpdateService.updateMaterial(material);
         // time for messages to pass through all services
         waitForMaterialNotInProgress();
@@ -318,7 +320,7 @@ public class ConfigMaterialUpdateListenerIntegrationTest {
         assertThat(goConfigService.hasPipelineNamed(pipelineConfig.name())).isTrue();
         assertThat(goConfigService.pipelineConfigNamed(pipelineConfig.name())).isEqualTo(pipelineConfig);
         // and no trace of badPipe
-        assertThat(goConfigService.hasPipelineNamed(new CaseInsensitiveString("badPipe"))).isFalse();
+        assertThat(goConfigService.hasPipelineNamed(cis("badPipe"))).isFalse();
     }
 
 }

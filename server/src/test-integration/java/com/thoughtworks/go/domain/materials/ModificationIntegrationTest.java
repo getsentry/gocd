@@ -62,11 +62,11 @@ public class ModificationIntegrationTest {
     }
 
     @Test
-    public void shouldPersistAdditionalDataIntoModificationsTable() throws Exception {
+    public void shouldPersistAdditionalDataIntoModificationsTable() {
         String revision = "revision";
         Map<String, String> additionalDataMap = new HashMap<>();
         additionalDataMap.put("key", "value");
-        String additionalData = JsonHelper.toJsonString(additionalDataMap);
+        String additionalData = JsonHelper.toJsonExposeOnly(additionalDataMap);
         final Modification modification = new Modification("user", "comment", "foo@bar.fooadsf", new Date(), revision, additionalData);
         final GitMaterial git = new GitMaterial("url", "branch");
         transactionTemplate.executeWithExceptionHandling(new TransactionCallback() {

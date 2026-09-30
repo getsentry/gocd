@@ -1,0 +1,214 @@
+/*
+ * Copyright Thoughtworks, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.thoughtworks.go.server.dao;
+
+import com.thoughtworks.go.config.GoConfigDao;
+import com.thoughtworks.go.domain.Pipeline;
+import com.thoughtworks.go.domain.buildcause.BuildCause;
+import com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModel;
+import com.thoughtworks.go.server.caching.GoCache;
+import com.thoughtworks.go.server.persistence.MaterialRepository;
+import com.thoughtworks.go.server.transaction.SqlMapClientTemplate;
+import com.thoughtworks.go.util.TimeProvider;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
+
+class PipelineSqlMapDaoTest {
+    private PipelineSqlMapDao pipelineSqlMapDao;
+    private GoCache goCache;
+    private SqlMapClientTemplate sqlMapClientTemplate;
+    private MaterialRepository materialRepository;
+
+    @BeforeEach
+    void setUp() {
+        goCache = mock(GoCache.class);
+        sqlMapClientTemplate = mock(SqlMapClientTemplate.class);
+        materialRepository = mock(MaterialRepository.class);
+        GoConfigDao configFileDao = mock(GoConfigDao.class);
+        TimeProvider timeProvider = mock(TimeProvider.class);
+        pipelineSqlMapDao = new PipelineSqlMapDao(null, materialRepository, goCache, null, null, null, null, null, configFileDao, null, timeProvider);
+        pipelineSqlMapDao.setSqlMapClientTemplate(sqlMapClientTemplate);
+    }
+
+    @Test
+    void shouldLoadPipelineHistoryFromCacheWhenQueriedViaNameAndCounter() {
+        String pipelineName = "wholetthedogsout";
+        int pipelineCounter = 42;
+        PipelineInstanceModel expected = mock(PipelineInstanceModel.class);
+        when(goCache.get(anyString())).thenReturn(expected);
+        when(expected.getBuildCause()).thenReturn(mock(BuildCause.class));
+        when(expected.getApprovedBy()).thenReturn("some-user");
+
+        PipelineInstanceModel reFetch = pipelineSqlMapDao.findPipelineHistoryByNameAndCounter(pipelineName, pipelineCounter); //returned from cache
+
+        assertThat(reFetch).isEqualTo(expected);
+        verify(goCache).get(anyString());
+    }
+
+    @Test
+    void shouldPrimePipelineHistoryToCacheWhenQueriedViaNameAndCounter() {
+        String pipelineName = "wholetthedogsout";
+        int pipelineCounter = 42;
+        Map<String, Object> map = Map.of("pipelineName", pipelineName, "pipelineCounter", pipelineCounter);
+        PipelineInstanceModel expected = mock(PipelineInstanceModel.class);
+        when(sqlMapClientTemplate.queryForObject("getPipelineHistoryByNameAndCounter", map)).thenReturn(expected);
+        when(expected.getId()).thenReturn(1111L);
+        when(expected.getBuildCause()).thenReturn(mock(BuildCause.class));
+        when(expected.getApprovedBy()).thenReturn("some-user");
+        when(materialRepository.findMaterialRevisionsForPipeline(expected.getId())).thenReturn(null);
+
+        PipelineInstanceModel primed = pipelineSqlMapDao.findPipelineHistoryByNameAndCounter(pipelineName, pipelineCounter);//prime cache
+
+        assertThat(primed).isEqualTo(expected);
+
+        verify(sqlMapClientTemplate, times(1)).queryForObject("getPipelineHistoryByNameAndCounter", map);
+        verify(goCache, times(1)).put(anyString(), eq(expected));
+        verify(goCache, times(2)).get(anyString());
+    }
+
+    @Test
+    void shouldUpdateCommentAndRemoveItFromPipelineHistoryCache() {
+        String pipelineName = "wholetthedogsout";
+        int pipelineCounter = 42;
+        String comment = "This song is from the 90s.";
+        Map<String, Object> args = Map.of("pipelineName", pipelineName, "pipelineCounter", pipelineCounter, "comment", comment);
+
+        Pipeline expected = mock(Pipeline.class);
+        when(sqlMapClientTemplate.queryForObject("findPipelineByNameAndCounter", Map.of("name", pipelineName, "counter", pipelineCounter))).thenReturn(expected);
+        when(expected.getId()).thenReturn(102413L);
+
+        pipelineSqlMapDao.updateComment(pipelineName, pipelineCounter, comment);
+
+        verify(sqlMapClientTemplate, times(1)).update("updatePipelineComment", args);
+        verify(goCache, times(1)).remove("com.thoughtworks.go.server.dao.PipelineSqlMapDao.$pipelineHistory.$102413");
+    }
+
+    @Test
+    void loadHistoryByIds_shouldLoadHistoryByIdWhenOnlyASingleIdIsNeedeSoThatItUsesTheExistingCacheForEnvironmentsPage() {
+        SqlMapClientTemplate mockTemplate = mock(SqlMapClientTemplate.class);
+        when(mockTemplate.queryForList(eq("getPipelineRange"), any())).thenReturn(List.of(2L));
+        pipelineSqlMapDao.setSqlMapClientTemplate(mockTemplate);
+        pipelineSqlMapDao.loadHistory("pipelineName", 1, 0);
+        verify(mockTemplate, never()).queryForList(eq("getPipelineHistoryByName"), any());
+        verify(mockTemplate, times(1)).queryForList(eq("getPipelineRange"), any());
+    }
+
+    @Nested
+    class CacheKeyForBuildCauseByNameAndCounter {
+        @Test
+        void shouldGenerateCacheKey() {
+            assertThat(pipelineSqlMapDao.cacheKeyForBuildCauseByNameAndCounter("foo", 1))
+                    .isEqualTo("com.thoughtworks.go.server.dao.PipelineSqlMapDao.$buildCauseByNameAndCounter.$foo.$1");
+        }
+    }
+
+    @Nested
+    class CacheKeyForPipelineHistoryByNameAndCounter {
+        @Test
+        void shouldGenerateCacheKey() {
+            assertThat(pipelineSqlMapDao.cacheKeyForPipelineHistoryByNameAndCounter("foo", 1))
+                    .isEqualTo("com.thoughtworks.go.server.dao.PipelineSqlMapDao.$cacheKeyForPipelineHistoryByName.$foo.$AndCounter.$1");
+        }
+    }
+
+    @Nested
+    class CacheKeyForLatestPipelineIdByPipelineName {
+        @Test
+        void shouldGenerateCacheKey() {
+            assertThat(pipelineSqlMapDao.cacheKeyForLatestPipelineIdByPipelineName("foo"))
+                    .isEqualTo("com.thoughtworks.go.server.dao.PipelineSqlMapDao.$latestPipelineIdByPipelineName.$foo");
+        }
+    }
+
+    @Nested
+    class CacheKeyForPauseState {
+        @Test
+        void shouldGenerateCacheKey() {
+            assertThat(pipelineSqlMapDao.cacheKeyForPauseState("foo"))
+                    .isEqualTo("com.thoughtworks.go.server.dao.PipelineSqlMapDao.$cacheKeyForPauseState.$foo");
+        }
+    }
+
+    @Nested
+    class cacheKeyForLatestPassedStage {
+        @Test
+        void shouldGenerateCacheKey() {
+            assertThat(pipelineSqlMapDao.cacheKeyForLatestPassedStage(1, "stage_1"))
+                    .isEqualTo("com.thoughtworks.go.server.dao.PipelineSqlMapDao.$cacheKeyForlatestPassedStage.$1.$stage_1");
+        }
+    }
+
+    @Nested
+    class CacheKeyForPipelineInstancesTriggeredWithDependencyMaterial {
+        @Test
+        void shouldGenerateCacheKey() {
+            assertThat(pipelineSqlMapDao.cacheKeyForPipelineInstancesTriggeredWithDependencyMaterial("Foo", "Bar", 1))
+                    .isEqualTo("com.thoughtworks.go.server.dao.PipelineSqlMapDao.$cacheKeyForPipelineInstancesWithDependencyMaterial.$foo.$bar.$1");
+        }
+
+        @Test
+        void shouldGenerateADifferentCacheKeyWhenPartOfPipelineIsInterchangedWithStageName() {
+            assertThat(pipelineSqlMapDao.cacheKeyForPipelineInstancesTriggeredWithDependencyMaterial("foo", "bar_baz", 1))
+                    .isNotEqualTo(pipelineSqlMapDao.cacheKeyForPipelineInstancesTriggeredWithDependencyMaterial("foo_bar", "baz", 1));
+
+            assertThat(pipelineSqlMapDao.cacheKeyForPipelineInstancesTriggeredWithDependencyMaterial("foo", "bar-baz", 1))
+                    .isNotEqualTo(pipelineSqlMapDao.cacheKeyForPipelineInstancesTriggeredWithDependencyMaterial("foo-bar", "baz", 1));
+        }
+    }
+
+    @Nested
+    class CacheKeyForPipelineInstancesTriggeredWithDependencyMaterialWithRevision {
+        @Test
+        void shouldGenerateCacheKey() {
+            assertThat(pipelineSqlMapDao.cacheKeyForPipelineInstancesTriggeredWithDependencyMaterial("Foo", "finger-print", "1c71670ed"))
+                    .isEqualTo("com.thoughtworks.go.server.dao.PipelineSqlMapDao.$cacheKeyForPipelineInstancesWithDependencyMaterial.$foo.$finger-print.$1c71670ed");
+        }
+    }
+
+    @Nested
+    class LatestSuccessfulStageCacheKey {
+        @Test
+        void shouldGenerateCacheKey() {
+            assertThat(pipelineSqlMapDao.latestSuccessfulStageCacheKey("Foo", "Bar"))
+                    .isEqualTo("com.thoughtworks.go.server.dao.PipelineSqlMapDao.$latestSuccessfulStage.$Foo.$Bar");
+        }
+
+        @Test
+        void shouldGenerateADifferentCacheKeyWhenPartOfPipelineIsInterchangedWithStageName() {
+            assertThat(pipelineSqlMapDao.latestSuccessfulStageCacheKey("foo", "bar-baz"))
+                    .isNotEqualTo(pipelineSqlMapDao.latestSuccessfulStageCacheKey("foo-bar", "baz"));
+
+            assertThat(pipelineSqlMapDao.latestSuccessfulStageCacheKey("foo", "bar_baz"))
+                    .isNotEqualTo(pipelineSqlMapDao.latestSuccessfulStageCacheKey("foo_bar", "baz"));
+        }
+    }
+
+    @Nested
+    class PipelineHistoryCacheKey {
+        @Test
+        void shouldGenerateCacheKey() {
+            assertThat(pipelineSqlMapDao.pipelineHistoryCacheKey(1L))
+                    .isEqualTo("com.thoughtworks.go.server.dao.PipelineSqlMapDao.$pipelineHistory.$1");
+        }
+    }
+}

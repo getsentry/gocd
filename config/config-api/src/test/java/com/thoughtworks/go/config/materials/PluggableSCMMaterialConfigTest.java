@@ -37,6 +37,7 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.config.materials.ScmMaterialConfig.FOLDER;
 import static com.thoughtworks.go.domain.packagerepository.ConfigurationPropertyMother.create;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.git;
@@ -66,30 +67,30 @@ public class PluggableSCMMaterialConfigTest {
         pluggableSCMMaterialConfig.validateConcreteMaterial(new ConfigSaveValidationContext(null, null));
 
         assertThat(pluggableSCMMaterialConfig.errors().getAll().size()).isEqualTo(1);
-        assertThat(pluggableSCMMaterialConfig.errors().on(PluggableSCMMaterialConfig.SCM_ID)).isEqualTo("Please select a SCM");
+        assertThat(pluggableSCMMaterialConfig.errors().firstErrorOn(PluggableSCMMaterialConfig.SCM_ID)).isEqualTo("Please select a SCM");
     }
 
     @Test
     public void shouldAddErrorIfSCMNameUniquenessValidationFails() {
         Map<CaseInsensitiveString, AbstractMaterialConfig> nameToMaterialMap = new HashMap<>();
         PluggableSCMMaterialConfig existingMaterial = new PluggableSCMMaterialConfig("scm-id");
-        nameToMaterialMap.put(new CaseInsensitiveString("scm-id"), existingMaterial);
-        nameToMaterialMap.put(new CaseInsensitiveString("foo"), git("url"));
+        nameToMaterialMap.put(cis("scm-id"), existingMaterial);
+        nameToMaterialMap.put(cis("foo"), git("url"));
 
         pluggableSCMMaterialConfig.validateNameUniqueness(nameToMaterialMap);
 
         assertThat(pluggableSCMMaterialConfig.errors().getAll().size()).isEqualTo(1);
-        assertThat(pluggableSCMMaterialConfig.errors().on(PluggableSCMMaterialConfig.SCM_ID)).isEqualTo("Duplicate SCM material detected!");
+        assertThat(pluggableSCMMaterialConfig.errors().firstErrorOn(PluggableSCMMaterialConfig.SCM_ID)).isEqualTo("Duplicate SCM material detected!");
         assertThat(existingMaterial.errors().getAll().size()).isEqualTo(1);
-        assertThat(existingMaterial.errors().on(PluggableSCMMaterialConfig.SCM_ID)).isEqualTo("Duplicate SCM material detected!");
+        assertThat(existingMaterial.errors().firstErrorOn(PluggableSCMMaterialConfig.SCM_ID)).isEqualTo("Duplicate SCM material detected!");
         assertThat(nameToMaterialMap.size()).isEqualTo(2);
     }
 
     @Test
     public void shouldPassMaterialUniquenessIfIfNoDuplicateSCMFound() {
         Map<CaseInsensitiveString, AbstractMaterialConfig> nameToMaterialMap = new HashMap<>();
-        nameToMaterialMap.put(new CaseInsensitiveString("scm-id-new"), new PluggableSCMMaterialConfig("scm-id-new"));
-        nameToMaterialMap.put(new CaseInsensitiveString("foo"), git("url"));
+        nameToMaterialMap.put(cis("scm-id-new"), new PluggableSCMMaterialConfig("scm-id-new"));
+        nameToMaterialMap.put(cis("foo"), git("url"));
 
         pluggableSCMMaterialConfig.validateNameUniqueness(nameToMaterialMap);
 
@@ -120,14 +121,14 @@ public class PluggableSCMMaterialConfigTest {
         pluggableSCMMaterialConfig.validateConcreteMaterial(configSaveValidationContext);
 
         assertThat(pluggableSCMMaterialConfig.errors().getAll().size()).isEqualTo(1);
-        assertThat(pluggableSCMMaterialConfig.errors().on(PluggableSCMMaterialConfig.FOLDER)).isEqualTo("Dest folder '/usr/home' is not valid. It must be a sub-directory of the working folder.");
+        assertThat(pluggableSCMMaterialConfig.errors().firstErrorOn(PluggableSCMMaterialConfig.FOLDER)).isEqualTo("Dest folder '/usr/home' is not valid. It must be a sub-directory of the working folder.");
 
         pluggableSCMMaterialConfig = new PluggableSCMMaterialConfig(null, scmConfig, "./../crap", null, false);
         pluggableSCMMaterialConfig.setScmId("scm-id");
         pluggableSCMMaterialConfig.validateConcreteMaterial(configSaveValidationContext);
 
         assertThat(pluggableSCMMaterialConfig.errors().getAll().size()).isEqualTo(2);
-        assertThat(pluggableSCMMaterialConfig.errors().on(PluggableSCMMaterialConfig.FOLDER)).isEqualTo("Invalid directory name './../crap'. It should be a valid relative path.");
+        assertThat(pluggableSCMMaterialConfig.errors().firstErrorOn(PluggableSCMMaterialConfig.FOLDER)).isEqualTo("Invalid directory name './../crap'. It should be a valid relative path.");
     }
 
 
@@ -141,7 +142,7 @@ public class PluggableSCMMaterialConfigTest {
         pluggableSCMMaterialConfig.setScmId("scm-id");
         pluggableSCMMaterialConfig.validateTree(validationContext);
         assertThat(pluggableSCMMaterialConfig.errors().getAll().size()).isEqualTo(1);
-        assertThat(pluggableSCMMaterialConfig.errors().on(PluggableSCMMaterialConfig.SCM_ID)).isEqualTo("Could not find SCM for given scm-id: [scm-id].");
+        assertThat(pluggableSCMMaterialConfig.errors().firstErrorOn(PluggableSCMMaterialConfig.SCM_ID)).isEqualTo("Could not find SCM for given scm-id: [scm-id].");
     }
 
     @Test
@@ -154,7 +155,7 @@ public class PluggableSCMMaterialConfigTest {
         pluggableSCMMaterialConfig.setScmId("scm-id");
         pluggableSCMMaterialConfig.validateTree(configSaveValidationContext);
         assertThat(pluggableSCMMaterialConfig.errors().getAll().size()).isEqualTo(1);
-        assertThat(pluggableSCMMaterialConfig.errors().on(PluggableSCMMaterialConfig.SCM_ID)).isEqualTo("Could not find plugin for scm-id: [scm-id].");
+        assertThat(pluggableSCMMaterialConfig.errors().firstErrorOn(PluggableSCMMaterialConfig.SCM_ID)).isEqualTo("Could not find plugin for scm-id: [scm-id].");
     }
 
     @Test
@@ -198,7 +199,7 @@ public class PluggableSCMMaterialConfigTest {
         assertThat(pluggableSCMMaterialConfig.getFilterAsString()).isEqualTo("/foo/**.*,/another/**.*,bar");
 
         pluggableSCMMaterialConfig.setFilter(new Filter());
-        assertThat(pluggableSCMMaterialConfig.getFilterAsString()).isEqualTo("");
+        assertThat(pluggableSCMMaterialConfig.getFilterAsString()).isEmpty();
     }
 
     @Test
@@ -261,6 +262,7 @@ public class PluggableSCMMaterialConfigTest {
         assertThat(p1.equals(p2)).isTrue();
 
         // null comparison
+        //noinspection ConstantValue
         assertThat(p1.equals(null)).isFalse();
     }
 
@@ -268,7 +270,7 @@ public class PluggableSCMMaterialConfigTest {
     public void shouldDelegateToSCMConfigForAutoUpdate() {
         SCM scm = mock(SCM.class);
         when(scm.isAutoUpdate()).thenReturn(false);
-        PluggableSCMMaterialConfig pluggableSCMMaterialConfig = new PluggableSCMMaterialConfig(new CaseInsensitiveString("scm-name"), scm, null, null, false);
+        PluggableSCMMaterialConfig pluggableSCMMaterialConfig = new PluggableSCMMaterialConfig(cis("scm-name"), scm, null, null, false);
 
         assertThat(pluggableSCMMaterialConfig.isAutoUpdate()).isFalse();
 
@@ -282,7 +284,7 @@ public class PluggableSCMMaterialConfigTest {
         when(scmConfig.getConfigForDisplay()).thenReturn("k1:v1");
         PluggableSCMMaterialConfig pluggableSCMMaterialConfig = new PluggableSCMMaterialConfig(null, scmConfig, null, null, false);
 
-        assertThat(pluggableSCMMaterialConfig.getName()).isEqualTo(new CaseInsensitiveString("scm-name"));
+        assertThat(pluggableSCMMaterialConfig.getName()).isEqualTo(cis("scm-name"));
         assertThat(pluggableSCMMaterialConfig.getDisplayName()).isEqualTo("scm-name");
         assertThat(pluggableSCMMaterialConfig.getLongDescription()).isEqualTo("k1:v1");
         assertThat(pluggableSCMMaterialConfig.getUriForDisplay()).isEqualTo("k1:v1");
@@ -315,7 +317,7 @@ public class PluggableSCMMaterialConfigTest {
         pluggableSCMMaterialConfig.setFolder("f1");
         pluggableSCMMaterialConfig.validateNotSubdirectoryOf("f1/f2");
         assertFalse(pluggableSCMMaterialConfig.errors().isEmpty());
-        assertThat(pluggableSCMMaterialConfig.errors().on(FOLDER)).isEqualTo("Invalid destination directory. Every material needs a different destination directory and the directories should not be nested.");
+        assertThat(pluggableSCMMaterialConfig.errors().firstErrorOn(FOLDER)).isEqualTo("Invalid destination directory. Every material needs a different destination directory and the directories should not be nested.");
     }
 
     @Test
@@ -331,14 +333,14 @@ public class PluggableSCMMaterialConfigTest {
         pluggableSCMMaterialConfig.setFolder("f1/../../f3");
 
         pluggableSCMMaterialConfig.validateConcreteMaterial(null);
-        assertThat(pluggableSCMMaterialConfig.errors().on(FOLDER)).isEqualTo("Dest folder 'f1/../../f3' is not valid. It must be a sub-directory of the working folder.");
+        assertThat(pluggableSCMMaterialConfig.errors().firstErrorOn(FOLDER)).isEqualTo("Dest folder 'f1/../../f3' is not valid. It must be a sub-directory of the working folder.");
     }
 
     @Test
     public void shouldFailValidationIfDestinationDirectoryIsNestedAfterNormalization() {
         pluggableSCMMaterialConfig.setFolder("f1/f2/../../f3");
         pluggableSCMMaterialConfig.validateNotSubdirectoryOf("f3/f4");
-        assertThat(pluggableSCMMaterialConfig.errors().on(FOLDER)).isEqualTo("Invalid destination directory. Every material needs a different destination directory and the directories should not be nested.");
+        assertThat(pluggableSCMMaterialConfig.errors().firstErrorOn(FOLDER)).isEqualTo("Invalid destination directory. Every material needs a different destination directory and the directories should not be nested.");
     }
 
     @Test

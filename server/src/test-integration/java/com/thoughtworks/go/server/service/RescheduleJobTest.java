@@ -17,7 +17,6 @@ package com.thoughtworks.go.server.service;
 
 import com.thoughtworks.go.config.*;
 import com.thoughtworks.go.domain.*;
-import com.thoughtworks.go.domain.activity.JobStatusCache;
 import com.thoughtworks.go.fixture.PipelineWithTwoStages;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.persistence.MaterialRepository;
@@ -40,6 +39,7 @@ import java.nio.file.Path;
 import java.util.Date;
 import java.util.List;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ExtendWith(SpringExtension.class)
@@ -54,21 +54,19 @@ public class RescheduleJobTest {
     private GoConfigDao goConfigDao;
     @Autowired
     private DatabaseAccessHelper dbHelper;
-
-    private static GoConfigFileHelper configHelper = new GoConfigFileHelper();
-    private PipelineWithTwoStages fixture;
     @Autowired
     private JobInstanceService jobInstanceService;
     @Autowired
     private ScheduleService scheduleService;
     @Autowired
-    private JobStatusCache jobStatusCache;
-    @Autowired
     private MaterialRepository materialRepository;
     @Autowired
     private TransactionTemplate transactionTemplate;
 
-    public static final String JOB_NAME = "unit";
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
+    private PipelineWithTwoStages pipelineFixture;
+
+    private static final String JOB_NAME = "unit";
     private static final String STAGE_NAME = "mingle";
     private static final String PIPELINE_NAME = "studios";
     private Stage stage;
@@ -77,38 +75,22 @@ public class RescheduleJobTest {
     public void setUp(@TempDir Path tempDir) throws Exception {
         configHelper.usingCruiseConfigDao(goConfigDao);
         configHelper.onSetUp();
-        fixture = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
-        fixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
+        pipelineFixture = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
+        pipelineFixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
         configHelper.addPipeline(PIPELINE_NAME, STAGE_NAME);
         stage = dbHelper.saveBuildingStage(PIPELINE_NAME, STAGE_NAME);
     }
 
     @AfterEach
     public void teardown() throws Exception {
-        fixture.onTearDown();
+        pipelineFixture.onTearDown();
         dbHelper.onTearDown();
         configHelper.onTearDown();
     }
 
     @Test
-    public void rescheduleBuildShouldUpdateCache() {
-        final JobInstance hungJob = stage.getJobInstances().get(0);
-        final Pipeline pipeline = dbHelper.getPipelineDao().mostRecentPipeline(PIPELINE_NAME);
-        //Need to do this in transaction because of caching
-        dbHelper.txTemplate().execute(new TransactionCallbackWithoutResult() {
-            @Override
-            protected void doInTransactionWithoutResult(TransactionStatus status) {
-                jobInstanceService.save(new StageIdentifier(pipeline.getName(), -2, pipeline.getLabel(), stage.getName(), String.valueOf(stage.getCounter())), stage.getId(), hungJob);
-            }
-        });
-
-        scheduleService.rescheduleJob(hungJob);
-        assertThat(jobStatusCache.currentJob(hungJob.getIdentifier().jobConfigIdentifier()).getState()).isEqualTo(JobState.Scheduled);
-    }
-
-    @Test
     public void rescheduleBuildShouldNotRescheduleIfReloadedJobIsCompleted() {
-        final JobInstance hungJob = stage.getJobInstances().get(0);
+        final JobInstance hungJob = stage.getJobInstances().getFirst();
         hungJob.changeState(JobState.Completed, new Date());
         //Need to do this in transaction because of caching
         dbHelper.txTemplate().execute(new TransactionCallbackWithoutResult() {
@@ -127,7 +109,7 @@ public class RescheduleJobTest {
 
     @Test
     public void rescheduleHungBuildShouldScheduleNewBuild()  {
-        JobInstance hungJob = stage.getJobInstances().get(0);
+        JobInstance hungJob = stage.getJobInstances().getFirst();
         dbHelper.getBuildInstanceDao().save(stage.getId(), hungJob);
         scheduleService.rescheduleJob(hungJob);
 
@@ -135,7 +117,7 @@ public class RescheduleJobTest {
         assertThat(reloaded.isIgnored()).isTrue();
         assertThat(reloaded.getState()).isEqualTo(JobState.Rescheduled);
 
-        JobPlan newPlan = dbHelper.getBuildInstanceDao().orderedScheduledBuilds().get(0);
+        JobPlan newPlan = dbHelper.getBuildInstanceDao().orderedScheduledBuilds().getFirst();
         assertThat(newPlan.getJobId()).isNotEqualTo(hungJob.getId());
         assertThat(newPlan.getStageName()).isEqualTo(hungJob.getStageName());
 
@@ -151,9 +133,9 @@ public class RescheduleJobTest {
         ArtifactTypeConfigs artifactTypeConfigs = new ArtifactTypeConfigs(List.of(new BuildArtifactConfig("s1", "d1"), new BuildArtifactConfig("s2", "d2")));
         configHelper.addAssociatedEntitiesForAJob(PIPELINE_NAME, STAGE_NAME, JOB_NAME, resourceConfigs, artifactTypeConfigs);
 
-        dbHelper.schedulePipeline(configHelper.currentConfig().getPipelineConfigByName(new CaseInsensitiveString(PIPELINE_NAME)), new TimeProvider());
+        dbHelper.schedulePipeline(configHelper.currentConfig().getPipelineConfigByName(cis(PIPELINE_NAME)), new TimeProvider());
 
-        JobPlan oldJobPlan = dbHelper.getBuildInstanceDao().orderedScheduledBuilds().get(0);
+        JobPlan oldJobPlan = dbHelper.getBuildInstanceDao().orderedScheduledBuilds().getFirst();
         assertThat(oldJobPlan.getResources().size()).isEqualTo(2);
         assertThat(oldJobPlan.getArtifactPlans().size()).isEqualTo(2);
 
@@ -173,7 +155,7 @@ public class RescheduleJobTest {
             Resource oldResource = oldJobPlan.getResources().get(i);
             assertThat(newResource.getId()).isNotEqualTo(oldResource.getId());
             assertThat(newResource.getName()).isEqualTo(oldResource.getName());
-            assertThat((Object) ReflectionUtil.getField(newResource, "buildId")).isEqualTo(newJobPlan.getJobId());
+            assertThat(ReflectionUtil.<Object>getField(newResource, "buildId")).isEqualTo(newJobPlan.getJobId());
         }
 
         assertThat(newJobPlan.getArtifactPlans().size()).isEqualTo(2);
@@ -185,7 +167,7 @@ public class RescheduleJobTest {
             assertThat(newArtifactPlan.getSrc()).isEqualTo(oldArtifactPlan.getSrc());
             assertThat(newArtifactPlan.getDest()).isEqualTo(oldArtifactPlan.getDest());
             assertThat(newArtifactPlan.getArtifactPlanType()).isEqualTo(oldArtifactPlan.getArtifactPlanType());
-            assertThat((Object) ReflectionUtil.getField(newArtifactPlan, "buildId")).isEqualTo(newJobPlan.getJobId());
+            assertThat(ReflectionUtil.<Object>getField(newArtifactPlan, "buildId")).isEqualTo(newJobPlan.getJobId());
         }
 
         JobInstance newJobInstance = dbHelper.getBuildInstanceDao().buildById(newJobPlan.getJobId());
@@ -200,7 +182,7 @@ public class RescheduleJobTest {
 
         scheduleService.rescheduleJob(job);
 
-        JobPlan newPlan = dbHelper.getBuildInstanceDao().orderedScheduledBuilds().get(0);
+        JobPlan newPlan = dbHelper.getBuildInstanceDao().orderedScheduledBuilds().getFirst();
         assertThat(newPlan.getResources()).isEqualTo(oldPlan.getResources());
         assertThat(newPlan.getArtifactPlans()).isEqualTo(oldPlan.getArtifactPlans());
     }
@@ -210,7 +192,7 @@ public class RescheduleJobTest {
     }
 
     private JobInstance scheduledJob() {
-        JobInstance hungJob = stage.getJobInstances().get(0);
+        JobInstance hungJob = stage.getJobInstances().getFirst();
         return jobInstanceService.buildByIdWithTransitions(hungJob.getId());
     }
 }

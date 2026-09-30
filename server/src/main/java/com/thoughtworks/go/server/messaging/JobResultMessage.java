@@ -18,9 +18,11 @@ package com.thoughtworks.go.server.messaging;
 import com.thoughtworks.go.domain.JobIdentifier;
 import com.thoughtworks.go.domain.JobResult;
 
+import java.util.Objects;
+
 public class JobResultMessage implements GoMessage {
-    private JobIdentifier jobIdentifier;
-    private JobResult result;
+    private final JobIdentifier jobIdentifier;
+    private final JobResult result;
     private final String agentUuid;
 
     public JobResultMessage(JobIdentifier jobIdentifier, JobResult result, String agentUuid) {
@@ -49,23 +51,15 @@ public class JobResultMessage implements GoMessage {
 
         JobResultMessage that = (JobResultMessage) o;
 
-        if (agentUuid != null ? !agentUuid.equals(that.agentUuid) : that.agentUuid != null) {
-            return false;
-        }
-        if (jobIdentifier != null ? !jobIdentifier.equals(that.jobIdentifier) : that.jobIdentifier != null) {
-            return false;
-        }
-        if (result != that.result) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(agentUuid, that.agentUuid) &&
+            Objects.equals(jobIdentifier, that.jobIdentifier) &&
+            result == that.result;
     }
 
     @Override
     public int hashCode() {
         int result1;
-        result1 = (jobIdentifier != null ? jobIdentifier.hashCode() : 0);
+        result1 = jobIdentifier != null ? jobIdentifier.hashCode() : 0;
         result1 = 31 * result1 + (result != null ? result.hashCode() : 0);
         result1 = 31 * result1 + (agentUuid != null ? agentUuid.hashCode() : 0);
         return result1;

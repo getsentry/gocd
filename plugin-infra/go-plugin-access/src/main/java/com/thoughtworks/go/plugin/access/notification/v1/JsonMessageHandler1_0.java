@@ -15,13 +15,11 @@
  */
 package com.thoughtworks.go.plugin.access.notification.v1;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.thoughtworks.go.domain.notificationdata.StageNotificationData;
 import com.thoughtworks.go.plugin.access.notification.DataConverter;
 import com.thoughtworks.go.plugin.access.notification.JsonMessageHandler;
 import com.thoughtworks.go.plugin.api.response.Result;
-import org.apache.commons.lang3.NotImplementedException;
+import com.thoughtworks.go.util.json.JsonHelper;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,8 +30,6 @@ import static org.apache.commons.lang3.StringUtils.isEmpty;
 
 @SuppressWarnings({"rawtypes", "unchecked"})
 public class JsonMessageHandler1_0 implements JsonMessageHandler {
-
-    private static final Gson GSON = new GsonBuilder().create();
 
     @Override
     public List<String> responseMessageForNotificationsInterestedIn(String responseBody) {
@@ -52,11 +48,11 @@ public class JsonMessageHandler1_0 implements JsonMessageHandler {
             if (map.containsKey("notifications") && map.get("notifications") != null) {
                 Object notificationsObj = map.get("notifications");
 
-                if (!(notificationsObj instanceof List)) {
+                if (!(notificationsObj instanceof List list)) {
                     throw new RuntimeException("'notifications' should be of type list of string");
                 }
 
-                notificationNames = (List) notificationsObj;
+                notificationNames = list;
 
                 for (Object message : notificationNames) {
                     if (!(message instanceof String)) {
@@ -77,10 +73,10 @@ public class JsonMessageHandler1_0 implements JsonMessageHandler {
     }
 
     private <T> DataConverter getConverter(T data) {
-        if (data instanceof StageNotificationData) {
-            return new StageConverter((StageNotificationData) data);
+        if (data instanceof StageNotificationData stageNotificationData) {
+            return new StageConverter(stageNotificationData);
         }
-        throw new NotImplementedException(String.format("Converter for %s not supported", data.getClass().getCanonicalName()));
+        throw new UnsupportedOperationException(String.format("Converter for %s not supported", data.getClass().getCanonicalName()));
     }
 
     @Override
@@ -89,7 +85,7 @@ public class JsonMessageHandler1_0 implements JsonMessageHandler {
     }
 
     private Map parseResponseToMap(String responseBody) {
-        return (Map) GSON.fromJson(responseBody, Object.class);
+        return (Map) JsonHelper.fromJson(responseBody, Object.class);
     }
 
     Result toResult(String responseBody) {
@@ -119,11 +115,11 @@ public class JsonMessageHandler1_0 implements JsonMessageHandler {
             if (map.containsKey("messages") && map.get("messages") != null) {
                 Object messagesObj = map.get("messages");
 
-                if (!(messagesObj instanceof List)) {
+                if (!(messagesObj instanceof List list)) {
                     throw new RuntimeException("Notify result 'messages' should be of type list of string");
                 }
 
-                messages = (List) messagesObj;
+                messages = list;
 
                 for (Object message : messages) {
                     if (!(message instanceof String)) {

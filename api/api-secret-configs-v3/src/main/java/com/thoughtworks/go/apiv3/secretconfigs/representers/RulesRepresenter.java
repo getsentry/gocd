@@ -25,7 +25,6 @@ import com.thoughtworks.go.config.Validatable;
 import com.thoughtworks.go.config.rules.*;
 
 import java.util.HashMap;
-import java.util.Optional;
 
 import static com.thoughtworks.go.config.rules.DirectiveType.fromString;
 
@@ -36,8 +35,8 @@ public class RulesRepresenter {
                 directiveWriter.addChild("errors", errorWriter -> new ErrorGetter(new HashMap<>()).toJSON(directiveWriter, directive));
             }
 
-            if (directive instanceof Unknown) {
-                directiveWriter.add("directive", ((Unknown) directive).getDirective());
+            if (directive instanceof Unknown unknown) {
+                directiveWriter.add("directive", unknown.getDirective());
             } else {
                 directiveWriter.add("directive", directive.getDirectiveType().type());
             }
@@ -64,16 +63,11 @@ public class RulesRepresenter {
         String type = reader.optString("type").orElse(null);
         String resource = reader.optString("resource").orElse(null);
 
-        Optional<DirectiveType> directiveType = fromString(directive);
-
-        if (directiveType.isEmpty()) {
-            return new Unknown(directive, action, type, resource);
-        }
-
-        return switch (directiveType.get()) {
+        return fromString(directive).map(value -> switch (value) {
             case ALLOW -> new Allow(action, type, resource);
             case DENY -> new Deny(action, type, resource);
-        };
+        }).orElseGet(() -> new Unknown(directive, action, type, resource));
+
     }
 
     static class Unknown extends AbstractDirective {

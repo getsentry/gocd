@@ -32,9 +32,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.git;
 import static com.thoughtworks.go.helper.PartialConfigMother.createRepoOrigin;
-import static com.thoughtworks.go.helper.PipelineConfigMother.createGroup;
 import static com.thoughtworks.go.helper.PipelineConfigMother.createPipelineConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
@@ -73,8 +73,8 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
         environment2InRepo2.setOrigins(configOrigin);
         partialConfigInRepo2.getEnvironments().add(environment2InRepo2);
         cruiseConfig.merge(new ArrayList<>(List.of(partialConfigInRepo2, partialConfigInRepo1)), false);
-        assertThat(cruiseConfig.getEnvironments().hasEnvironmentNamed(new CaseInsensitiveString("environment"))).isTrue();
-        assertThat(cruiseConfig.getEnvironments().hasEnvironmentNamed(new CaseInsensitiveString("environment2_in_repo2"))).isTrue();
+        assertThat(cruiseConfig.getEnvironments().hasEnvironmentNamed(cis("environment"))).isTrue();
+        assertThat(cruiseConfig.getEnvironments().hasEnvironmentNamed(cis("environment2_in_repo2"))).isTrue();
     }
 
     @Test
@@ -117,7 +117,7 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
                 new FileConfigOrigin());
         cruiseConfig.merge(new ArrayList<>(List.of(localSCM, completeSCM)), true);
         assertThat(cruiseConfig.getSCMs().size()).isEqualTo(1);
-        assertThat(cruiseConfig.getSCMs().contains(localSCM.getScms().first())).isTrue();
+        assertThat(cruiseConfig.getSCMs().contains(localSCM.getScms().getFirst())).isTrue();
     }
 
     @Test
@@ -166,15 +166,15 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
         cruiseConfig.setConfigRepos(reposConfig);
         PartialConfig partialConfig = PartialConfigMother.withPipelineInGroup("remote-pipeline-1", "g2");
 
-        BasicEnvironmentConfig remoteEnvironment = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+        BasicEnvironmentConfig remoteEnvironment = new BasicEnvironmentConfig(cis("UAT"));
         remoteEnvironment.setOrigins(new RepoConfigOrigin());
         // remote environment declares a local pipeline as member
-        remoteEnvironment.addPipeline(new CaseInsensitiveString("local-pipeline-1"));
+        remoteEnvironment.addPipeline(cis("local-pipeline-1"));
         partialConfig.getEnvironments().add(remoteEnvironment);
         partialConfig.setOrigins(new RepoConfigOrigin(configRepoConfig, "123"));
 
         cruiseConfig.merge(List.of(partialConfig), true);
-        assertThat(cruiseConfig.hasPipelineNamed(new CaseInsensitiveString("local-pipeline-1"))).isTrue();
+        assertThat(cruiseConfig.hasPipelineNamed(cis("local-pipeline-1"))).isTrue();
 
         List<PipelineConfig> localPipelines = cruiseConfig.getAllLocalPipelineConfigs(true);
         assertThat(localPipelines.size()).isEqualTo(0);
@@ -186,37 +186,7 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
         cruiseConfig.getGroups().addPipeline("existing_group", pipeline1);
 
         assertThat(cruiseConfig.pipelines("existing_group")).contains(pipeline1);
-        assertThat(cruiseConfig.pipelines("remote_group").hasPipeline(new CaseInsensitiveString("remote-pipe-1"))).isTrue();
-    }
-
-    @Test
-    public void shouldReturnTrueForPipelineThatInFirstGroup_WhenFirstGroupIsLocal() {
-        PipelineConfigs group1 = createGroup("group1", createPipelineConfig("pipeline1", "stage1"));
-        CruiseConfig config = new BasicCruiseConfig(new BasicCruiseConfig(group1), new PartialConfig());
-        assertThat(config.isInFirstGroup(new CaseInsensitiveString("pipeline1"))).isTrue();
-    }
-
-    @Test
-    public void shouldReturnTrueForPipelineThatInFirstGroup_WhenFirstGroupIsRemote() {
-        CruiseConfig config = new BasicCruiseConfig(new BasicCruiseConfig(),
-                PartialConfigMother.withPipelineInGroup("remote-pipe-1", "remote_group"));
-        assertThat(config.isInFirstGroup(new CaseInsensitiveString("remote-pipe-1"))).isTrue();
-    }
-
-    @Test
-    public void shouldReturnFalseForPipelineThatNotInFirstGroup_WhenSecondGroupIsLocal() {
-        PipelineConfigs group1 = createGroup("group1", createPipelineConfig("pipeline1", "stage1"));
-        PipelineConfigs group2 = createGroup("group2", createPipelineConfig("pipeline2", "stage2"));
-        CruiseConfig config = new BasicCruiseConfig(new BasicCruiseConfig(group1, group2), new PartialConfig());
-        assertThat(config.isInFirstGroup(new CaseInsensitiveString("pipeline2"))).isFalse();
-    }
-
-    @Test
-    public void shouldReturnFalseForPipelineThatNotInFirstGroup_WhenSecondGroupIsRemote() {
-        PipelineConfigs group1 = createGroup("group1", createPipelineConfig("pipeline1", "stage1"));
-        CruiseConfig config = new BasicCruiseConfig(new BasicCruiseConfig(group1),
-                PartialConfigMother.withPipelineInGroup("remote-pipe-1", "remote_group"));
-        assertThat(config.isInFirstGroup(new CaseInsensitiveString("pipeline2"))).isFalse();
+        assertThat(cruiseConfig.pipelines("remote_group").hasPipeline(cis("remote-pipe-1"))).isTrue();
     }
 
     @Test
@@ -229,21 +199,21 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
          * */
         PipelineConfig p1 = createPipelineConfig("p1", "s1", "j1");
         PipelineConfig p2 = createPipelineConfig("p2", "s2", "j1");
-        p2.addMaterialConfig(new DependencyMaterialConfig(new CaseInsensitiveString("p1"), new CaseInsensitiveString("s1")));
+        p2.addMaterialConfig(new DependencyMaterialConfig(cis("p1"), cis("s1")));
         PipelineConfig p3 = createPipelineConfig("p3", "s3", "j1");
-        p3.addMaterialConfig(new DependencyMaterialConfig(new CaseInsensitiveString("p1"), new CaseInsensitiveString("s1")));
+        p3.addMaterialConfig(new DependencyMaterialConfig(cis("p1"), cis("s1")));
         PipelineConfig p4 = createPipelineConfig("p4", "s4", "j1");
-        p4.addMaterialConfig(new DependencyMaterialConfig(new CaseInsensitiveString("p2"), new CaseInsensitiveString("s2")));
+        p4.addMaterialConfig(new DependencyMaterialConfig(cis("p2"), cis("s2")));
         pipelines.addAll(List.of(p4, p2, p1, p3));
         cruiseConfig = new BasicCruiseConfig(new BasicCruiseConfig(pipelines),
                 PartialConfigMother.withPipelineInGroup("remote-pipe-1", "remote_group"));
         Map<CaseInsensitiveString, List<PipelineConfig>> expectedPipelines = cruiseConfig.generatePipelineVsDownstreamMap();
         assertThat(expectedPipelines.size()).isEqualTo(5);
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("p1"))).contains(p2, p3);
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("p2"))).contains(p4);
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("p3")).isEmpty()).isTrue();
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("p4")).isEmpty()).isTrue();
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("remote-pipe-1")).isEmpty()).isTrue();
+        assertThat(expectedPipelines.get(cis("p1"))).contains(p2, p3);
+        assertThat(expectedPipelines.get(cis("p2"))).contains(p4);
+        assertThat(expectedPipelines.get(cis("p3")).isEmpty()).isTrue();
+        assertThat(expectedPipelines.get(cis("p4")).isEmpty()).isTrue();
+        assertThat(expectedPipelines.get(cis("remote-pipe-1")).isEmpty()).isTrue();
     }
 
     @Test
@@ -256,25 +226,25 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
          * */
         PipelineConfig p1 = createPipelineConfig("p1", "s1", "j1");
         PipelineConfig p2 = createPipelineConfig("p2", "s2", "j1");
-        p2.addMaterialConfig(new DependencyMaterialConfig(new CaseInsensitiveString("p1"), new CaseInsensitiveString("s1")));
+        p2.addMaterialConfig(new DependencyMaterialConfig(cis("p1"), cis("s1")));
         PipelineConfig p3 = createPipelineConfig("p3", "s3", "j1");
-        p3.addMaterialConfig(new DependencyMaterialConfig(new CaseInsensitiveString("p1"), new CaseInsensitiveString("s1")));
+        p3.addMaterialConfig(new DependencyMaterialConfig(cis("p1"), cis("s1")));
         PipelineConfig p4 = createPipelineConfig("p4", "s4", "j1");
-        p4.addMaterialConfig(new DependencyMaterialConfig(new CaseInsensitiveString("p2"), new CaseInsensitiveString("s2")));
+        p4.addMaterialConfig(new DependencyMaterialConfig(cis("p2"), cis("s2")));
         pipelines.addAll(List.of(p4, p2, p1, p3));
 
         PipelineConfig remotePipe1 = createPipelineConfig("remote-pipe-1", "s5", "j1");
-        remotePipe1.addMaterialConfig(new DependencyMaterialConfig(new CaseInsensitiveString("p3"), new CaseInsensitiveString("s3")));
+        remotePipe1.addMaterialConfig(new DependencyMaterialConfig(cis("p3"), cis("s3")));
         PartialConfig part = new PartialConfig();
         part.getGroups().addPipeline("remoteGroup", remotePipe1);
         cruiseConfig = new BasicCruiseConfig(new BasicCruiseConfig(pipelines), part);
         Map<CaseInsensitiveString, List<PipelineConfig>> expectedPipelines = cruiseConfig.generatePipelineVsDownstreamMap();
         assertThat(expectedPipelines.size()).isEqualTo(5);
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("p1"))).contains(p2, p3);
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("p2"))).contains(p4);
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("p3"))).contains(remotePipe1);
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("remote-pipe-1")).isEmpty()).isTrue();
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("p4")).isEmpty()).isTrue();
+        assertThat(expectedPipelines.get(cis("p1"))).contains(p2, p3);
+        assertThat(expectedPipelines.get(cis("p2"))).contains(p4);
+        assertThat(expectedPipelines.get(cis("p3"))).contains(remotePipe1);
+        assertThat(expectedPipelines.get(cis("remote-pipe-1")).isEmpty()).isTrue();
+        assertThat(expectedPipelines.get(cis("p4")).isEmpty()).isTrue();
     }
 
 
@@ -284,15 +254,15 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
         BasicCruiseConfig mainCruiseConfig = new BasicCruiseConfig(pipelines);
         mainCruiseConfig.initializeServer();
         PartialConfig partialConfig = PartialConfigMother.withPipelineInGroup("pipe2", "g2");
-        partialConfig.getGroups().get(0).get(0).setOrigin(new RepoConfigOrigin());
+        partialConfig.getGroups().getFirst().getFirst().setOrigin(new RepoConfigOrigin());
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig, partialConfig);
-        BasicEnvironmentConfig uat = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
-        uat.addPipeline(new CaseInsensitiveString("pipe2"));
+        BasicEnvironmentConfig uat = new BasicEnvironmentConfig(cis("UAT"));
+        uat.addPipeline(cis("pipe2"));
         cruiseConfig.addEnvironment(uat);
 
         List<ConfigErrors> allErrors = cruiseConfig.validateAfterPreprocess();
         assertThat(allErrors.size()).isEqualTo(1);
-        assertNotNull(allErrors.get(0).on("origin"));
+        assertNotNull(allErrors.getFirst().firstErrorOn("origin"));
     }
 
     @Test
@@ -300,7 +270,7 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
         BasicCruiseConfig mainCruiseConfig = new BasicCruiseConfig(pipelines);
         mainCruiseConfig.initializeServer();
         PartialConfig partialConfig = PartialConfigMother.withPipelineInGroup("pipe2", "g2");
-        partialConfig.getGroups().get(0).get(0).setOrigin(new RepoConfigOrigin());
+        partialConfig.getGroups().getFirst().getFirst().setOrigin(new RepoConfigOrigin());
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig, partialConfig);
         PipelineConfig pipeline1 = goConfigMother.addPipeline(cruiseConfig, "pipeline1", "stage", "build");
         PipelineConfig pipeline2 = PipelineConfigMother.createPipelineConfigWithStage("pipeline2", "stage");
@@ -311,14 +281,14 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
 
         List<ConfigErrors> allErrors = cruiseConfig.validateAfterPreprocess();
         assertThat(allErrors.size()).isEqualTo(1);
-        assertNotNull(allErrors.get(0).on("origin"));
+        assertNotNull(allErrors.getFirst().firstErrorOn("origin"));
     }
 
     @Test
     public void shouldCollectAllTheErrorsInTheChildren_InMergedConfig() {
         BasicCruiseConfig mainCruiseConfig = GoConfigMother.configWithPipelines("pipeline-1");
         PartialConfig partialConfig = PartialConfigMother.withPipelineInGroup("pipe2", "g2");
-        partialConfig.getGroups().get(0).get(0).setOrigin(new RepoConfigOrigin());
+        partialConfig.getGroups().getFirst().getFirst().setOrigin(new RepoConfigOrigin());
         CruiseConfig config = new BasicCruiseConfig(mainCruiseConfig, partialConfig);
 
         shouldCollectAllTheErrorsInTheChildrenHelper(config);
@@ -333,8 +303,8 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
 
         List<ConfigErrors> allErrors = config.validateAfterPreprocess();
         assertThat(allErrors.size()).isEqualTo(2);
-        assertThat(allErrors.get(0).on("name")).isEqualTo("You have defined multiple pipelines named 'pipeline-1'. Pipeline names must be unique. Source(s): [cruise-config.xml, http://some.git at revision 1234fed]");
-        assertThat(allErrors.get(1).on("name")).isEqualTo("You have defined multiple pipelines named 'pipeline-1'. Pipeline names must be unique. Source(s): [cruise-config.xml, http://some.git at revision 1234fed]");
+        assertThat(allErrors.getFirst().firstErrorOn("name")).isEqualTo("You have defined multiple pipelines named 'pipeline-1'. Pipeline names must be unique. Source(s): [cruise-config.xml, http://some.git at revision 1234fed]");
+        assertThat(allErrors.getLast().firstErrorOn("name")).isEqualTo("You have defined multiple pipelines named 'pipeline-1'. Pipeline names must be unique. Source(s): [cruise-config.xml, http://some.git at revision 1234fed]");
     }
 
     @Test
@@ -345,10 +315,10 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
         remotePart.setOrigin(new RepoConfigOrigin());
         BasicCruiseConfig merged = new BasicCruiseConfig(cruiseConfig, remotePart);
         List<ConfigErrors> allErrors = merged.validateAfterPreprocess();
-        assertThat(remotePart.getGroups().get(0).getPipelines().get(0).errors().size()).isEqualTo(1);
+        assertThat(remotePart.getGroups().getFirst().getPipelines().getFirst().errors().size()).isEqualTo(1);
         assertThat(allErrors.size()).isEqualTo(2);
-        assertThat(allErrors.get(0).on("name")).isEqualTo("You have defined multiple pipelines named 'pipeline1'. Pipeline names must be unique. Source(s): [cruise-config.xml, http://some.git at revision 1234fed]");
-        assertThat(allErrors.get(1).on("name")).isEqualTo("You have defined multiple pipelines named 'pipeline1'. Pipeline names must be unique. Source(s): [cruise-config.xml, http://some.git at revision 1234fed]");
+        assertThat(allErrors.getFirst().firstErrorOn("name")).isEqualTo("You have defined multiple pipelines named 'pipeline1'. Pipeline names must be unique. Source(s): [cruise-config.xml, http://some.git at revision 1234fed]");
+        assertThat(allErrors.getLast().firstErrorOn("name")).isEqualTo("You have defined multiple pipelines named 'pipeline1'. Pipeline names must be unique. Source(s): [cruise-config.xml, http://some.git at revision 1234fed]");
     }
 
     @Test
@@ -362,8 +332,8 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
 
         List<ConfigErrors> allErrors = cloned.validateAfterPreprocess();
         assertThat(allErrors.size()).isEqualTo(2);
-        assertThat(allErrors.get(0).on("name")).isEqualTo("You have defined multiple pipelines named 'pipeline-1'. Pipeline names must be unique. Source(s): [cruise-config.xml, http://some.git at revision 1234fed]");
-        assertThat(allErrors.get(1).on("name")).isEqualTo("You have defined multiple pipelines named 'pipeline-1'. Pipeline names must be unique. Source(s): [cruise-config.xml, http://some.git at revision 1234fed]");
+        assertThat(allErrors.getFirst().firstErrorOn("name")).isEqualTo("You have defined multiple pipelines named 'pipeline-1'. Pipeline names must be unique. Source(s): [cruise-config.xml, http://some.git at revision 1234fed]");
+        assertThat(allErrors.getLast().firstErrorOn("name")).isEqualTo("You have defined multiple pipelines named 'pipeline-1'. Pipeline names must be unique. Source(s): [cruise-config.xml, http://some.git at revision 1234fed]");
     }
 
     @Test
@@ -382,8 +352,8 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig,
                 PartialConfigMother.withPipeline("pipe2"));
 
-        assertThat(cruiseConfig.hasPipelineNamed(new CaseInsensitiveString("pipe1"))).isTrue();
-        assertThat(cruiseConfig.hasPipelineNamed(new CaseInsensitiveString("pipe2"))).isTrue();
+        assertThat(cruiseConfig.hasPipelineNamed(cis("pipe1"))).isTrue();
+        assertThat(cruiseConfig.hasPipelineNamed(cis("pipe2"))).isTrue();
     }
 
     @Override
@@ -394,7 +364,7 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig,
                 PartialConfigMother.withPipeline("pipe2"));
 
-        assertThat(cruiseConfig.hasPipelineNamed(new CaseInsensitiveString("pipe3"))).isFalse();
+        assertThat(cruiseConfig.hasPipelineNamed(cis("pipe3"))).isFalse();
     }
 
     @Override
@@ -417,8 +387,8 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
                 PartialConfigMother.withPipeline("pipe2"));
         cruiseConfig.addPipeline("group_main", PipelineConfigMother.pipelineConfig("pipe3"));
 
-        assertThat(mainCruiseConfig.hasPipelineNamed(new CaseInsensitiveString("pipe3"))).isTrue();
-        assertThat(cruiseConfig.hasPipelineNamed(new CaseInsensitiveString("pipe3"))).isTrue();
+        assertThat(mainCruiseConfig.hasPipelineNamed(cis("pipe3"))).isTrue();
+        assertThat(cruiseConfig.hasPipelineNamed(cis("pipe3"))).isTrue();
 
     }
 
@@ -431,8 +401,8 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
                 PartialConfigMother.withPipeline("pipe2"));
         cruiseConfig.addPipelineWithoutValidation("group_main", PipelineConfigMother.pipelineConfig("pipe3"));
 
-        assertThat(mainCruiseConfig.hasPipelineNamed(new CaseInsensitiveString("pipe3"))).isTrue();
-        assertThat(cruiseConfig.hasPipelineNamed(new CaseInsensitiveString("pipe3"))).isTrue();
+        assertThat(mainCruiseConfig.hasPipelineNamed(cis("pipe3"))).isTrue();
+        assertThat(cruiseConfig.hasPipelineNamed(cis("pipe3"))).isTrue();
 
     }
 
@@ -444,19 +414,19 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
                 PartialConfigMother.withPipelineInGroup("pipe2", "g2"), PartialConfigMother.withPipelineInGroup("pipe3", "g3"));
 
         assertThat(cruiseConfig.getAllPipelineNames()).contains(
-                new CaseInsensitiveString("pipe1"),
-                new CaseInsensitiveString("pipe2"),
-                new CaseInsensitiveString("pipe3"));
+                cis("pipe1"),
+                cis("pipe2"),
+                cis("pipe3"));
     }
 
     @Test
     public void createsMergePipelineConfigsOnlyWhenManyParts() {
-        assertThat(cruiseConfig.getGroups().get(0) instanceof MergePipelineConfigs).isFalse();
+        assertThat(cruiseConfig.getGroups().getFirst() instanceof MergePipelineConfigs).isFalse();
 
         BasicCruiseConfig mainCruiseConfig = new BasicCruiseConfig(pipelines);
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig,
                 PartialConfigMother.withPipelineInGroup("pipe2", "existing_group"));
-        assertThat(cruiseConfig.getGroups().get(0) instanceof MergePipelineConfigs).isTrue();
+        assertThat(cruiseConfig.getGroups().getFirst() instanceof MergePipelineConfigs).isTrue();
 
     }
 
@@ -469,7 +439,7 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
         mainCruiseConfig.setConfigRepos(reposConfig);
 
         PartialConfig partialConfig = PartialConfigMother.withPipeline("pipe2");
-        MaterialConfig pipeRepo = partialConfig.getGroups().get(0).get(0).materialConfigs().get(0);
+        MaterialConfig pipeRepo = partialConfig.getGroups().getFirst().getFirst().materialConfigs().getFirst();
 
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig, partialConfig);
 
@@ -488,7 +458,7 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
         mainCruiseConfig.setConfigRepos(reposConfig);
 
         PartialConfig partialConfig = PartialConfigMother.withPipeline("pipe2");
-        MaterialConfig pipeRepo = partialConfig.getGroups().get(0).get(0).materialConfigs().get(0);
+        MaterialConfig pipeRepo = partialConfig.getGroups().getFirst().getFirst().materialConfigs().getFirst();
 
         cruiseConfig = new BasicCruiseConfig(mainCruiseConfig, partialConfig);
 
@@ -508,7 +478,7 @@ public class MergeCruiseConfigTest extends CruiseConfigTestBase {
         cruiseConfig.setConfigRepos(reposConfig);
 
         cruiseConfig.merge(List.of(partial), false);
-        PipelineConfig pipeline3 = partial.getGroups().first().findBy(new CaseInsensitiveString("pipeline3"));
+        PipelineConfig pipeline3 = partial.getGroups().getFirst().findBy(cis("pipeline3"));
         assertThat(cruiseConfig.getAllPipelineConfigs().contains(pipeline3)).isTrue();
         assertThat(cruiseConfig.getAllPipelineNames().contains(pipeline3.name())).isTrue();
     }

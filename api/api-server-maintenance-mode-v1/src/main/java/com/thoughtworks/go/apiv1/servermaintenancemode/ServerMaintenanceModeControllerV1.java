@@ -17,7 +17,7 @@ package com.thoughtworks.go.apiv1.servermaintenancemode;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv1.servermaintenancemode.representers.MaintenanceModeInfoRepresenter;
 import com.thoughtworks.go.domain.AgentInstance;
 import com.thoughtworks.go.domain.JobIdentifier;
@@ -32,6 +32,7 @@ import com.thoughtworks.go.server.domain.ServerMaintenanceMode;
 import com.thoughtworks.go.server.service.AgentService;
 import com.thoughtworks.go.server.service.MaintenanceModeService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import com.thoughtworks.go.util.Clock;
@@ -49,21 +50,21 @@ import static spark.Spark.*;
 @Component
 public class ServerMaintenanceModeControllerV1 extends ApiController implements SparkSpringController {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private GoDashboardCache dashboardCache;
     private AgentService agentService;
     private final MaintenanceModeService maintenanceModeService;
     private Clock clock;
 
     @Autowired
-    public ServerMaintenanceModeControllerV1(ApiAuthenticationHelper apiAuthenticationHelper,
+    public ServerMaintenanceModeControllerV1(ApiAuthorizationHelper apiAuthorizationHelper,
                                              GoDashboardCache dashboardCache,
                                              AgentService agentService,
                                              MaintenanceModeService maintenanceModeService,
                                              Clock clock) {
         super(ApiVersion.v1);
 
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.dashboardCache = dashboardCache;
         this.agentService = agentService;
         this.maintenanceModeService = maintenanceModeService;
@@ -76,17 +77,17 @@ public class ServerMaintenanceModeControllerV1 extends ApiController implements 
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
             before("/*", mimeType, this::verifyContentType);
 
-            before(Routes.MaintenanceMode.ENABLE, mimeType, apiAuthenticationHelper::checkAdminUserAnd403);
-            before(Routes.MaintenanceMode.DISABLE, mimeType, apiAuthenticationHelper::checkAdminUserAnd403);
+            before(Routes.MaintenanceMode.ENABLE, mimeType, apiAuthorizationHelper::checkAdminUserAnd403);
+            before(Routes.MaintenanceMode.DISABLE, mimeType, apiAuthorizationHelper::checkAdminUserAnd403);
 
-            before(Routes.MaintenanceMode.INFO, mimeType, apiAuthenticationHelper::checkAdminUserAnd403);
+            before(Routes.MaintenanceMode.INFO, mimeType, apiAuthorizationHelper::checkAdminUserAnd403);
 
             post(Routes.MaintenanceMode.ENABLE, mimeType, this::enableMaintenanceModeState);
             post(Routes.MaintenanceMode.DISABLE, mimeType, this::disableMaintenanceModeState);
@@ -95,7 +96,7 @@ public class ServerMaintenanceModeControllerV1 extends ApiController implements 
         });
     }
 
-    public String enableMaintenanceModeState(Request req, Response res) throws Exception {
+    public String enableMaintenanceModeState(Request req, Response res) throws IOException {
         HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
         ServerMaintenanceMode existingMaintenanceModeState = maintenanceModeService.get();
         if (existingMaintenanceModeState.isMaintenanceMode()) {
@@ -103,13 +104,13 @@ public class ServerMaintenanceModeControllerV1 extends ApiController implements 
             return renderHTTPOperationResult(result, req, res);
         }
 
-        maintenanceModeService.update(new ServerMaintenanceMode(true, currentUsernameString(), clock.currentTime()));
+        maintenanceModeService.update(new ServerMaintenanceMode(true, currentUsernameString(), clock.currentUtilDate()));
 
         res.status(204);
         return NOTHING;
     }
 
-    public String disableMaintenanceModeState(Request req, Response res) throws Exception {
+    public String disableMaintenanceModeState(Request req, Response res) throws IOException {
         HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
         ServerMaintenanceMode existingMaintenanceModeState = maintenanceModeService.get();
         if (!existingMaintenanceModeState.isMaintenanceMode()) {
@@ -117,7 +118,7 @@ public class ServerMaintenanceModeControllerV1 extends ApiController implements 
             return renderHTTPOperationResult(result, req, res);
         }
 
-        maintenanceModeService.update(new ServerMaintenanceMode(false, currentUsernameString(), clock.currentTime()));
+        maintenanceModeService.update(new ServerMaintenanceMode(false, currentUsernameString(), clock.currentUtilDate()));
 
         res.status(204);
         return NOTHING;

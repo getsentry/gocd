@@ -17,14 +17,16 @@ package com.thoughtworks.go.domain;
 
 import com.thoughtworks.go.util.Clock;
 import com.thoughtworks.go.util.TimeProvider;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
-import org.joda.time.Duration;
 
 import java.io.Serializable;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Date;
-
-import static com.thoughtworks.go.util.ExceptionUtils.bomb;
-
+import java.util.Objects;
+import java.util.Optional;
 
 public class JobInstance extends PersistentObject implements Serializable, Comparable<JobInstance>, BuildStateAware, Cloneable {
 
@@ -62,7 +64,7 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
 
 
     public void schedule() {
-        this.scheduledDate = timeProvider.currentTime();
+        this.scheduledDate = timeProvider.currentUtilDate();
         changeState(JobState.Scheduled, this.scheduledDate);
     }
 
@@ -86,7 +88,11 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
     }
 
     public void changeState(JobState newState) {
-        changeState(newState, timeProvider.currentTime());
+        changeState(newState, timeProvider.currentUtilDate());
+    }
+
+    public void changeState(JobState newState, Instant stateChangeTime) {
+        changeState(newState, Date.from(stateChangeTime));
     }
 
     public void changeState(JobState newState, Date stateChangeTime) {
@@ -119,7 +125,7 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
         this.result = result;
     }
 
-    public String getAgentUuid() {
+    public @Nullable String getAgentUuid() {
         return agentUuid;
     }
 
@@ -127,22 +133,23 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
         this.agentUuid = agentUuid;
     }
 
-    @Override public String toString() {
+    @Override
+    public String toString() {
         return "JobInstance{" +
-                "stageId=" + stageId +
-                ", name='" + name + '\'' +
-                ", state=" + state +
-                ", result=" + result +
-                ", agentUuid='" + agentUuid + '\'' +
-                ", stateTransitions=" + stateTransitions +
-                ", scheduledDate=" + scheduledDate +
-                ", timeProvider=" + timeProvider +
-                ", ignored=" + ignored +
-                ", identifier=" + identifier +
-                ", plan=" + plan +
-                ", runOnAllAgents=" + runOnAllAgents +
-                ", runMultipleInstance=" + runMultipleInstance +
-                '}';
+            "stageId=" + stageId +
+            ", name='" + name + '\'' +
+            ", state=" + state +
+            ", result=" + result +
+            ", agentUuid='" + agentUuid + '\'' +
+            ", stateTransitions=" + stateTransitions +
+            ", scheduledDate=" + scheduledDate +
+            ", timeProvider=" + timeProvider +
+            ", ignored=" + ignored +
+            ", identifier=" + identifier +
+            ", plan=" + plan +
+            ", runOnAllAgents=" + runOnAllAgents +
+            ", runMultipleInstance=" + runMultipleInstance +
+            '}';
     }
 
     public boolean isNull() {
@@ -174,7 +181,7 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
     }
 
     public void completing(JobResult result) {
-        completing(result, timeProvider.currentTime());
+        completing(result, timeProvider.currentUtilDate());
     }
 
     @Override
@@ -203,7 +210,7 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
     }
 
     public void completed(Date completionDate) {
-        if (result==JobResult.Unknown) {
+        if (result == JobResult.Unknown) {
             throw new RuntimeException("Result is still unknown. Make sure completing(...) is called and then this if you are doing this through a test.");
         }
         this.changeState(JobState.Completed, completionDate);
@@ -221,7 +228,7 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
         return state == JobState.Completed ? result.toString().toLowerCase() : state.toString().toLowerCase();
     }
 
-    public JobInstance mostRecentPassed(JobInstance champion) {
+    public @NotNull JobInstance mostRecentPassed(@NotNull JobInstance champion) {
         if (!champion.isPassed()) {
             return this;
         }
@@ -231,19 +238,10 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
         return mostRecentCompleted(champion);
     }
 
-    public JobInstance mostRecentCompleted(JobInstance champion) {
-        try {
-            if (getCompletedDate() != null && this.moreRecent(champion)) {
-                return this;
-            }
-        } catch (Exception ex) {
-            throw bomb(ex);
-        }
-        return champion;
-    }
-
-    private boolean moreRecent(JobInstance champion) {
-        return getCompletedDate().compareTo(champion.getCompletedDate()) >= 0;
+    public @NotNull JobInstance mostRecentCompleted(@NotNull JobInstance champion) {
+        return Optional.ofNullable(getCompletedDate())
+            .filter(f -> f.compareTo(champion.getCompletedDate()) >= 0)
+            .isPresent() ? this : champion;
     }
 
     public void discontinue() {
@@ -265,41 +263,34 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
 
     // Begin Date / Time Related Methods
 
-    public long durationOfCompletedBuildInSeconds() {
-        Date buildingDate = getStartedDateFor(JobState.Building);
-        Date completedDate = getCompletedDate();
-        if (buildingDate == null || completedDate == null) {
-            return 0L;
-        }
-        long elapsed = completedDate.getTime() - buildingDate.getTime();
-        return Math.round((double) elapsed / 1000);
+    public Duration durationOfCompletedBuild() {
+        Date started = getStartedDateFor(JobState.Building);
+        Date completed = getCompletedDate();
+
+        return started == null || completed == null
+            ? Duration.ZERO
+            : atLeastOneSecond(Duration.ofMillis(completed.getTime() - started.getTime()));
     }
 
-    public String getCurrentBuildDuration() {
-        return String.valueOf(elapsedSeconds());
-    }
-
-    private long elapsedSeconds() {
+    public Duration getElapsedTime() {
         if (state.isCompleted()) {
-            return durationOfCompletedBuildInSeconds();
+            return durationOfCompletedBuild();
         }
 
-        Date buildingDate = getStartedDateFor(JobState.Building);
-        if (buildingDate != null) {
-            long elapsed = timeProvider.currentTime().getTime() - buildingDate.getTime();
-            return Math.round((double) elapsed / 1000);
-        } else {
-            return 0L;
-        }
+        Date started = getStartedDateFor(JobState.Building);
+        // Ensure at least 1 second for in-progress jobs
+        return started == null
+            ? Duration.ZERO
+            : atLeastOneSecond(Duration.ofMillis(timeProvider.currentTimeMillis() - started.getTime()));
+    }
+
+    private static Duration atLeastOneSecond(Duration elapsed) {
+        return elapsed.toSeconds() == 0 ? Duration.ofSeconds(1) : elapsed;
     }
 
     public Date getStartedDateFor(JobState state) {
         JobStateTransition transition = this.stateTransitions.byState(state);
         return transition == null ? null : transition.getStateChangeTime();
-    }
-
-    public Duration getElapsedTime() {
-        return new Duration(elapsedSeconds() * 1000);
     }
 
     public RunDuration getDuration() {
@@ -308,7 +299,7 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
         }
         Date scheduleStartTime = getStartedDateFor(JobState.Scheduled);
         Date completedTime = getCompletedDate();
-        return new RunDuration.ActualDuration(new Duration(completedTime.getTime() - scheduleStartTime.getTime()));
+        return new RunDuration.ActualDuration(Duration.ofMillis(completedTime.getTime() - scheduleStartTime.getTime()));
     }
 
     /**
@@ -333,7 +324,7 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
     }
 
     public void fail() {
-        Date completionDate = timeProvider.currentTime();
+        Date completionDate = timeProvider.currentUtilDate();
         completing(JobResult.Failed, completionDate);
         completed(completionDate);
     }
@@ -342,9 +333,9 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
         return identifier.getPipelineName();
     }
 
-	public Integer getPipelineCounter() {
-	        return identifier.getPipelineCounter();
-	    }
+    public int getPipelineCounter() {
+        return identifier.getPipelineCounter();
+    }
 
     public String getStageName() {
         return identifier.getStageName();
@@ -362,13 +353,11 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
         return identifier;
     }
 
-    public String getBuildDurationKey(String pipelineName, String stageName) {
-        return String.format("BUILD_DURATION: %s_%s_%s_%s",
-                pipelineName,
-                stageName,
-                getName(),
-                getAgentUuid());
+    public BuildDurationKey toBuildDurationKey() {
+        return new BuildDurationKey(getPipelineName(), getStageName(), getName(), getAgentUuid());
     }
+
+    public record BuildDurationKey(@NotNull String pipelineName, @NotNull String stageName, @NotNull String jobName, @Nullable String agentUuid) {}
 
     public boolean isAssignedToAgent() {
         return getAgentUuid() != null;
@@ -396,37 +385,21 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
 
         JobInstance instance = (JobInstance) o;
 
-        if (ignored != instance.ignored) {
-            return false;
-        }
-        if (stageId != instance.stageId) {
-            return false;
-        }
-        if (agentUuid != null ? !agentUuid.equals(instance.agentUuid) : instance.agentUuid != null) {
-            return false;
-        }
-        if (identifier != null ? !identifier.equals(instance.identifier) : instance.identifier != null) {
-            return false;
-        }
-        if (name != null ? !name.equals(instance.name) : instance.name != null) {
-            return false;
-        }
-        if (result != instance.result) {
-            return false;
-        }
-        if (scheduledDate != null ? !scheduledDate.equals(instance.scheduledDate) : instance.scheduledDate != null) {
-            return false;
-        }
-        if (state != instance.state) {
-            return false;
-        }
-        return stateTransitions != null ? stateTransitions.equals(instance.stateTransitions) : instance.stateTransitions == null;
+        return ignored == instance.ignored &&
+            stageId == instance.stageId &&
+            Objects.equals(agentUuid, instance.agentUuid) &&
+            Objects.equals(identifier, instance.identifier) &&
+            Objects.equals(name, instance.name) &&
+            result == instance.result &&
+            Objects.equals(scheduledDate, instance.scheduledDate) &&
+            state == instance.state &&
+            Objects.equals(stateTransitions, instance.stateTransitions);
     }
 
     @Override
     public int hashCode() {
         int result1;
-        result1 = (int) (stageId ^ (stageId >>> 32));
+        result1 = Long.hashCode(stageId);
         result1 = 31 * result1 + (name != null ? name.hashCode() : 0);
         result1 = 31 * result1 + (state != null ? state.hashCode() : 0);
         result1 = 31 * result1 + (result != null ? result.hashCode() : 0);
@@ -456,15 +429,15 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
         return runOnAllAgents;
     }
 
-	public boolean isRunMultipleInstance() {
-		return runMultipleInstance;
-	}
+    public boolean isRunMultipleInstance() {
+        return runMultipleInstance;
+    }
 
-	public void setRunMultipleInstance(boolean runMultipleInstance) {
-		this.runMultipleInstance = runMultipleInstance;
-	}
+    public void setRunMultipleInstance(boolean runMultipleInstance) {
+        this.runMultipleInstance = runMultipleInstance;
+    }
 
-	public boolean matches(JobConfigIdentifier identifier) {
+    public boolean matches(JobConfigIdentifier identifier) {
         if (!getPipelineName().equalsIgnoreCase(identifier.getPipelineName())) {
             return false;
         }
@@ -477,19 +450,11 @@ public class JobInstance extends PersistentObject implements Serializable, Compa
     JobType jobType() {
         if (runOnAllAgents) {
             return new RunOnAllAgents();
-		} else if (runMultipleInstance) {
-			return new RunMultipleInstance();
-		} else {
+        } else if (runMultipleInstance) {
+            return new RunMultipleInstance();
+        } else {
             return new SingleJobInstance();
         }
-    }
-
-    public boolean isSameStageConfig(JobInstance other) {
-        return this.getIdentifier().isSameStageConfig(other.getIdentifier());
-    }
-
-    public boolean isSamePipelineInstance(JobInstance other) {
-        return (getIdentifier().getPipelineLabel().equals(other.getIdentifier().getPipelineLabel()));
     }
 
     public String getTitle() {

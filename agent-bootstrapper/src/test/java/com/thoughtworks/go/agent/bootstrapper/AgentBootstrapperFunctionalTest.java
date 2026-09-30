@@ -19,8 +19,7 @@ import com.thoughtworks.go.agent.common.AgentBootstrapperArgs;
 import com.thoughtworks.go.agent.testhelper.FakeGoServer;
 import com.thoughtworks.go.agent.testhelper.FakeGoServerExtension;
 import com.thoughtworks.go.agent.testhelper.GoTestResource;
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang3.RandomStringUtils;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,10 +31,15 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.net.MalformedURLException;
+import java.net.URI;
 import java.net.URL;
+import java.nio.file.Files;
+import java.util.UUID;
 
 import static com.thoughtworks.go.agent.common.util.Downloader.*;
 import static com.thoughtworks.go.agent.testhelper.FakeGoServer.TestResource.TEST_AGENT_LAUNCHER;
+import static com.thoughtworks.go.util.SystemEnvironment.WEBAPP_CONTEXT_PATH;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -55,11 +59,11 @@ public class AgentBootstrapperFunctionalTest {
     }
 
     @AfterEach
-    public void tearDown() {
-        FileUtils.deleteQuietly(AGENT_LAUNCHER_JAR);
-        FileUtils.deleteQuietly(AGENT_BINARY_JAR);
-        FileUtils.deleteQuietly(TFS_IMPL_JAR);
-        FileUtils.deleteQuietly(AGENT_PLUGINS_ZIP);
+    public void tearDown() throws IOException {
+        Files.deleteIfExists(AGENT_LAUNCHER_JAR.toPath());
+        Files.deleteIfExists(AGENT_BINARY_JAR.toPath());
+        Files.deleteIfExists(TFS_IMPL_JAR.toPath());
+        Files.deleteIfExists(AGENT_PLUGINS_ZIP.toPath());
         System.clearProperty(AgentBootstrapper.WAIT_TIME_BEFORE_RELAUNCH_IN_MS);
     }
 
@@ -68,7 +72,7 @@ public class AgentBootstrapperFunctionalTest {
         try {
             AGENT_LAUNCHER_JAR.delete();
             new AgentBootstrapper().validate();
-            assertEquals("agent launcher from default files", FileUtils.readFileToString(AGENT_LAUNCHER_JAR, UTF_8).trim());
+            assertEquals("agent launcher from default files", Files.readString(AGENT_LAUNCHER_JAR.toPath(), UTF_8).trim());
         } finally {
             AGENT_LAUNCHER_JAR.delete();
         }
@@ -83,11 +87,7 @@ public class AgentBootstrapperFunctionalTest {
             System.setErr(new PrintStream(os));
             File agentJar = new File("agent.jar");
             agentJar.delete();
-            new AgentBootstrapper() {
-                @Override
-                void jvmExit(int returnValue) {
-                }
-            }.go(false, new AgentBootstrapperArgs().setServerUrl(new URL("http://" + "localhost" + ":" + server.getPort() + "/go")).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
+            new AgentBootstrapper(true).go(new AgentBootstrapperArgs().setServerUrl(getServerUrl()).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
             agentJar.delete();
             assertThat(os.toString()).contains("Hello World Fellas!");
         } finally {
@@ -95,16 +95,16 @@ public class AgentBootstrapperFunctionalTest {
         }
     }
 
+    private @NonNull URL getServerUrl() throws MalformedURLException {
+        return URI.create("http://localhost:" + server.getPort() + WEBAPP_CONTEXT_PATH).toURL();
+    }
+
     @Test
     @DisabledOnOs(OS.WINDOWS)
     public void shouldDownloadJarIfItDoesNotExist() throws Exception {
         File agentJar = new File("agent.jar");
         agentJar.delete();
-        new AgentBootstrapper() {
-            @Override
-            void jvmExit(int returnValue) {
-            }
-        }.go(false, new AgentBootstrapperArgs().setServerUrl(new URL("http://" + "localhost" + ":" + server.getPort() + "/go")).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
+        new AgentBootstrapper(true).go(new AgentBootstrapperArgs().setServerUrl(getServerUrl()).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
         assertTrue(agentJar.exists(), "No agent downloaded");
         agentJar.delete();
     }
@@ -116,16 +116,12 @@ public class AgentBootstrapperFunctionalTest {
         agentJar.delete();
         createRandomFile(agentJar);
         long original = agentJar.length();
-        new AgentBootstrapper() {
-            @Override
-            void jvmExit(int returnValue) {
-            }
-        }.go(false, new AgentBootstrapperArgs().setServerUrl(new URL("http://" + "localhost" + ":" + server.getPort() + "/go")).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
+        new AgentBootstrapper(true).go(new AgentBootstrapperArgs().setServerUrl(getServerUrl()).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
         assertThat(agentJar.length()).isNotEqualTo(original);
         agentJar.delete();
     }
 
     private void createRandomFile(File agentJar) throws IOException {
-        FileUtils.writeStringToFile(agentJar, RandomStringUtils.insecure().next((int) (Math.random() * 100)), UTF_8);
+        Files.writeString(agentJar.toPath(), UUID.randomUUID().toString(), UTF_8);
     }
 }

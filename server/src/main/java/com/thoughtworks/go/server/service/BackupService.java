@@ -17,6 +17,7 @@ package com.thoughtworks.go.server.service;
 
 import com.thoughtworks.go.CurrentGoCDVersion;
 import com.thoughtworks.go.config.BackupConfig;
+import com.thoughtworks.go.config.ConfigRepository;
 import com.thoughtworks.go.config.GoMailSender;
 import com.thoughtworks.go.security.AESCipherProvider;
 import com.thoughtworks.go.security.DESCipherProvider;
@@ -32,21 +33,22 @@ import com.thoughtworks.go.server.persistence.ServerBackupRepository;
 import com.thoughtworks.go.server.service.backup.BackupStatusUpdater;
 import com.thoughtworks.go.server.service.backup.BackupUpdateListener;
 import com.thoughtworks.go.server.web.BackupStatusProvider;
-import com.thoughtworks.go.service.ConfigRepository;
+import com.thoughtworks.go.util.Dates;
 import com.thoughtworks.go.util.SystemEnvironment;
 import com.thoughtworks.go.util.TimeProvider;
 import com.thoughtworks.go.util.VoidThrowingFn;
 import org.apache.commons.io.DirectoryWalker;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -54,6 +56,7 @@ import java.util.zip.ZipOutputStream;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.commons.codec.binary.Hex.encodeHexString;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
+import static org.apache.commons.lang3.StringUtils.stripToNull;
 
 /**
  * Understands backing up db and config
@@ -62,6 +65,7 @@ import static org.apache.commons.lang3.StringUtils.isNotBlank;
 public class BackupService implements BackupStatusProvider {
 
     public static final String ABORTED_BACKUPS_MESSAGE = "Server shut down while backup in progress.";
+    public static final DateTimeFormatter FILE_NAME_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
     // Don't change these enums. These are an API contract, and are used by post backup script.
     public enum BackupInitiator {
@@ -192,8 +196,8 @@ public class BackupService implements BackupStatusProvider {
     }
 
     private ServerBackup createServerBackup(Username username) {
-        DateTime backupTime = timeProvider.currentDateTime();
-        ServerBackup serverBackup = new ServerBackup(getBackupDir(backupTime).getAbsolutePath(), backupTime.toDate(), username.getUsername().toString(), "Backup scheduled");
+        LocalDateTime backupTime = timeProvider.currentLocalDateTime();
+        ServerBackup serverBackup = new ServerBackup(getBackupDir(backupTime).getAbsolutePath(), Date.from(backupTime.atZone(ZoneOffset.systemDefault()).toInstant()), username.getUsername().toString(), "Backup scheduled");
         serverBackup = serverBackupRepository.save(serverBackup);
         return serverBackup;
     }
@@ -221,15 +225,15 @@ public class BackupService implements BackupStatusProvider {
         listeners.forEach(backupUpdateListener -> backupUpdateListener.error(message));
     }
 
-    private void notifyCompletionToListeners(List<BackupUpdateListener> listeners, boolean backedupWrapperConfig) {
-        String message = backedupWrapperConfig
+    private void notifyCompletionToListeners(List<BackupUpdateListener> listeners, boolean backedUpWrapperConfig) {
+        String message = backedUpWrapperConfig
                 ? "Backup was generated successfully."
                 : "Backup was generated successfully. Backup of wrapper configuration was skipped as the wrapper configuration directory path is unknown.";
         listeners.forEach(listener -> listener.completed(message));
     }
 
-    private File getBackupDir(DateTime backupTime) {
-        return new File(backupLocation(), BACKUP + backupTime.toString("YYYYMMdd-HHmmss"));
+    private File getBackupDir(LocalDateTime backupTime) {
+        return new File(backupLocation(), BACKUP + FILE_NAME_FORMAT.format(backupTime));
     }
 
     private void sendBackupFailedEmail(GoMailSender mailSender, Exception e) {
@@ -270,7 +274,7 @@ public class BackupService implements BackupStatusProvider {
         BackupConfig backupConfig = backupConfig();
         if (backupConfig != null) {
             String postBackupScript = backupConfig.getPostBackupScript();
-            return StringUtils.stripToNull(postBackupScript);
+            return stripToNull(postBackupScript);
         }
         return null;
     }
@@ -289,7 +293,7 @@ public class BackupService implements BackupStatusProvider {
     private void backupVersion(File backupDir, List<BackupUpdateListener> backupUpdateListeners) throws IOException {
         notifyUpdateToListeners(backupUpdateListeners, BackupProgressStatus.BACKUP_VERSION_FILE);
         File versionFile = new File(backupDir, VERSION_BACKUP_FILE);
-        FileUtils.writeStringToFile(versionFile, CurrentGoCDVersion.getInstance().formatted(), UTF_8);
+        Files.writeString(versionFile.toPath(), CurrentGoCDVersion.getInstance().formatted(), UTF_8);
     }
 
     private boolean backupWrapperConfig(File backupDir, List<BackupUpdateListener> backupUpdateListeners) throws IOException {
@@ -319,15 +323,18 @@ public class BackupService implements BackupStatusProvider {
             new DirectoryStructureWalker(configDirectory, configZip, cruiseConfigFile, desCipherFile, aesCipherFile).walk();
 
             configZip.putNextEntry(new ZipEntry(cruiseConfigFile.getName()));
-            IOUtils.write(goConfigService.xml(), configZip, UTF_8);
+            String xml = goConfigService.xml();
+            if (xml != null) {
+                configZip.write(xml.getBytes(UTF_8));
+            }
 
             if (desCipherFile.exists()) {
                 configZip.putNextEntry(new ZipEntry(desCipherFile.getName()));
-                IOUtils.write(encodeHexString(new DESCipherProvider(systemEnvironment).getKey()), configZip, UTF_8);
+                configZip.write(encodeHexString(new DESCipherProvider(systemEnvironment).getKey()).getBytes(UTF_8));
             }
 
             configZip.putNextEntry(new ZipEntry(aesCipherFile.getName()));
-            IOUtils.write(encodeHexString(new AESCipherProvider(systemEnvironment).getKey()), configZip, UTF_8);
+            configZip.write(encodeHexString(new AESCipherProvider(systemEnvironment).getKey()).getBytes(UTF_8));
         }
     }
 
@@ -341,15 +348,11 @@ public class BackupService implements BackupStatusProvider {
     }
 
     public Optional<Date> lastBackupTime() {
-        return serverBackupRepository.lastSuccessfulBackup().map((ServerBackup::getTime));
+        return serverBackupRepository.lastSuccessfulBackup().map(ServerBackup::getTime);
     }
 
     public Optional<String> lastBackupUser() {
-        return serverBackupRepository.lastSuccessfulBackup().map((ServerBackup::getUsername));
-    }
-
-    public void deleteAll() {
-        serverBackupRepository.deleteAll();
+        return serverBackupRepository.lastSuccessfulBackup().map(ServerBackup::getUsername);
     }
 
     @Override
@@ -360,7 +363,7 @@ public class BackupService implements BackupStatusProvider {
     @Override
     public Optional<String> backupRunningSinceISO8601() {
         if (runningBackup != null) {
-            return Optional.of(new DateTime(runningBackup.getTime()).toString());
+            return Optional.of(Dates.formatIso8601SystemCompactOffsetNoMillis(runningBackup.getTime()));
         }
         return Optional.empty();
     }
@@ -410,8 +413,8 @@ class DirectoryStructureWalker extends DirectoryWalker<Void> {
             return;
         }
         zipStream.putNextEntry(new ZipEntry(fromRoot(file)));
-        try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(file))) {
-            IOUtils.copy(in, zipStream);
+        try (InputStream in = new FileInputStream(file)) {
+            in.transferTo(zipStream);
         }
     }
 

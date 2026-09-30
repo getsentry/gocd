@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.service;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.GoConfigDao;
 import com.thoughtworks.go.domain.Pipeline;
 import com.thoughtworks.go.domain.Stage;
@@ -38,7 +37,8 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.nio.file.Path;
 
-import static javax.servlet.http.HttpServletResponse.*;
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static java.net.HttpURLConnection.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ExtendWith(SpringExtension.class)
@@ -55,23 +55,19 @@ public class ScheduleServiceSecurityTest {
     @Autowired private MaterialRepository materialRepository;
     @Autowired private TransactionTemplate transactionTemplate;
 
-    private PipelineWithTwoStages fixture;
-    private static final GoConfigFileHelper configHelper = new GoConfigFileHelper();
+    private PipelineWithTwoStages pipelineFixture;
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
 
     @BeforeEach
     public void setUp(@TempDir Path tempDir) throws Exception {
-        configHelper.onSetUp();
         configHelper.usingCruiseConfigDao(goConfigDao);
-
-        dbHelper.onSetUp();
-        fixture = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
-        fixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
+        pipelineFixture = new PipelineWithTwoStages(materialRepository, transactionTemplate, tempDir);
+        pipelineFixture.usingConfigHelper(configHelper).usingDbHelper(dbHelper).onSetUp();
     }
 
     @AfterEach
     public void teardown() throws Exception {
-        dbHelper.onTearDown();
-        fixture.onTearDown();
+        pipelineFixture.onTearDown();
     }
 
     @Test
@@ -79,27 +75,27 @@ public class ScheduleServiceSecurityTest {
         configHelper.enableSecurity();
         configHelper.addAdmins("admin");
         configHelper.setOperatePermissionForGroup("defaultGroup", "jez");
-        Pipeline pipeline = fixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
-        Username anonymous = new Username(new CaseInsensitiveString("anonymous"));
+        Pipeline pipeline = pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
+        Username anonymous = new Username(cis("anonymous"));
         HttpLocalizedOperationResult operationResult = new HttpLocalizedOperationResult();
-        Stage resultStage = scheduleService.cancelAndTriggerRelevantStages(pipeline.getStages().byName(fixture.ftStage).getId(), anonymous, operationResult);
+        Stage resultStage = scheduleService.cancelAndTriggerRelevantStages(pipeline.getStages().byName(pipelineFixture.ftStage).getId(), anonymous, operationResult);
 
         assertThat(resultStage).isNull();
         assertThat(operationResult.isSuccessful()).isFalse();
-        assertThat(operationResult.httpCode()).isEqualTo(SC_FORBIDDEN);
+        assertThat(operationResult.httpCode()).isEqualTo(HTTP_FORBIDDEN);
     }
 
     @Test
     public void shouldReturnAppropriateHttpResultIfTheStageIsInvalid() throws Exception {
         configHelper.enableSecurity();
         configHelper.setOperatePermissionForGroup("defaultGroup", "jez");
-        Username jez = new Username(new CaseInsensitiveString("jez"));
+        Username jez = new Username(cis("jez"));
         HttpLocalizedOperationResult operationResult = new HttpLocalizedOperationResult();
         Stage resultStage = scheduleService.cancelAndTriggerRelevantStages(-23L, jez, operationResult);
 
         assertThat(resultStage).isNull();
         assertThat(operationResult.isSuccessful()).isFalse();
-        assertThat(operationResult.httpCode()).isEqualTo(SC_NOT_FOUND);
+        assertThat(operationResult.httpCode()).isEqualTo(HTTP_NOT_FOUND);
     }
 
     @Test
@@ -107,16 +103,16 @@ public class ScheduleServiceSecurityTest {
         configHelper.enableSecurity();
         Username user = SessionUtils.currentUsername();
         configHelper.setOperatePermissionForGroup("defaultGroup", user.getUsername().toString());
-        Pipeline pipeline = fixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
+        Pipeline pipeline = pipelineFixture.createPipelineWithFirstStagePassedAndSecondStageRunning();
 
         HttpLocalizedOperationResult operationResult = new HttpLocalizedOperationResult();
 
-        Stage stageForCancellation = pipeline.getStages().byName(fixture.ftStage);
+        Stage stageForCancellation = pipeline.getStages().byName(pipelineFixture.ftStage);
         Stage resultStage = scheduleService.cancelAndTriggerRelevantStages(stageForCancellation.getId(), user, operationResult);
 
         assertThat(resultStage).isNotNull();
         assertThat(operationResult.isSuccessful()).isTrue();
-        assertThat(operationResult.httpCode()).isEqualTo(SC_OK);
+        assertThat(operationResult.httpCode()).isEqualTo(HTTP_OK);
     }
 
 }

@@ -57,6 +57,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.*;
 import static com.thoughtworks.go.helper.PipelineConfigMother.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -109,18 +110,18 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         * */
         PipelineConfig p1 = createPipelineConfig("p1", "s1", "j1");
         PipelineConfig p2 = createPipelineConfig("p2", "s2", "j1");
-        p2.addMaterialConfig(new DependencyMaterialConfig(new CaseInsensitiveString("p1"), new CaseInsensitiveString("s1")));
+        p2.addMaterialConfig(new DependencyMaterialConfig(cis("p1"), cis("s1")));
         PipelineConfig p3 = createPipelineConfig("p3", "s3", "j1");
-        p3.addMaterialConfig(new DependencyMaterialConfig(new CaseInsensitiveString("p1"), new CaseInsensitiveString("s1")));
+        p3.addMaterialConfig(new DependencyMaterialConfig(cis("p1"), cis("s1")));
         PipelineConfig p4 = createPipelineConfig("p4", "s4", "j1");
-        p4.addMaterialConfig(new DependencyMaterialConfig(new CaseInsensitiveString("p2"), new CaseInsensitiveString("s2")));
+        p4.addMaterialConfig(new DependencyMaterialConfig(cis("p2"), cis("s2")));
         pipelines.addAll(List.of(p4, p2, p1, p3));
         Map<CaseInsensitiveString, List<PipelineConfig>> expectedPipelines = cruiseConfig.generatePipelineVsDownstreamMap();
         assertThat(expectedPipelines.size()).isEqualTo(4);
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("p1"))).contains(p2, p3);
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("p2"))).contains(p4);
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("p3")).isEmpty()).isTrue();
-        assertThat(expectedPipelines.get(new CaseInsensitiveString("p4")).isEmpty()).isTrue();
+        assertThat(expectedPipelines.get(cis("p1"))).contains(p2, p3);
+        assertThat(expectedPipelines.get(cis("p2"))).contains(p4);
+        assertThat(expectedPipelines.get(cis("p3")).isEmpty()).isTrue();
+        assertThat(expectedPipelines.get(cis("p4")).isEmpty()).isTrue();
     }
 
 
@@ -128,7 +129,7 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
     public void shouldSetOriginInPipelines() {
         pipelines = new BasicPipelineConfigs("group_main", new Authorization(), pipelineConfig("pipe1"));
         BasicCruiseConfig mainCruiseConfig = new BasicCruiseConfig(pipelines);
-        PipelineConfig pipe = pipelines.get(0);
+        PipelineConfig pipe = pipelines.getFirst();
         mainCruiseConfig.setOrigins(new FileConfigOrigin());
         assertThat(pipe.getOrigin()).isEqualTo(new FileConfigOrigin());
     }
@@ -136,7 +137,7 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
     @Test
     public void shouldSetOriginInEnvironments() {
         BasicCruiseConfig mainCruiseConfig = new BasicCruiseConfig(pipelines);
-        BasicEnvironmentConfig env = new BasicEnvironmentConfig(new CaseInsensitiveString("e"));
+        BasicEnvironmentConfig env = new BasicEnvironmentConfig(cis("e"));
         mainCruiseConfig.addEnvironment(env);
         mainCruiseConfig.setOrigins(new FileConfigOrigin());
         assertThat(env.getOrigin()).isEqualTo(new FileConfigOrigin());
@@ -156,21 +157,6 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
     }
 
     @Test
-    public void shouldReturnTrueForPipelineThatInFirstGroup() {
-        PipelineConfigs group1 = createGroup("group1", createPipelineConfig("pipeline1", "stage1"));
-        CruiseConfig config = new BasicCruiseConfig(group1);
-        assertThat(config.isInFirstGroup(new CaseInsensitiveString("pipeline1"))).isTrue();
-    }
-
-    @Test
-    public void shouldReturnFalseForPipelineThatNotInFirstGroup() {
-        PipelineConfigs group1 = createGroup("group1", createPipelineConfig("pipeline1", "stage1"));
-        PipelineConfigs group2 = createGroup("group2", createPipelineConfig("pipeline2", "stage2"));
-        CruiseConfig config = new BasicCruiseConfig(group1, group2);
-        assertThat(config.isInFirstGroup(new CaseInsensitiveString("pipeline2"))).isFalse();
-    }
-
-    @Test
     public void shouldIncludeRemotePipelinesAsPartOfCachedPipelineConfigs() {
         BasicCruiseConfig cruiseConfig = GoConfigMother.configWithPipelines("p1", "p2");
         ConfigRepoConfig repoConfig1 = ConfigRepoConfig.createConfigRepoConfig(gitMaterialConfig("url1"), "plugin", "id-1");
@@ -180,8 +166,8 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         PartialConfig partialConfigInRepo2 = PartialConfigMother.withPipeline("pipeline_in_repo2", new RepoConfigOrigin(repoConfig2, "repo2_r1"));
 
         cruiseConfig.merge(List.of(partialConfigInRepo1, partialConfigInRepo2), false);
-        assertThat(cruiseConfig.getAllPipelineNames().contains(new CaseInsensitiveString("pipeline_in_repo1"))).isTrue();
-        assertThat(cruiseConfig.getAllPipelineNames().contains(new CaseInsensitiveString("pipeline_in_repo2"))).isTrue();
+        assertThat(cruiseConfig.getAllPipelineNames().contains(cis("pipeline_in_repo1"))).isTrue();
+        assertThat(cruiseConfig.getAllPipelineNames().contains(cis("pipeline_in_repo2"))).isTrue();
     }
 
     @Test
@@ -193,42 +179,37 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         PartialConfig partialConfigInRepo1 = PartialConfigMother.withPipeline("pipeline_in_repo1", new RepoConfigOrigin(repoConfig1, "repo1_r1"));
         PartialConfig partialConfigInRepo2 = PartialConfigMother.withPipeline("pipeline_in_repo2", new RepoConfigOrigin(repoConfig2, "repo2_r1"));
         cruiseConfig.merge(List.of(partialConfigInRepo1, partialConfigInRepo2), false);
-        assertThat(cruiseConfig.getAllPipelineNames().contains(new CaseInsensitiveString("pipeline_in_repo1"))).isFalse();
-        assertThat(cruiseConfig.getAllPipelineNames().contains(new CaseInsensitiveString("pipeline_in_repo2"))).isTrue();
+        assertThat(cruiseConfig.getAllPipelineNames().contains(cis("pipeline_in_repo1"))).isFalse();
+        assertThat(cruiseConfig.getAllPipelineNames().contains(cis("pipeline_in_repo2"))).isTrue();
     }
 
     @Test
     public void shouldReturnAListOfPipelineNamesAssociatedWithOneTemplate() {
         List<CaseInsensitiveString> pipelinesAssociatedWithATemplate = new ArrayList<>();
-        pipelinesAssociatedWithATemplate.add(new CaseInsensitiveString("p1"));
+        pipelinesAssociatedWithATemplate.add(cis("p1"));
         BasicCruiseConfig cruiseConfig = GoConfigMother.defaultCruiseConfig();
         new GoConfigMother().addPipelineWithTemplate(cruiseConfig, "p1", "t1", "s1", "j1");
 
-        assertThat(cruiseConfig.pipelinesAssociatedWithTemplate(new CaseInsensitiveString("t1"))).isEqualTo(pipelinesAssociatedWithATemplate);
+        assertThat(cruiseConfig.pipelinesAssociatedWithTemplate(cis("t1"))).isEqualTo(pipelinesAssociatedWithATemplate);
     }
 
     @Test
     public void shouldReturnNullForAssociatedPipelineNamesWhenTemplateNameIsBlank() {
-        List<CaseInsensitiveString> pipelinesAssociatedWithATemplate = new ArrayList<>();
-        pipelinesAssociatedWithATemplate.add(new CaseInsensitiveString("p1"));
         BasicCruiseConfig cruiseConfig = GoConfigMother.defaultCruiseConfig();
-        new GoConfigMother().addPipelineWithTemplate(cruiseConfig, "p1", "t1", "s1", "j1");
-
-        assertThat(cruiseConfig.pipelinesAssociatedWithTemplate(new CaseInsensitiveString(""))).isEqualTo(new ArrayList<CaseInsensitiveString>());
+        assertThat(cruiseConfig.pipelinesAssociatedWithTemplate(cis(""))).isEmpty();
     }
 
     @Test
     public void shouldReturnAnEmptyListForPipelinesIfTemplateNameIsNull() {
         BasicCruiseConfig cruiseConfig = GoConfigMother.defaultCruiseConfig();
-
-        assertThat(cruiseConfig.pipelinesAssociatedWithTemplate(null).isEmpty()).isTrue();
+        assertThat(cruiseConfig.pipelinesAssociatedWithTemplate(null)).isEmpty();
     }
 
     @Test
     public void shouldReturnAnEmptyListIfThereAreNoPipelinesAssociatedWithGivenTemplate() {
         BasicCruiseConfig cruiseConfig = GoConfigMother.defaultCruiseConfig();
 
-        assertThat(cruiseConfig.pipelinesAssociatedWithTemplate(new CaseInsensitiveString("non-existent-template")).isEmpty()).isTrue();
+        assertThat(cruiseConfig.pipelinesAssociatedWithTemplate(cis("non-existent-template")).isEmpty()).isTrue();
     }
 
     @Test
@@ -238,7 +219,7 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         GoConfigMother.enableSecurityWithPasswordFilePlugin(cruiseConfig);
         GoConfigMother.addUserAsSuperAdmin(cruiseConfig, "superadmin");
 
-        List<String> groupsForUser = cruiseConfig.getGroupsForUser(new CaseInsensitiveString("superadmin"), new ArrayList<>());
+        List<String> groupsForUser = cruiseConfig.getGroupsForUser(cis("superadmin"), new ArrayList<>());
 
         assertThat(groupsForUser).contains("group");
     }
@@ -257,7 +238,7 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         List<Role> roles = new ArrayList<>();
         roles.add(role);
 
-        List<String> groupsForUser = cruiseConfig.getGroupsForUser(new CaseInsensitiveString("foo"), roles);
+        List<String> groupsForUser = cruiseConfig.getGroupsForUser(cis("foo"), roles);
 
         assertThat(groupsForUser).contains("group");
     }
@@ -275,7 +256,7 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         goConfigMother.addAdminUserForPipelineGroup(cruiseConfig, "foo", "group1");
         goConfigMother.addAdminUserForPipelineGroup(cruiseConfig, "foo", "group2");
 
-        List<String> groupsForUser = cruiseConfig.getGroupsForUser(new CaseInsensitiveString("foo"), new ArrayList<>());
+        List<String> groupsForUser = cruiseConfig.getGroupsForUser(cis("foo"), new ArrayList<>());
 
         assertThat(groupsForUser).doesNotContain("group3");
         assertThat(groupsForUser).contains("group2", "group1");
@@ -298,7 +279,7 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
 
         List<Role> roles = new ArrayList<>();
         roles.add(role);
-        List<String> groupsForUser = cruiseConfig.getGroupsForUser(new CaseInsensitiveString("foo"), roles);
+        List<String> groupsForUser = cruiseConfig.getGroupsForUser(cis("foo"), roles);
 
         assertThat(groupsForUser).doesNotContain("group3");
         assertThat(groupsForUser).contains("group2", "group1");
@@ -312,8 +293,8 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         cruiseConfig.getArtifactStores().add(new ArtifactStore("store1", "cd.go.s3"));
         PipelineConfig pipelineConfig = new GoConfigMother().addPipelineWithTemplate(cruiseConfig, "p1", "t1", "s1", "j1");
         cruiseConfig.addPipeline("first", pipelineConfig);
-        PipelineTemplateConfig templateConfig = cruiseConfig.getTemplates().first();
-        JobConfig jobConfig = templateConfig.getStages().get(0).getJobs().get(0);
+        PipelineTemplateConfig templateConfig = cruiseConfig.getTemplates().getFirst();
+        JobConfig jobConfig = templateConfig.getStages().getFirst().getJobs().getFirst();
         PluggableArtifactConfig artifactConfig = new PluggableArtifactConfig("foo", "store1");
         artifactConfig.addConfigurations(List.of(
                 new ConfigurationProperty(new ConfigurationKey("k1"), new ConfigurationValue("pub_v1")),
@@ -325,7 +306,7 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         new ConfigParamPreprocessor().process(preprocessed);
         cruiseConfig.encryptSecureProperties(preprocessed);
 
-        Configuration properties = ((PluggableArtifactConfig) cruiseConfig.getTemplates().get(0).getStages().get(0).getJobs().get(0).artifactTypeConfigs().get(0)).getConfiguration();
+        Configuration properties = ((PluggableArtifactConfig) cruiseConfig.getTemplates().getFirst().getStages().getFirst().getJobs().getFirst().artifactTypeConfigs().getFirst()).getConfiguration();
 
         GoCipher goCipher = new GoCipher();
         assertThat(properties.getProperty("k1").getEncryptedValue()).isEqualTo(goCipher.encrypt("pub_v1"));
@@ -357,7 +338,7 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         new ConfigParamPreprocessor().process(preprocessed);
         cruiseConfig.encryptSecureProperties(preprocessed);
 
-        Configuration properties = cruiseConfig.server().security().getRoles().getPluginRoleConfigs().get(0);
+        Configuration properties = cruiseConfig.server().security().getRoles().getPluginRoleConfigs().getFirst();
 
         GoCipher goCipher = new GoCipher();
         assertThat(properties.getProperty("k1").getEncryptedValue()).isEqualTo(goCipher.encrypt("pub_v1"));
@@ -389,7 +370,7 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         new ConfigParamPreprocessor().process(preprocessed);
         cruiseConfig.encryptSecureProperties(preprocessed);
 
-        Configuration properties = cruiseConfig.getElasticConfig().getProfiles().get(0);
+        Configuration properties = cruiseConfig.getElasticConfig().getProfiles().getFirst();
 
         GoCipher goCipher = new GoCipher();
         assertThat(properties.getProperty("k1").getEncryptedValue()).isEqualTo(goCipher.encrypt("pub_v1"));
@@ -412,10 +393,10 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         BasicCruiseConfig preprocessed = GoConfigMother.deepClone(config);
         new ConfigParamPreprocessor().process(preprocessed);
         config.encryptSecureProperties(preprocessed);
-        PipelineConfig ancestor = config.pipelineConfigByName(new CaseInsensitiveString("ancestor"));
-        PipelineConfig child = config.pipelineConfigByName(new CaseInsensitiveString("child"));
+        PipelineConfig ancestor = config.pipelineConfigByName(cis("ancestor"));
+        PipelineConfig child = config.pipelineConfigByName(cis("child"));
 
-        Configuration ancestorPublishArtifactConfig = ancestor.getStage("stage1").jobConfigByConfigName("job1").artifactTypeConfigs().getPluggableArtifactConfigs().get(0).getConfiguration();
+        Configuration ancestorPublishArtifactConfig = ancestor.getStage("stage1").jobConfigByConfigName("job1").artifactTypeConfigs().getPluggableArtifactConfigs().getFirst().getConfiguration();
         GoCipher goCipher = new GoCipher();
         assertThat(ancestorPublishArtifactConfig.getProperty("k1").getEncryptedValue()).isEqualTo(goCipher.encrypt("pub_v1"));
         assertThat(ancestorPublishArtifactConfig.getProperty("k1").getConfigValue()).isNull();
@@ -428,7 +409,7 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         assertThat(ancestorPublishArtifactConfig.getProperty("k3").getValue()).isEqualTo("pub_v3");
 
         Configuration childFetchFromAncestorConfig = ((FetchPluggableArtifactTask) child.getStage("stage1")
-                .jobConfigByConfigName("job1").tasks().get(0)).getConfiguration();
+                .jobConfigByConfigName("job1").tasks().getFirst()).getConfiguration();
         assertThat(childFetchFromAncestorConfig.getProperty("k1").getEncryptedValue()).isEqualTo(goCipher.encrypt("fetch_v1"));
         assertThat(childFetchFromAncestorConfig.getProperty("k1").getConfigValue()).isNull();
         assertThat(childFetchFromAncestorConfig.getProperty("k1").getValue()).isEqualTo("fetch_v1");
@@ -455,20 +436,20 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
     private BasicCruiseConfig setupPipelines() {
         BasicCruiseConfig config = GoConfigMother.configWithPipelines("ancestor", "parent", "child");
         config.getArtifactStores().add(new ArtifactStore("cd.go.s3", "cd.go.s3"));
-        PipelineConfig ancestor = config.pipelineConfigByName(new CaseInsensitiveString("ancestor"));
+        PipelineConfig ancestor = config.pipelineConfigByName(cis("ancestor"));
         ancestor.add(StageConfigMother.stageConfig("stage1", new JobConfigs(new JobConfig("job1"))));
         PluggableArtifactConfig pluggableArtifactConfig = new PluggableArtifactConfig("art_1", "cd.go.s3",
                 new ConfigurationProperty(new ConfigurationKey("k1"), new ConfigurationValue("pub_v1")),
                 new ConfigurationProperty(new ConfigurationKey("k2"), new ConfigurationValue("pub_v2")),
                 new ConfigurationProperty(new ConfigurationKey("k3"), new ConfigurationValue("pub_v3")));
-        ancestor.getStage("stage1").getJobs().first().artifactTypeConfigs().add(pluggableArtifactConfig);
+        ancestor.getStage("stage1").getJobs().getFirst().artifactTypeConfigs().add(pluggableArtifactConfig);
 
-        PipelineConfig parent = config.pipelineConfigByName(new CaseInsensitiveString("parent"));
+        PipelineConfig parent = config.pipelineConfigByName(cis("parent"));
         parent.add(StageConfigMother.stageConfig("stage1", new JobConfigs(new JobConfig("job1"))));
         parent.getStage("stage1").jobConfigByConfigName("job1").artifactTypeConfigs()
                 .add(new PluggableArtifactConfig("art_2", "cd.go.s3"));
 
-        PipelineConfig child = config.pipelineConfigByName(new CaseInsensitiveString("child"));
+        PipelineConfig child = config.pipelineConfigByName(cis("child"));
         child.addParam(new ParamConfig("UPSTREAM_PIPELINE", "ancestor/parent"));
         child.addParam(new ParamConfig("UPSTREAM_STAGE", "stage1"));
         child.addParam(new ParamConfig("UPSTREAM_JOB", "job1"));
@@ -476,23 +457,23 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         child.setMaterialConfigs(new MaterialConfigs(dependencyMaterialConfig("parent", "stage1")));
         child.add(StageConfigMother.stageConfig("stage1", new JobConfigs(new JobConfig("job1"))));
         FetchPluggableArtifactTask fetchFromAncestor = new FetchPluggableArtifactTask(
-                new CaseInsensitiveString("#{UPSTREAM_PIPELINE}"),
-                new CaseInsensitiveString("#{UPSTREAM_STAGE}"),
-                new CaseInsensitiveString("#{UPSTREAM_JOB}"), "#{ARTIFACT_ID}");
+                cis("#{UPSTREAM_PIPELINE}"),
+                cis("#{UPSTREAM_STAGE}"),
+                cis("#{UPSTREAM_JOB}"), "#{ARTIFACT_ID}");
         fetchFromAncestor.addConfigurations(List.of(
                 new ConfigurationProperty(new ConfigurationKey("k1"), new ConfigurationValue("fetch_v1")),
                 new ConfigurationProperty(new ConfigurationKey("k2"), new ConfigurationValue("fetch_v2")),
                 new ConfigurationProperty(new ConfigurationKey("k3"), new ConfigurationValue("fetch_v3"))));
-        child.getStage("stage1").getJobs().get(0).addTask(fetchFromAncestor);
+        child.getStage("stage1").getJobs().getFirst().addTask(fetchFromAncestor);
         FetchPluggableArtifactTask fetchFromParent = new FetchPluggableArtifactTask(
-                new CaseInsensitiveString("parent"),
-                new CaseInsensitiveString("stage1"),
-                new CaseInsensitiveString("job1"), "art_2");
+                cis("parent"),
+                cis("stage1"),
+                cis("job1"), "art_2");
         fetchFromParent.addConfigurations(List.of(
                 new ConfigurationProperty(new ConfigurationKey("k1"), new ConfigurationValue("fetch_v1")),
                 new ConfigurationProperty(new ConfigurationKey("k2"), new ConfigurationValue("fetch_v2")),
                 new ConfigurationProperty(new ConfigurationKey("k3"), new ConfigurationValue("fetch_v3"))));
-        child.getStage("stage1").getJobs().get(0).addTask(fetchFromParent);
+        child.getStage("stage1").getJobs().getFirst().addTask(fetchFromParent);
 
         setArtifactPluginInfo();
         return config;
@@ -581,8 +562,8 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         List<PipelineConfig> pipelineConfigs = config.pipelinesAssociatedWithPackage(packageMaterialConfig.getPackageDefinition());
 
         assertThat(pipelineConfigs.size()).isEqualTo(2);
-        assertThat(pipelineConfigs.get(0).getName()).isEqualTo(new CaseInsensitiveString("p1"));
-        assertThat(pipelineConfigs.get(1).getName()).isEqualTo(new CaseInsensitiveString("p3"));
+        assertThat(pipelineConfigs.getFirst().getName()).isEqualTo(cis("p1"));
+        assertThat(pipelineConfigs.getLast().getName()).isEqualTo(cis("p3"));
     }
 
     @Test
@@ -602,7 +583,7 @@ public class BasicCruiseConfigTest extends CruiseConfigTestBase {
         List<PipelineConfig> pipelineConfigs = config.pipelinesAssociatedWithPackageRepository(packageMaterialConfig.getPackageDefinition().getRepository());
 
         assertThat(pipelineConfigs.size()).isEqualTo(2);
-        assertThat(pipelineConfigs.get(0).getName()).isEqualTo(new CaseInsensitiveString("p1"));
-        assertThat(pipelineConfigs.get(1).getName()).isEqualTo(new CaseInsensitiveString("p3"));
+        assertThat(pipelineConfigs.getFirst().getName()).isEqualTo(cis("p1"));
+        assertThat(pipelineConfigs.getLast().getName()).isEqualTo(cis("p3"));
     }
 }

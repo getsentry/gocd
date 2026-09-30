@@ -33,7 +33,7 @@
     },
     displayAnyErrorMessages: function displayErrorMessagesOnBuildDetails(json) {
       if (is_result_unknown(json)) {
-        $('#trans_content').html("Failed to find log in <br/>" + json.building_info.name);
+        $('#trans_content').html(`Failed to find log in <br/>${json.building_info.name}`);
         new TransMessage('trans_message', $('#build_detail_summary_container')[0], {
           type:     TransMessage.TYPE_ERROR,
           autoHide: false,
@@ -59,15 +59,16 @@
         return moment(time).format('DD MMM YYYY [at] HH:mm:ss [Local Time]');
       }
 
-      $(".job_details_content").attr("data-result", status).removeData("data-result");
+      $(".job_details_content").removeData("data-result");
       $('#build_scheduled_date').text(toHumanReadable(json.building_info.build_scheduled_date));
       $('#build_assigned_date').text(toHumanReadable(json.building_info.build_assigned_date));
       $('#build_preparing_date').text(toHumanReadable(json.building_info.build_preparing_date));
       $('#build_building_date').text(toHumanReadable(json.building_info.build_building_date));
       $('#build_completing_date').text(toHumanReadable(json.building_info.build_completing_date));
       $('#build_completed_date').text(toHumanReadable(json.building_info.build_completed_date));
-      $('#agent_name').attr("href", context_path("agents/" + json.building_info.agent_uuid));
-      $('#agent_name').text(json.building_info.agent + ' (' + json.building_info.agent_ip + ')');
+      const agent_name = $('#agent_name');
+      agent_name.attr("href", context_path(`agents/${json.building_info.agent_uuid}`));
+      agent_name.text(`${json.building_info.agent} (${json.building_info.agent_ip})`);
 
       json_to_css.update_build_detail_header(json);
     }

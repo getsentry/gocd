@@ -20,48 +20,36 @@ import com.thoughtworks.go.config.exceptions.RecordNotFoundException;
 import com.thoughtworks.go.domain.NullUser;
 import com.thoughtworks.go.domain.User;
 import com.thoughtworks.go.domain.Users;
-import com.thoughtworks.go.server.cache.GoCache;
 import com.thoughtworks.go.server.exceptions.UserEnabledException;
-import com.thoughtworks.go.server.transaction.TransactionSynchronizationManager;
 import com.thoughtworks.go.server.transaction.TransactionTemplate;
-import org.apache.commons.lang3.StringUtils;
 import org.hibernate.Criteria;
 import org.hibernate.Query;
 import org.hibernate.SessionFactory;
-import org.hibernate.criterion.Projections;
-import org.hibernate.criterion.Restrictions;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.orm.hibernate3.HibernateTemplate;
 import org.springframework.orm.hibernate3.support.HibernateDaoSupport;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallbackWithoutResult;
-import org.springframework.transaction.support.TransactionSynchronizationAdapter;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.hibernate.criterion.Restrictions.*;
 
 @Component
 public class UserSqlMapDao extends HibernateDaoSupport implements UserDao {
-    private SessionFactory sessionFactory;
-    private TransactionTemplate transactionTemplate;
-    private GoCache goCache;
+    private final SessionFactory sessionFactory;
+    private final TransactionTemplate transactionTemplate;
     private final AccessTokenDao accessTokenDao;
-    private final TransactionSynchronizationManager transactionSynchronizationManager;
-    protected static final String ENABLED_USER_COUNT_CACHE_KEY = "ENABLED_USER_COUNT_CACHE_KEY";
 
     @Autowired
     public UserSqlMapDao(SessionFactory sessionFactory,
                          TransactionTemplate transactionTemplate,
-                         GoCache goCache,
-                         AccessTokenDao accessTokenDao, TransactionSynchronizationManager transactionSynchronizationManager) {
+                         AccessTokenDao accessTokenDao) {
         this.sessionFactory = sessionFactory;
         this.transactionTemplate = transactionTemplate;
-        this.goCache = goCache;
         this.accessTokenDao = accessTokenDao;
-        this.transactionSynchronizationManager = transactionSynchronizationManager;
         setSessionFactory(sessionFactory);
     }
 
@@ -71,12 +59,6 @@ public class UserSqlMapDao extends HibernateDaoSupport implements UserDao {
         transactionTemplate.execute(new TransactionCallbackWithoutResult() {
             @Override
             protected void doInTransactionWithoutResult(TransactionStatus status) {
-                transactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
-                    @Override
-                    public void afterCommit() {
-                        clearEnabledUserCountFromCache();
-                    }
-                });
                 sessionFactory.getCurrentSession().saveOrUpdate(copyLoginToDisplayNameIfNotPresent(user));
             }
         });
@@ -86,9 +68,9 @@ public class UserSqlMapDao extends HibernateDaoSupport implements UserDao {
     public User findUser(final String userName) {
         return transactionTemplate.execute(transactionStatus -> {
             User user = (User) sessionFactory.getCurrentSession()
-                    .createCriteria(User.class)
-                    .add(Restrictions.eq("name", userName))
-                    .setCacheable(true).uniqueResult();
+                .createCriteria(User.class)
+                .add(eq("name", userName))
+                .setCacheable(true).uniqueResult();
             return user == null ? new NullUser() : user;
         });
     }
@@ -99,8 +81,10 @@ public class UserSqlMapDao extends HibernateDaoSupport implements UserDao {
         return transactionTemplate.execute(transactionStatus -> {
             Criteria criteria = sessionFactory.getCurrentSession().createCriteria(User.class);
             criteria.setCacheable(true);
-            criteria.add(Restrictions.isNotEmpty("notificationFilters"));
-            criteria.add(Restrictions.eq("enabled", true));
+            criteria.add(eq("enabled", true));
+            criteria.add(eq("emailMe", true));
+            criteria.add(conjunction().add(not(isNull("email"))).add(ne("email", "")));
+            criteria.add(isNotEmpty("notificationFilters"));
             return new Users(criteria.list());
         });
     }
@@ -113,25 +97,6 @@ public class UserSqlMapDao extends HibernateDaoSupport implements UserDao {
             query.setCacheable(true);
             return query.list();
         }));
-    }
-
-    @Override
-    public long enabledUserCount() {
-        Long value = goCache.get(ENABLED_USER_COUNT_CACHE_KEY);
-        if (value != null) {
-            return value;
-        }
-
-        synchronized (ENABLED_USER_COUNT_CACHE_KEY) {
-            value = goCache.get(ENABLED_USER_COUNT_CACHE_KEY);
-            if (value == null) {
-                value = hibernateTemplate().execute(session -> (Long) session.createCriteria(User.class).add(Restrictions.eq("enabled", true)).setProjection(Projections.rowCount()).setCacheable(true).uniqueResult());
-
-                goCache.put(ENABLED_USER_COUNT_CACHE_KEY, value);
-            }
-
-            return value;
-        }
     }
 
     @Override
@@ -153,18 +118,6 @@ public class UserSqlMapDao extends HibernateDaoSupport implements UserDao {
             }
         }
         return enabledUsers;
-    }
-
-    @Override
-    public Set<String> findUsernamesForIds(final Set<Long> userIds) {
-        List<User> users = allUsers();
-        Set<String> userNames = new HashSet<>();
-        for (User user : users) {
-            if (userIds.contains(user.getId())) {
-                userNames.add(user.getName());
-            }
-        }
-        return userNames;
     }
 
     @Override
@@ -200,16 +153,6 @@ public class UserSqlMapDao extends HibernateDaoSupport implements UserDao {
         });
     }
 
-    private void clearEnabledUserCountFromCache() {
-        synchronized (ENABLED_USER_COUNT_CACHE_KEY) {
-            goCache.remove(ENABLED_USER_COUNT_CACHE_KEY);
-        }
-    }
-
-    protected HibernateTemplate hibernateTemplate() {
-        return getHibernateTemplate();
-    }
-
     private void assertUserNotAnonymous(User user) {
         if (user.isAnonymous()) {
             throw new IllegalArgumentException(String.format("User name '%s' is not permitted.", user.getName()));
@@ -217,7 +160,7 @@ public class UserSqlMapDao extends HibernateDaoSupport implements UserDao {
     }
 
     private User copyLoginToDisplayNameIfNotPresent(User user) {
-        if (StringUtils.isBlank(user.getDisplayName())) {
+        if (isBlank(user.getDisplayName())) {
             user.setDisplayName(user.getName());
         }
         return user;
@@ -227,12 +170,6 @@ public class UserSqlMapDao extends HibernateDaoSupport implements UserDao {
         transactionTemplate.execute(new TransactionCallbackWithoutResult() {
             @Override
             protected void doInTransactionWithoutResult(TransactionStatus status) {
-                transactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
-                    @Override
-                    public void afterCommit() {
-                        clearEnabledUserCountFromCache();
-                    }
-                });
                 String queryString = String.format("update %s set enabled = :enabled where name in (:userNames)", User.class.getName());
                 Query query = sessionFactory.getCurrentSession().createQuery(queryString);
                 query.setParameter("enabled", enabled);

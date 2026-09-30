@@ -15,11 +15,10 @@
  */
 package com.thoughtworks.go.util;
 
-import ch.qos.logback.classic.Level;
 import com.thoughtworks.go.process.CurrentProcess;
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.event.Level;
 
 import java.util.List;
 import java.util.Optional;
@@ -41,13 +40,10 @@ public class SubprocessLoggerTest {
     public void shouldNotLogAnythingWhenNoChildProcessesFound() {
         CurrentProcess currentProcess = mock(CurrentProcess.class);
         logger = new SubprocessLogger(currentProcess);
-        try (LogFixture log = logFixtureFor(SubprocessLogger.class, Level.ALL)) {
-            logger.run();
-            String result;
-            synchronized (log) {
-                result = log.getLog();
-            }
-            assertThat(result).isEqualTo("");
+        try (LogFixture log = logFixtureFor(SubprocessLogger.class, Level.TRACE)) {
+            logger.logSubprocess();
+            String result = log.getLog();
+            assertThat(result).isEmpty();
         }
     }
 
@@ -55,13 +51,9 @@ public class SubprocessLoggerTest {
     public void shouldLogDefaultMessageWhenNoMessageGiven() {
         logger = new SubprocessLogger(stubProcess());
         String allLogs;
-        try (LogFixture log = logFixtureFor(SubprocessLogger.class, Level.ALL)) {
-            logger.run();
-            String result;
-            synchronized (log) {
-                result = log.getLog();
-            }
-            allLogs = result;
+        try (LogFixture log = logFixtureFor(SubprocessLogger.class, Level.TRACE)) {
+            logger.logSubprocess();
+            allLogs = log.getLog();
         }
         assertThat(allLogs).contains("Logged all subprocesses.");
     }
@@ -70,16 +62,12 @@ public class SubprocessLoggerTest {
     public void shouldLogAllTheRunningChildProcesses() {
         logger = new SubprocessLogger(stubProcess());
         String allLogs;
-        try (LogFixture log = logFixtureFor(SubprocessLogger.class, Level.ALL)) {
+        try (LogFixture log = logFixtureFor(SubprocessLogger.class, Level.TRACE)) {
             logger.registerAsExitHook("foo bar baz");
-            logger.run();
-            String result;
-            synchronized (log) {
-                result = log.getLog();
-            }
-            allLogs = result;
+            logger.logSubprocess();
+            allLogs = log.getLog();
         }
-        Assertions.assertThat(allLogs).isEqualToNormalizingNewlines("""
+        assertThat(allLogs).isEqualToNormalizingNewlines("""
                 WARN foo bar baz
                 101
                 103

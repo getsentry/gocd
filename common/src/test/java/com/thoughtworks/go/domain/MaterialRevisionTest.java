@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.domain;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.materials.Filter;
 import com.thoughtworks.go.config.materials.IgnoredFiles;
 import com.thoughtworks.go.config.materials.ScmMaterialConfig;
@@ -32,17 +31,18 @@ import com.thoughtworks.go.helper.MaterialsMother;
 import com.thoughtworks.go.helper.ModificationsMother;
 import com.thoughtworks.go.util.TempDirUtils;
 import com.thoughtworks.go.util.command.InMemoryStreamConsumer;
-import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.ModificationsMother.*;
 import static com.thoughtworks.go.util.command.ProcessOutputStreamConsumer.inMemoryConsumer;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -208,7 +208,7 @@ public class MaterialRevisionTest {
         MaterialRevision unchangedRevision = findNewRevision(revision, hgMaterial, workingFolder, new TestSubprocessExecutionContext());
 
         assertThat(unchangedRevision.getModifications().size()).isEqualTo(1);
-        assertThat(unchangedRevision.getModifications().get(0)).isEqualTo(modificationForRevisionTip);
+        assertThat(unchangedRevision.getModifications().getFirst()).isEqualTo(modificationForRevisionTip);
     }
 
     @Test
@@ -236,7 +236,7 @@ public class MaterialRevisionTest {
 
     @Test
     public void shouldDisplayRevisionAsBuildCausedByForDependencyMaterial() {
-        DependencyMaterial dependencyMaterial = new DependencyMaterial(new CaseInsensitiveString("upstream"), new CaseInsensitiveString("stage"));
+        DependencyMaterial dependencyMaterial = new DependencyMaterial(cis("upstream"), cis("stage"));
         MaterialRevision materialRevision = new MaterialRevision(dependencyMaterial, new Modification(new Date(), "upstream/2/stage/1", "1.3-2", null));
         assertThat(materialRevision.buildCausedBy()).isEqualTo("upstream/2/stage/1");
     }
@@ -275,7 +275,7 @@ public class MaterialRevisionTest {
 
     @Test
     public void shouldDetectOldestAndLatestDependencyRevision() {
-        DependencyMaterial dependencyMaterial = new DependencyMaterial(new CaseInsensitiveString("upstream"), new CaseInsensitiveString("stage"));
+        DependencyMaterial dependencyMaterial = new DependencyMaterial(cis("upstream"), cis("stage"));
         MaterialRevision materialRevision = new MaterialRevision(dependencyMaterial, new Modification(new Date(), "upstream/3/stage/1", "1.3-3", null),
                 new Modification(new Date(), "upstream/2/stage/1", "1.3-2", null));
         assertThat(materialRevision.getOldestRevision()).isEqualTo(DependencyMaterialRevision.create("upstream/2/stage/1", "1.3-2"));
@@ -286,7 +286,7 @@ public class MaterialRevisionTest {
     public void shouldReturnNullRevisionWhenThereIsNoMaterial() {
         Revision revision = new MaterialRevision(null).getRevision();
         assertThat(revision).isNotNull();
-        assertThat(revision.getRevision()).isEqualTo("");
+        assertThat(revision.getRevision()).isEmpty();
     }
 
     @Test
@@ -305,12 +305,12 @@ public class MaterialRevisionTest {
 
     @Test
     public void shouldReturnMaterialName() {
-        assertThat(hgRevision().getMaterialName()).isEqualTo((hgMaterial.getDisplayName()));
+        assertThat(hgRevision().getMaterialName()).isEqualTo(hgMaterial.getDisplayName());
     }
 
     @Test
     public void shouldReturnTruncatedMaterialName() {
-        assertThat(hgRevision().getTruncatedMaterialName()).isEqualTo((hgMaterial.getTruncatedDisplayName()));
+        assertThat(hgRevision().getTruncatedMaterialName()).isEqualTo(hgMaterial.getTruncatedDisplayName());
     }
 
     @Test
@@ -363,7 +363,8 @@ public class MaterialRevisionTest {
         hgMaterial.updateTo(consumer, localDir, new RevisionContext(revision), new TestSubprocessExecutionContext());
         for (String fileName : fileNames) {
             File file = new File(localDir, fileName);
-            FileUtils.writeStringToFile(file, "", UTF_8);
+            file.getParentFile().mkdirs();
+            Files.writeString(file.toPath(), "", UTF_8);
             hgMaterial.add(localDir, consumer, file);
         }
         hgMaterial.commit(localDir, consumer, "Adding a new file.", "TEST");

@@ -20,37 +20,38 @@ import com.thoughtworks.go.config.CruiseConfig;
 import com.thoughtworks.go.config.materials.Materials;
 import com.thoughtworks.go.domain.buildcause.BuildCause;
 import com.thoughtworks.go.domain.label.PipelineLabel;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.TestOnly;
 
 import java.io.File;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.Map;
 
 public class Pipeline extends PersistentObject implements PipelineInfo {
 
     private String pipelineName;
-    private Integer counter;
+    private int counter;
     private PipelineLabel pipelineLabel = PipelineLabel.defaultLabel();
-    private Stages stages;
+    private Stages stages = new Stages();
     private BuildCause buildCause;
     private double naturalOrder;
 
-    public Pipeline() {
-        this(new Stages());
-    }
-
-    private Pipeline(Stages stages) {
-        this.stages = stages;
-        this.counter = 0;//counter can never be null, as pipeline identifier creation with null counter is not allowed
-    }
+    public Pipeline() {}
 
     public Pipeline(String pipelineName, String labelTemplate, BuildCause buildCause, EnvironmentVariables envVars, Stage... stages) {
-        this(new Stages(stages));
+        this(pipelineName, labelTemplate, buildCause, envVars, Arrays.stream(stages).toList());
+    }
+
+    public Pipeline(String pipelineName, String labelTemplate, BuildCause buildCause, EnvironmentVariables envVars, Collection<Stage> stages) {
         this.pipelineName = pipelineName;
         this.buildCause = buildCause;
         this.pipelineLabel = PipelineLabel.create(labelTemplate, envVars);
+        this.stages.addAll(stages);
     }
 
+    @TestOnly
     public Pipeline(String pipelineName, BuildCause buildCause, Stage... stages) {
         this(pipelineName, PipelineLabel.COUNT_TEMPLATE, buildCause, new EnvironmentVariables(), stages);
     }
@@ -68,11 +69,11 @@ public class Pipeline extends PersistentObject implements PipelineInfo {
         this.pipelineName = pipelineName;
     }
 
-    public void setCounter(Integer counter) {
+    public void setCounter(int counter) {
         this.counter = counter;
     }
 
-    public Integer getCounter() {
+    public int getCounter() {
         return counter;
     }
 
@@ -84,8 +85,8 @@ public class Pipeline extends PersistentObject implements PipelineInfo {
         this.stages = stages;
     }
 
-    public Stage getFirstStage() {
-        return stages.first() == null ? new NullStage("unknown") : stages.first();
+    public @NotNull Stage getFirstStage() {
+        return stages.getFirst();
     }
 
     public Materials getMaterials() {
@@ -118,14 +119,6 @@ public class Pipeline extends PersistentObject implements PipelineInfo {
         return message;
     }
 
-    public ModificationSummaries toModificationSummaries() {
-        if (buildCause == null) {
-            return new ModificationSummaries();
-        } else {
-            return buildCause.toModificationSummaries();
-        }
-    }
-
     @Override
     public boolean hasStageBeenRun(String stageName) {
         return stages.hasStage(stageName);
@@ -143,7 +136,7 @@ public class Pipeline extends PersistentObject implements PipelineInfo {
         this.pipelineLabel.setLabel(label);
     }
 
-    public void updateCounter(Integer lastCount) {
+    public void updateCounter(int lastCount) {
         counter = lastCount + 1;
         updateLabel();
     }

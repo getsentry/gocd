@@ -15,19 +15,19 @@
  */
 package com.thoughtworks.go.remote.work.artifact;
 
-import com.google.gson.Gson;
-import org.apache.commons.io.FileUtils;
+import com.thoughtworks.go.util.json.JsonHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-import static com.thoughtworks.go.util.GoConstants.PRODUCT_NAME;
+import static com.thoughtworks.go.work.GoPublisher.PRODUCT_NAME;
 import static java.lang.String.format;
 
 public class PluggableArtifactMetadata {
@@ -64,13 +64,13 @@ public class PluggableArtifactMetadata {
 
     private void writeMetadataFile(File pluggableArtifactMetadataFolder, String pluginId, Map<String, Map<String, Object>> responseMetadata) {
         if (responseMetadata == null || responseMetadata.isEmpty()) {
-            LOGGER.info(String.format("No metadata to write for plugin `%s`.", pluginId));
+            LOGGER.info("No metadata to write for plugin `{}`.", pluginId);
             return;
         }
 
         try {
-            LOGGER.info(String.format("Writing metadata file for plugin `%s`.", pluginId));
-            FileUtils.writeStringToFile(new File(pluggableArtifactMetadataFolder, format("%s.json", pluginId)), new Gson().toJson(responseMetadata), StandardCharsets.UTF_8);
+            LOGGER.info("Writing metadata file for plugin `{}`.", pluginId);
+            Files.writeString(new File(pluggableArtifactMetadataFolder, format("%s.json", pluginId)).toPath(), JsonHelper.toJson(responseMetadata), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

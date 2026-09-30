@@ -15,9 +15,7 @@
  */
 package com.thoughtworks.go.domain.builder;
 
-import com.google.gson.Gson;
 import com.thoughtworks.go.config.ArtifactStore;
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.FetchPluggableArtifactTask;
 import com.thoughtworks.go.domain.ChecksumFileHandler;
 import com.thoughtworks.go.domain.JobIdentifier;
@@ -26,9 +24,9 @@ import com.thoughtworks.go.domain.packagerepository.ConfigurationPropertyMother;
 import com.thoughtworks.go.plugin.access.artifact.ArtifactExtension;
 import com.thoughtworks.go.plugin.access.artifact.models.FetchArtifactEnvironmentVariable;
 import com.thoughtworks.go.plugin.infra.PluginRequestProcessorRegistry;
-import com.thoughtworks.go.remote.work.artifact.ArtifactRequestProcessor;
 import com.thoughtworks.go.util.TempDirUtils;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
+import com.thoughtworks.go.util.json.JsonHelper;
 import com.thoughtworks.go.work.DefaultGoPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,12 +41,13 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.remote.work.artifact.ArtifactRequestProcessor.Request.CONSOLE_LOG;
-import static com.thoughtworks.go.remote.work.artifact.ArtifactsPublisher.PLUGGABLE_ARTIFACT_METADATA_FOLDER;
+import static com.thoughtworks.go.util.ArtifactUtil.PLUGGABLE_ARTIFACT_METADATA_FOLDER;
 import static com.thoughtworks.go.util.command.TaggedStreamConsumer.OUT;
 import static java.lang.String.format;
+import static java.net.HttpURLConnection.HTTP_OK;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static javax.servlet.http.HttpServletResponse.SC_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
@@ -78,14 +77,14 @@ public class FetchPluggableArtifactBuilderTest {
         jobIdentifier = new JobIdentifier("cruise", -10, "1", "dev", "1", "windows", 1L);
         artifactStore = new ArtifactStore("s3", PLUGIN_ID, ConfigurationPropertyMother.create("ACCESS_KEY", true, "hksjdfhsksdfh"));
 
-        fetchPluggableArtifactTask = new FetchPluggableArtifactTask(new CaseInsensitiveString("dev"),
-                new CaseInsensitiveString("windows"),
-                "artifactId",
-                ConfigurationPropertyMother.create("Destination", false, "build/"));
+        fetchPluggableArtifactTask = new FetchPluggableArtifactTask(cis("dev"),
+            cis("windows"),
+            "artifactId",
+            ConfigurationPropertyMother.create("Destination", false, "build/"));
 
         sourceOnServer = format("%s/%s", PLUGGABLE_ARTIFACT_METADATA_FOLDER, "cd.go.s3.json");
 
-        when(checksumFileHandler.handleResult(SC_OK, publisher)).thenReturn(true);
+        when(checksumFileHandler.handleResult(HTTP_OK, publisher)).thenReturn(true);
     }
 
     @Test
@@ -118,7 +117,7 @@ public class FetchPluggableArtifactBuilderTest {
         final FetchPluggableArtifactBuilder builder = new FetchPluggableArtifactBuilder(new RunIfConfigs(), new NullBuilder(), "", jobIdentifier, artifactStore, fetchPluggableArtifactTask.getConfiguration(), fetchPluggableArtifactTask.getArtifactId(), sourceOnServer, metadataDest.toFile(), checksumFileHandler);
         final Map<String, Object> metadata = Map.of("Version", "10.12.0");
 
-         Files.writeString(metadataDest, new Gson().toJson(Map.of("artifactId", metadata)), UTF_8);
+        Files.writeString(metadataDest, JsonHelper.toJson(Map.of("artifactId", metadata)), UTF_8);
 
         builder.build(publisher, new EnvironmentVariableContext(), null, artifactExtension, registry, UTF_8);
 
@@ -130,12 +129,12 @@ public class FetchPluggableArtifactBuilderTest {
         final FetchPluggableArtifactBuilder builder = new FetchPluggableArtifactBuilder(new RunIfConfigs(), new NullBuilder(), "", jobIdentifier, artifactStore, fetchPluggableArtifactTask.getConfiguration(), fetchPluggableArtifactTask.getArtifactId(), sourceOnServer, metadataDest.toFile(), checksumFileHandler);
         final Map<String, Object> metadata = Map.of("Version", "10.12.0");
 
-         Files.writeString(metadataDest, new Gson().toJson(Map.of("artifactId", metadata)), UTF_8);
+        Files.writeString(metadataDest, JsonHelper.toJson(Map.of("artifactId", metadata)), UTF_8);
 
         builder.build(publisher, new EnvironmentVariableContext(), null, artifactExtension, registry, UTF_8);
 
         InOrder inOrder = inOrder(registry, artifactExtension);
-        inOrder.verify(registry, times(1)).registerProcessorFor(eq(CONSOLE_LOG.requestName()), ArgumentMatchers.any(ArtifactRequestProcessor.class));
+        inOrder.verify(registry, times(1)).registerProcessorFor(eq(CONSOLE_LOG.requestName()), ArgumentMatchers.any());
         inOrder.verify(artifactExtension).fetchArtifact(eq(PLUGIN_ID), eq(artifactStore), eq(fetchPluggableArtifactTask.getConfiguration()), eq(metadata), eq(metadataDest.getParent().toString()));
         inOrder.verify(registry, times(1)).removeProcessorFor(CONSOLE_LOG.requestName());
     }
@@ -151,13 +150,13 @@ public class FetchPluggableArtifactBuilderTest {
         environmentVariableContext.setProperty("VAR4", "old-value4", true);
 
         when(artifactExtension.fetchArtifact(eq(PLUGIN_ID), eq(artifactStore), any(), anyMap(), eq(metadataDest.getParent().toString())))
-                .thenReturn(List.of(
-                        new FetchArtifactEnvironmentVariable("VAR1", "value1-is-now-secure", true),
-                        new FetchArtifactEnvironmentVariable("VAR2", "value2-is-now-insecure", false),
-                        new FetchArtifactEnvironmentVariable("VAR3", "value3-but-secure-is-unchanged", true),
-                        new FetchArtifactEnvironmentVariable("VAR5", "new-value5-insecure", false),
-                        new FetchArtifactEnvironmentVariable("VAR6", "new-value6-secure", true)
-                ));
+            .thenReturn(List.of(
+                new FetchArtifactEnvironmentVariable("VAR1", "value1-is-now-secure", true),
+                new FetchArtifactEnvironmentVariable("VAR2", "value2-is-now-insecure", false),
+                new FetchArtifactEnvironmentVariable("VAR3", "value3-but-secure-is-unchanged", true),
+                new FetchArtifactEnvironmentVariable("VAR5", "new-value5-insecure", false),
+                new FetchArtifactEnvironmentVariable("VAR6", "new-value6-secure", true)
+            ));
 
         builder.build(publisher, environmentVariableContext, null, artifactExtension, registry, UTF_8);
 
@@ -177,11 +176,11 @@ public class FetchPluggableArtifactBuilderTest {
 
 
         assertThat(captor.getAllValues()).contains(
-                "WARNING: Replacing environment variable: VAR1 = ******** (previously: old-value1)",
-                "WARNING: Replacing environment variable: VAR2 = value2-is-now-insecure (previously: ********)",
-                "WARNING: Replacing environment variable: VAR3 = ******** (previously: ********)",
-                " NOTE: Setting new environment variable: VAR5 = new-value5-insecure",
-                " NOTE: Setting new environment variable: VAR6 = ********");
+            "WARNING: Replacing environment variable: VAR1 = ******** (previously: old-value1)",
+            "WARNING: Replacing environment variable: VAR2 = value2-is-now-insecure (previously: ********)",
+            "WARNING: Replacing environment variable: VAR3 = ******** (previously: ********)",
+            " NOTE: Setting new environment variable: VAR5 = new-value5-insecure",
+            " NOTE: Setting new environment variable: VAR6 = ********");
 
         String consoleOutput = String.join(" -- ", captor.getAllValues());
         assertThat(consoleOutput).doesNotContain("value1-is-now-secure");

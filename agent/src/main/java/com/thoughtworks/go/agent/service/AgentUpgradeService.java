@@ -16,7 +16,7 @@
 package com.thoughtworks.go.agent.service;
 
 import com.thoughtworks.go.agent.URLService;
-import com.thoughtworks.go.agent.common.ssl.GoAgentServerHttpClient;
+import com.thoughtworks.go.agent.common.GoAgentServerHttpClient;
 import com.thoughtworks.go.util.SystemEnvironment;
 import org.apache.http.Header;
 import org.apache.http.client.config.RequestConfig;
@@ -34,7 +34,7 @@ import java.net.HttpURLConnection;
 import java.util.Map;
 
 import static com.thoughtworks.go.agent.common.util.HeaderUtil.parseExtraProperties;
-import static com.thoughtworks.go.util.SystemEnvironment.*;
+import static com.thoughtworks.go.remote.StandardHeaders.*;
 
 @Service
 public class AgentUpgradeService {
@@ -85,24 +85,19 @@ public class AgentUpgradeService {
     }
 
     private void checkForUpgradeAndExtraProperties(String agentMd5, String launcherMd5, String agentPluginsMd5, String tfsImplMd5) throws IOException {
-        HttpGet method = getAgentLatestStatusGetMethod();
-        try (final CloseableHttpResponse response = httpClient.execute(method)) {
+        try (CloseableHttpResponse response = httpClient.execute(getAgentLatestStatusGetMethod())) {
             if (response.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_OK) {
                 LOGGER.error("[Agent Upgrade] Got status {} {} from GoCD", response.getStatusLine().getStatusCode(), response.getStatusLine());
                 return;
             }
-            validateMd5(agentMd5, response, AGENT_CONTENT_MD5_HEADER, "itself");
-            validateMd5(launcherMd5, response, AGENT_LAUNCHER_CONTENT_MD5_HEADER, "launcher");
-            validateMd5(agentPluginsMd5, response, AGENT_PLUGINS_ZIP_MD5_HEADER, "plugins");
-            validateMd5(tfsImplMd5, response, AGENT_TFS_SDK_MD5_HEADER, "tfs-impl jar");
-            updateExtraProperties(response.getFirstHeader(AGENT_EXTRA_PROPERTIES_HEADER));
+            validateMd5(agentMd5, response, RESPONSE_AGENT_CONTENT_MD5, "itself");
+            validateMd5(launcherMd5, response, RESPONSE_AGENT_LAUNCHER_CONTENT_MD5, "launcher");
+            validateMd5(agentPluginsMd5, response, RESPONSE_AGENT_PLUGINS_ZIP_MD5, "plugins");
+            validateMd5(tfsImplMd5, response, RESPONSE_AGENT_TFS_SDK_MD5, "tfs-impl jar");
+            updateExtraProperties(response.getFirstHeader(RESPONSE_AGENT_EXTRA_PROPERTIES));
         } catch (IOException ioe) {
-            String message = String.format("[Agent Upgrade] Couldn't connect to: %s: %s", urlService.getAgentLatestStatusUrl(), ioe);
-            LOGGER.error(message);
-            LOGGER.debug(message, ioe);
+            LOGGER.error("[Agent Upgrade] Can't verify agent is compatible with server as cannot connect to: {}: {}", urlService.getAgentLatestStatusUrl(), ioe.toString());
             throw ioe;
-        } finally {
-            method.releaseConnection();
         }
     }
 

@@ -18,6 +18,8 @@ package com.thoughtworks.go.server.dao;
 import com.thoughtworks.go.domain.*;
 import com.thoughtworks.go.server.service.JobInstanceService;
 import com.thoughtworks.go.server.ui.SortOrder;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
@@ -29,10 +31,6 @@ public interface JobInstanceDao {
     List<JobPlan> orderedScheduledBuilds();
 
     JobInstances latestCompletedJobs(String pipelineName, String stageName, String jobConfigName, int count);
-
-    int getJobHistoryCount(String pipelineName, String stageName, String jobName);
-
-    JobInstances findJobHistoryPage(String pipelineName, String stageName, String jobConfigName, int count, int offset);
 
     JobInstance save(long stageId, JobInstance jobInstance);
 
@@ -46,11 +44,9 @@ public interface JobInstanceDao {
 
     JobInstances findHungJobs(List<String> liveAgentIdList);
 
-    JobInstance buildByIdWithTransitions(long id);
+    @NotNull JobInstance buildByIdWithTransitions(long id);
 
-    JobInstance buildById(long buildId);
-
-    List<ActiveJob> activeJobs();
+    @NotNull JobInstance buildById(long buildId);
 
     JobInstance mostRecentJobWithTransitions(JobIdentifier jobIdentifier);
 
@@ -58,9 +54,7 @@ public interface JobInstanceDao {
 
     JobPlan loadPlan(long id);
 
-    JobIdentifier findOriginalJobIdentifier(StageIdentifier stageIdentifier, String jobName);
-
-    List<JobIdentifier> getBuildingJobs();
+    @Nullable JobIdentifier findOriginalJobIdentifier(StageIdentifier stageIdentifier, String jobName);
 
     List<JobInstance> completedJobsOnAgent(String uuid, JobInstanceService.JobHistoryColumns jobHistoryColumns, SortOrder order, int offset, int limit);
 
@@ -70,9 +64,7 @@ public interface JobInstanceDao {
 
     List<JobInstance> getRunningJobs();
 
-    JobInstance findJobInstance(String pipelineName, String stageName, String jobName, int pipelineCounter, int stageCounter);
-
-    JobInstances findDetailedJobHistoryViaCursor(String pipelineName, String stageName, String jobConfigName, FeedModifier feedModifier, long cursor, Integer pageSize);
+    JobInstances findDetailedJobHistoryViaCursor(String pipelineName, String stageName, String jobConfigName, FeedModifier feedModifier, long cursor, int pageSize);
 
     PipelineRunIdInfo getOldestAndLatestJobInstanceId(String pipelineName, String stageName, String jobConfigName);
 }

@@ -26,17 +26,15 @@ import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.domain.materials.ModifiedAction;
 import com.thoughtworks.go.domain.materials.dependency.DependencyMaterialRevision;
 import com.thoughtworks.go.helper.PipelineMother;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.dao.PipelineDao;
 import com.thoughtworks.go.server.dao.PipelineSqlMapDao;
 import com.thoughtworks.go.server.persistence.MaterialRepository;
 import com.thoughtworks.go.server.transaction.TransactionTemplate;
 import com.thoughtworks.go.util.GoConfigFileHelper;
-import com.thoughtworks.go.util.GoConstants;
 import com.thoughtworks.go.util.TestingClock;
 import com.thoughtworks.go.util.TimeProvider;
-import org.apache.commons.lang3.time.DateUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,11 +44,12 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.io.File;
-import java.util.Date;
+import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.ModificationsMother.modifySomeFiles;
-import static com.thoughtworks.go.util.IBatisUtil.arguments;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -73,7 +72,7 @@ public class PipelineServiceIntegrationTest {
     @Autowired private GoConfigService goConfigService;
     @Autowired private InstanceFactory instanceFactory;
 
-    private GoConfigFileHelper configHelper = new GoConfigFileHelper();
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
     private ScheduleTestUtil u;
 
     @BeforeEach
@@ -99,8 +98,8 @@ public class PipelineServiceIntegrationTest {
 
         UpstreamPipelineResolver resolver = pipelineService;
         BuildCause loadedBC = resolver.buildCauseFor(
-            DependencyMaterialRevision.create(pipeline.getStages().get(0).getIdentifier().getStageLocator(), pipeline.getLabel()).getPipelineName(),
-            DependencyMaterialRevision.create(pipeline.getStages().get(0).getIdentifier().getStageLocator(), pipeline.getLabel()).getPipelineCounter());
+            DependencyMaterialRevision.create(pipeline.getStages().getFirst().getIdentifier().getStageLocator(), pipeline.getLabel()).getPipelineName(),
+            DependencyMaterialRevision.create(pipeline.getStages().getFirst().getIdentifier().getStageLocator(), pipeline.getLabel()).getPipelineCounter());
 
         assertEquals(pipeline.getBuildCause(), loadedBC);
     }
@@ -134,10 +133,10 @@ public class PipelineServiceIntegrationTest {
         Material hg1 = new HgMaterial("url1", "Dest1");
         String[] hgRevs = new String[]{"hg1_2"};
 
-        Date latestModification = new Date();
-        Date older = DateUtils.addDays(latestModification, -1);
-        u.checkinFiles(hg1, "hg1_1", List.of(file1, file2, file3, file4), ModifiedAction.added, older);
-        u.checkinFiles(hg1, "hg1_2", List.of(file1, file2, file3, file4), ModifiedAction.modified, latestModification);
+        ZonedDateTime latestModification = ZonedDateTime.now();
+        ZonedDateTime older = latestModification.minusDays(1);
+        u.checkinFiles(hg1, "hg1_1", List.of(file1, file2, file3, file4), ModifiedAction.added, older.toInstant());
+        u.checkinFiles(hg1, "hg1_2", List.of(file1, file2, file3, file4), ModifiedAction.modified, latestModification.toInstant());
 
 
         ScheduleTestUtil.AddedPipeline pair01 = u.saveConfigWith("pair01", "stageName", u.m(hg1));
@@ -147,7 +146,7 @@ public class PipelineServiceIntegrationTest {
         Pipeline pipeline = pipelineService.mostRecentFullPipelineByName("pair01");
         MaterialRevisions materialRevisions = pipeline.getBuildCause().getMaterialRevisions();
         assertThat(materialRevisions.getMaterials().size()).isEqualTo(1);
-        assertThat(materialRevisions.getDateOfLatestModification().getTime()).isEqualTo(latestModification.getTime());
+        assertThat(materialRevisions.getDateOfLatestModification().getTime()).isEqualTo(latestModification.toInstant().toEpochMilli());
     }
 
     @Test
@@ -160,9 +159,9 @@ public class PipelineServiceIntegrationTest {
         Material hg2 = new HgMaterial("url2", "Dest2");
         String[] hgRevs = new String[]{"h1", "h2"};
 
-        Date latestModification = new Date();
-        u.checkinFiles(hg2, "h2", List.of(file1, file2, file3, file4), ModifiedAction.added, org.apache.commons.lang3.time.DateUtils.addDays(latestModification, -1));
-        u.checkinFiles(hg1, "h1", List.of(file1, file2, file3, file4), ModifiedAction.added, latestModification);
+        ZonedDateTime latestModification = ZonedDateTime.now();
+        u.checkinFiles(hg2, "h2", List.of(file1, file2, file3, file4), ModifiedAction.added, latestModification.minusDays(1).toInstant());
+        u.checkinFiles(hg1, "h1", List.of(file1, file2, file3, file4), ModifiedAction.added, latestModification.toInstant());
 
         ScheduleTestUtil.AddedPipeline pair01 = u.saveConfigWith("pair01", "stageName", u.m(hg1), u.m(hg2));
         u.runAndPass(pair01, hgRevs);
@@ -171,8 +170,8 @@ public class PipelineServiceIntegrationTest {
         MaterialRevisions materialRevisions = pipeline.getBuildCause().getMaterialRevisions();
         Materials materials = materialRevisions.getMaterials();
         assertThat(materials.size()).isEqualTo(2);
-        assertThat(materials.get(0)).isEqualTo(hg1);
-        assertThat(materials.get(1)).isEqualTo(hg2);
+        assertThat(materials.getFirst()).isEqualTo(hg1);
+        assertThat(materials.getLast()).isEqualTo(hg2);
     }
 
     @Test
@@ -182,9 +181,9 @@ public class PipelineServiceIntegrationTest {
         Material hg = new HgMaterial("url", "Dest");
         u.checkinFiles(hg, "h1", List.of(file1), ModifiedAction.added);
         ScheduleTestUtil.AddedPipeline addedPipeline = u.saveConfigWith(pipelineName, "stageName", u.m(hg));
-        pipelineSqlMapDao.getSqlMapClientTemplate().insert("insertPipelineLabelCounter", arguments("pipelineName", pipelineName.toLowerCase()).and("count", 10).asMap());
-        pipelineSqlMapDao.getSqlMapClientTemplate().insert("insertPipelineLabelCounter", arguments("pipelineName", pipelineName.toUpperCase()).and("count", 20).asMap());
-        pipelineSqlMapDao.getSqlMapClientTemplate().insert("insertPipelineLabelCounter", arguments("pipelineName", pipelineName).and("count", 30).asMap());
+        pipelineSqlMapDao.getSqlMapClientTemplate().insert("insertPipelineLabelCounter", Map.of("pipelineName", pipelineName.toLowerCase(), "count", 10));
+        pipelineSqlMapDao.getSqlMapClientTemplate().insert("insertPipelineLabelCounter", Map.of("pipelineName", pipelineName.toUpperCase(), "count", 20));
+        pipelineSqlMapDao.getSqlMapClientTemplate().insert("insertPipelineLabelCounter", Map.of("pipelineName", pipelineName, "count", 30));
 
         pipelineSqlMapDao.deleteOldPipelineLabelCountForPipelineInConfig(pipelineName);
 
@@ -199,7 +198,7 @@ public class PipelineServiceIntegrationTest {
     @Test
     public void returnPipelineForBuildDetailViewShouldContainOnlyMods() {
         Pipeline pipeline = createPipelineWithStagesAndMods();
-        JobInstance job = pipeline.getFirstStage().getJobInstances().first();
+        JobInstance job = pipeline.getFirstStage().getJobInstances().getFirst();
 
         Pipeline slimPipeline = pipelineService.wrapBuildDetails(job);
         assertThat(slimPipeline.getBuildCause().getMaterialRevisions().totalNumberOfModifications()).isEqualTo(1);
@@ -215,10 +214,10 @@ public class PipelineServiceIntegrationTest {
     }
 
     private Pipeline createNewPipeline() {
-        if (!goConfigService.hasPipelineNamed(new CaseInsensitiveString("Test"))) {
+        if (!goConfigService.hasPipelineNamed(cis("Test"))) {
             configHelper.addPipeline("Test", "dev");
         }
-        Pipeline pipeline = new Pipeline("Test", "testing-${COUNT}", BuildCause.createWithEmptyModifications(), new EnvironmentVariables());
+        Pipeline pipeline = new Pipeline("Test", "testing-${COUNT}", BuildCause.createEmpty(), new EnvironmentVariables());
         return pipelineService.save(pipeline);
     }
 
@@ -256,7 +255,7 @@ public class PipelineServiceIntegrationTest {
     }
 
     private Pipeline createPipelineWhoseLabelIsNumberAndNotSameWithCounter() {
-        Pipeline pipeline = new Pipeline("Test", "${COUNT}0", BuildCause.createWithEmptyModifications(), new EnvironmentVariables());
+        Pipeline pipeline = new Pipeline("Test", "${COUNT}0", BuildCause.createEmpty(), new EnvironmentVariables());
         pipeline.updateCounter(9);
         pipelineDao.save(pipeline);
         return pipeline;
@@ -264,8 +263,8 @@ public class PipelineServiceIntegrationTest {
 
     private Pipeline createPipelineWithStagesAndMods() {
         PipelineConfig config = PipelineMother.twoBuildPlansWithResourcesAndMaterials("tester", "dev");
-        configHelper.addPipeline(CaseInsensitiveString.str(config.name()), CaseInsensitiveString.str(config.first().name()));
-        Pipeline pipeline = instanceFactory.createPipelineInstance(config, modifySomeFiles(config), new DefaultSchedulingContext(GoConstants.DEFAULT_APPROVED_BY), "md5-test", new TimeProvider());
+        configHelper.addPipeline(CaseInsensitiveString.str(config.name()), CaseInsensitiveString.str(config.getFirst().name()));
+        Pipeline pipeline = instanceFactory.createPipelineInstance(config, modifySomeFiles(config), new DefaultSchedulingContext(BuildCause.APPROVER_AUTOMATICALLY_TRIGGERED), "md5-test", new TimeProvider());
         dbHelper.savePipelineWithStagesAndMaterials(pipeline);
         return pipeline;
     }

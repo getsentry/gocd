@@ -15,10 +15,11 @@
  */
 package com.thoughtworks.go.server.security.userdetail;
 
-import com.google.common.collect.Sets;
 import com.thoughtworks.go.server.domain.Username;
+import org.apache.commons.collections4.SetUtils;
 import org.springframework.security.core.GrantedAuthority;
 
+import java.util.Objects;
 import java.util.Set;
 
 public class GoUserPrincipal {
@@ -28,7 +29,7 @@ public class GoUserPrincipal {
     private final Username username;
 
     public GoUserPrincipal(String username, String displayName, GrantedAuthority... authorities) {
-        this(username, displayName, Sets.newHashSet(authorities));
+        this(username, displayName, SetUtils.hashSet(authorities));
     }
 
     public GoUserPrincipal(String username, String displayName, Set<GrantedAuthority> authorities) {
@@ -55,12 +56,13 @@ public class GoUserPrincipal {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof GoUserPrincipal that)) return false;
-
-        if (authorities != null ? !authorities.equals(that.authorities) : that.authorities != null) return false;
-        if (displayName != null ? !displayName.equals(that.displayName) : that.displayName != null) return false;
-        return username != null ? username.equals(that.username) : that.username == null;
+        if (this == o) {
+            return true;
+        }
+        return o instanceof GoUserPrincipal that &&
+            Objects.equals(authorities, that.authorities) &&
+            Objects.equals(displayName, that.displayName) &&
+            Objects.equals(username, that.username);
     }
 
     @Override

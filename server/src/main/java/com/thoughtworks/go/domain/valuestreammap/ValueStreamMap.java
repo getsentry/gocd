@@ -28,15 +28,17 @@ import com.thoughtworks.go.server.valuestreammap.LevelAssignment;
 import java.util.*;
 
 public class ValueStreamMap {
-    private Node currentPipeline;
-    private Node currentMaterial;
-	private MaterialInstance currentMaterialInstance;
-    private Map<CaseInsensitiveString, Node> nodeIdToNodeMap = new LinkedHashMap<>();
-	private List<Node> rootNodes = new ArrayList<>();
+    private static final int VALID_LATEST_REVISION_STRING_COUNT = 1;
 
-	private LevelAssignment levelAssignment = new LevelAssignment();
-    private DummyNodeCreation dummyNodeCreation = new DummyNodeCreation();
-    private CrossingMinimization crossingMinimization = new CrossingMinimization();
+    private final Map<CaseInsensitiveString, Node> nodeIdToNodeMap = new LinkedHashMap<>();
+    private final LevelAssignment levelAssignment = new LevelAssignment();
+    private final DummyNodeCreation dummyNodeCreation = new DummyNodeCreation();
+    private final CrossingMinimization crossingMinimization = new CrossingMinimization();
+
+    private PipelineDependencyNode currentPipeline;
+    private SCMDependencyNode currentMaterial;
+    private MaterialInstance currentMaterialInstance;
+    private List<Node> rootNodes = new ArrayList<>();
 
     public ValueStreamMap(CaseInsensitiveString pipeline, PipelineRevision pipelineRevision) {
         currentPipeline = new PipelineDependencyNode(pipeline, pipeline.toString());
@@ -44,35 +46,35 @@ public class ValueStreamMap {
         currentPipeline.addRevision(pipelineRevision);
     }
 
-	public ValueStreamMap(Material material, MaterialInstance materialInstance, Modification modification) {
-		currentMaterial = new SCMDependencyNode(material.getFingerprint(), material.getUriForDisplay(), material.getTypeForDisplay());
-		currentMaterialInstance = materialInstance;
-		nodeIdToNodeMap.put(currentMaterial.getId(), currentMaterial);
-        ((SCMDependencyNode)currentMaterial).addMaterialRevision(new MaterialRevision(material, false, modification));
-	}
+    public ValueStreamMap(Material material, MaterialInstance materialInstance, Modification modification) {
+        currentMaterial = new SCMDependencyNode(material.getFingerprint(), material.getUriForDisplay(), material.getTypeForDisplay());
+        currentMaterialInstance = materialInstance;
+        nodeIdToNodeMap.put(currentMaterial.getId(), currentMaterial);
+        currentMaterial.addMaterialRevision(new MaterialRevision(material, false, modification));
+    }
 
     //used in rails
     public Node getCurrentPipeline() {
         return currentPipeline;
     }
 
-	public Node getCurrentMaterial() {
-		return currentMaterial;
-	}
-
-	public MaterialInstance getCurrentMaterialInstance() {
-		return currentMaterialInstance;
-	}
-
-	public Node addUpstreamNode(Node node, PipelineRevision revision, CaseInsensitiveString dependentNodeId) {
-        node = addUpstreamNode(node, dependentNodeId);
-        node.addRevision(revision);
-        return node;
+    public Node getCurrentMaterial() {
+        return currentMaterial;
     }
 
-    public Node addUpstreamMaterialNode(Node node, CaseInsensitiveString materialName, CaseInsensitiveString dependentNodeId,
+    public MaterialInstance getCurrentMaterialInstance() {
+        return currentMaterialInstance;
+    }
+
+    public PipelineDependencyNode addUpstreamPipelineNode(PipelineDependencyNode node, PipelineRevision revision, CaseInsensitiveString dependentNodeId) {
+        PipelineDependencyNode pipelineNode = addUpstreamNode(node, dependentNodeId);
+        pipelineNode.addRevision(revision);
+        return pipelineNode;
+    }
+
+    public SCMDependencyNode addUpstreamMaterialNode(SCMDependencyNode node, CaseInsensitiveString materialName, CaseInsensitiveString dependentNodeId,
                                         MaterialRevision materialRevision) {
-        SCMDependencyNode scmNode = (SCMDependencyNode) addUpstreamNode(node, dependentNodeId);
+        SCMDependencyNode scmNode = addUpstreamNode(node, dependentNodeId);
         scmNode.addMaterialRevision(materialRevision);
         if (materialName != null) {
             scmNode.addMaterialName(materialName.toString());
@@ -82,52 +84,46 @@ public class ValueStreamMap {
 
     public Node addDownstreamNode(Node node, CaseInsensitiveString parentNodeId) {
         Node parentNode = findNode(parentNodeId);
-        if (hasNode(node.getId())) {
-            node = findNode(node.getId());
-        } else {
-            nodeIdToNodeMap.put(node.getId(), node);
-        }
-        parentNode.addEdge(node);
-        return node;
+        Node resolvedNode = findOrAddNode(node);
+        parentNode.addEdge(resolvedNode);
+        return resolvedNode;
     }
 
-    private Node addUpstreamNode(Node node, CaseInsensitiveString dependentNodeId) {
+    private <T extends Node> T addUpstreamNode(T node, CaseInsensitiveString dependentNodeId) {
         Node dependentNode = findNode(dependentNodeId);
-        if (hasNode(node.getId())) {
-            node = findNode(node.getId());
-        } else {
-            nodeIdToNodeMap.put(node.getId(), node);
-        }
-        node.addEdge(dependentNode);
-        return node;
+        T resolvedNode = findOrAddNode(node);
+        resolvedNode.addEdge(dependentNode);
+        return resolvedNode;
     }
 
-    public Node findNode(CaseInsensitiveString nodeId) {
-        return nodeIdToNodeMap.get(nodeId);
+    @SuppressWarnings("unchecked")
+    public <T extends Node> T findNode(CaseInsensitiveString nodeId) {
+        return (T) nodeIdToNodeMap.get(nodeId);
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T extends Node> T findOrAddNode(T node) {
+        return (T) nodeIdToNodeMap.computeIfAbsent(node.getId(), id -> node);
     }
 
     public Collection<Node> allNodes() {
         return nodeIdToNodeMap.values();
     }
 
-	public List<Node> getRootNodes() {
-		if (rootNodes.isEmpty()) {
-			populateRootNodes();
-		}
-		return rootNodes;
-	}
+    public List<Node> getRootNodes() {
+        if (rootNodes.isEmpty()) {
+            populateRootNodes();
+        }
+        return rootNodes;
+    }
 
-	void populateRootNodes() {
-		rootNodes = new ArrayList<>();
-		for (Node currentNode : allNodes()) {
-			if (currentNode.getParents().isEmpty()) {
-				rootNodes.add(currentNode);
-			}
-		}
-	}
-
-    private boolean hasNode(CaseInsensitiveString nodeId) {
-        return nodeIdToNodeMap.containsKey(nodeId);
+    void populateRootNodes() {
+        rootNodes = new ArrayList<>();
+        for (Node currentNode : allNodes()) {
+            if (currentNode.getParents().isEmpty()) {
+                rootNodes.add(currentNode);
+            }
+        }
     }
 
     public ValueStreamMapPresentationModel presentationModel() {
@@ -159,7 +155,7 @@ public class ValueStreamMap {
         boolean anyRootNodeWithInCompatibleRevisions = false;
 
         for (Node rootNode : getRootNodes()) {
-            if (hasMultipleLatestRevisionString(((SCMDependencyNode)rootNode).getMaterialRevisions())) {
+            if (hasMultipleLatestRevisionString(((SCMDependencyNode) rootNode).getMaterialRevisions())) {
                 addWarning(rootNode);
                 anyRootNodeWithInCompatibleRevisions = true;
             }
@@ -169,11 +165,12 @@ public class ValueStreamMap {
     }
 
     private boolean hasMultipleLatestRevisionString(List<MaterialRevision> materialRevisions) {
-        int VALID_LATEST_REVISION_STRING_COUNT = 1;
-        if(materialRevisions.size() == VALID_LATEST_REVISION_STRING_COUNT) return false;
+        if (materialRevisions.size() == VALID_LATEST_REVISION_STRING_COUNT) {
+            return false;
+        }
 
         Set<String> latestRevisions = new HashSet<>();
-        for(MaterialRevision revision : materialRevisions) {
+        for (MaterialRevision revision : materialRevisions) {
             latestRevisions.add(revision.getLatestRevisionString());
         }
 
@@ -186,11 +183,11 @@ public class ValueStreamMap {
     }
 
     @Override
-	public String toString() {
-		String s = "graph:\n";
-		for (Node currentNode : allNodes()) {
-			s += currentNode + "\n";
-		}
-		return s;
-	}
+    public String toString() {
+        StringBuilder s = new StringBuilder("graph:\n");
+        for (Node currentNode : allNodes()) {
+            s.append(currentNode).append("\n");
+        }
+        return s.toString();
+    }
 }

@@ -16,10 +16,11 @@
 package com.thoughtworks.go.spark.spa;
 
 import com.thoughtworks.go.server.service.BackupService;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.SparkController;
-import com.thoughtworks.go.spark.spring.SPAAuthenticationHelper;
-import org.joda.time.DateTime;
+import com.thoughtworks.go.spark.spring.SpaAuthorizationHelper;
+import com.thoughtworks.go.util.Dates;
 import spark.ModelAndView;
 import spark.Request;
 import spark.Response;
@@ -27,18 +28,17 @@ import spark.TemplateEngine;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 
 import static spark.Spark.*;
 
 public class BackupsController implements SparkController {
 
-    private final SPAAuthenticationHelper authenticationHelper;
+    private final SpaAuthorizationHelper authorizationHelper;
     private final TemplateEngine engine;
     private final BackupService backupService;
 
-    public BackupsController(SPAAuthenticationHelper authenticationHelper, TemplateEngine engine, BackupService backupService) {
-        this.authenticationHelper = authenticationHelper;
+    public BackupsController(SpaAuthorizationHelper authorizationHelper, TemplateEngine engine, BackupService backupService) {
+        this.authorizationHelper = authorizationHelper;
         this.engine = engine;
         this.backupService = backupService;
     }
@@ -49,9 +49,9 @@ public class BackupsController implements SparkController {
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
-            before("", authenticationHelper::checkAdminUserOrGroupAdminUserAnd403);
+            before("", authorizationHelper::checkAdminUserAnd403);
             get("", this::index, engine);
         });
     }
@@ -65,10 +65,9 @@ public class BackupsController implements SparkController {
         return new ModelAndView(object, null);
     }
 
-    private Map<String, String> meta() {
-        Map<String, String> meta = new HashMap<>();
-        Optional<DateTime> dateTime = backupService.lastBackupTime().map(DateTime::new);
-        meta.put("lastBackupTime", dateTime.map(Object::toString).orElse(null));
+    private Map<String, Object> meta() {
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("lastBackupTime", backupService.lastBackupTime().map(Dates::formatIso8601UtcNoMillis).orElse(null));
         meta.put("lastBackupUser", backupService.lastBackupUser().orElse(null));
         meta.put("availableDiskSpace", backupService.availableDiskSpace());
         meta.put("backupLocation", backupService.backupLocation());

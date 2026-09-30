@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.config.update;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.CruiseConfig;
 import com.thoughtworks.go.config.EnvironmentConfig;
 import com.thoughtworks.go.config.EnvironmentsConfig;
@@ -26,11 +25,13 @@ import com.thoughtworks.go.server.service.EntityHashingService;
 import com.thoughtworks.go.server.service.GoConfigService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+
 public class UpdateEnvironmentCommand extends EnvironmentCommand {
 
     private final String oldEnvironmentConfigName;
-    private String digest;
-    private EntityHashingService hashingService;
+    private final String digest;
+    private final EntityHashingService hashingService;
 
     public UpdateEnvironmentCommand(GoConfigService goConfigService, String oldEnvironmentConfigName, EnvironmentConfig newEnvironmentConfig, Username username, String actionFailed, String digest, EntityHashingService hashingService, HttpLocalizedOperationResult result) {
         super(actionFailed, newEnvironmentConfig, result, goConfigService, username);
@@ -42,7 +43,7 @@ public class UpdateEnvironmentCommand extends EnvironmentCommand {
     @Override
     public void update(CruiseConfig preprocessedConfig) {
         EnvironmentsConfig environments = preprocessedConfig.getEnvironments();
-        EnvironmentConfig envToRemove = environments.find(new CaseInsensitiveString(oldEnvironmentConfigName));
+        EnvironmentConfig envToRemove = environments.find(cis(oldEnvironmentConfigName));
         int index = environments.indexOf(envToRemove);
         environments.remove(index);
         environments.add(index, environmentConfig);
@@ -54,12 +55,12 @@ public class UpdateEnvironmentCommand extends EnvironmentCommand {
     }
 
     private boolean isRequestFresh(CruiseConfig cruiseConfig) {
-        EnvironmentConfig config = cruiseConfig.getEnvironments().find(new CaseInsensitiveString(oldEnvironmentConfigName));
-        if(config instanceof MergeEnvironmentConfig){
-            config = ((MergeEnvironmentConfig) config).getFirstEditablePart();
+        EnvironmentConfig config = cruiseConfig.getEnvironments().find(cis(oldEnvironmentConfigName));
+        if (config instanceof MergeEnvironmentConfig environmentConfigs) {
+            config = environmentConfigs.getFirstEditablePart();
         }
 
-        boolean freshRequest =  hashingService.hashForEntity(config).equals(digest);
+        boolean freshRequest = hashingService.hashForEntity(config).equals(digest);
         if (!freshRequest) {
             result.stale(EntityType.Environment.staleConfig(oldEnvironmentConfigName));
         }

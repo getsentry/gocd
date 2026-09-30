@@ -26,7 +26,6 @@ import com.thoughtworks.go.domain.scm.SCM;
 
 import java.util.Map;
 
-
 public class SCMRepresenter {
     public static void toJSON(OutputWriter jsonWriter, SCM scm) {
         jsonWriter
@@ -36,7 +35,7 @@ public class SCMRepresenter {
             .addChild("plugin_metadata",  pluginMetadataWriter -> PluginConfigurationRepresenter.toJSON(pluginMetadataWriter, scm.getPluginConfiguration()))
         .addChildList("configuration", configWriter -> ConfigurationPropertyRepresenter.toJSON(configWriter, scm.getConfiguration()));
 
-        if (scm.errors() != null && (!scm.errors().isEmpty())) {
+        if (scm.errors() != null && !scm.errors().isEmpty()) {
             jsonWriter.addChild("errors", errorWriter -> new ErrorGetter(Map.of("autoUpdate", "auto_update"))
                 .toJSON(errorWriter, scm));
         }

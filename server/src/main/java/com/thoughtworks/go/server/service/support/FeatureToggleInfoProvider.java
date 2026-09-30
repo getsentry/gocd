@@ -24,20 +24,20 @@ import java.util.Map;
 
 @Component
 public class FeatureToggleInfoProvider implements ServerInfoProvider {
-    private FeatureToggleService featureToggleService;
+    private final FeatureToggleService featureToggleService;
 
     @Autowired
-    public FeatureToggleInfoProvider(FeatureToggleService featureToggleService){
+    public FeatureToggleInfoProvider(FeatureToggleService featureToggleService) {
         this.featureToggleService = featureToggleService;
     }
 
     @Override
     public double priority() {
-        return 12.5;
+        return 5.25;
     }
 
     @Override
-    public Map<String, Object> asJson() {
+    public Map<String, Object> asJsonCompatibleMap() {
         LinkedHashMap<String, Object> json = new LinkedHashMap<>();
         json.put("Available Toggles", featureToggleService.allToggles().all());
         return json;

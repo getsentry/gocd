@@ -16,8 +16,8 @@
 
 package com.thoughtworks.go.agent;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.http.Header;
+import org.apache.http.HttpHeaders;
 import org.apache.http.HttpResponse;
 
 import java.io.IOException;
@@ -31,7 +31,7 @@ public class ResponseHelpers {
 
     public static String readBodyAsString(HttpResponse response) throws IOException {
         try (InputStream responseBody = bodyStream(response)) {
-            return IOUtils.toString(responseBody, StandardCharsets.UTF_8);
+            return new String(responseBody.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 
@@ -45,7 +45,7 @@ public class ResponseHelpers {
     }
 
     public static InputStream bodyStream(HttpResponse response) throws IOException {
-        final Header encodingHeader = response.getFirstHeader("Content-Encoding");
+        final Header encodingHeader = response.getFirstHeader(HttpHeaders.CONTENT_ENCODING);
         final boolean isCompressed = encodingHeader != null &&
                 encodingHeader.getValue() != null &&
                 encodingHeader.getValue().toLowerCase().contains("gzip");

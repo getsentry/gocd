@@ -15,48 +15,40 @@
  */
 
 import com.thoughtworks.go.build.DownloadFile
+import com.thoughtworks.go.build.TextUtils
 import com.thoughtworks.go.build.VerifyJarTask
-import org.apache.commons.codec.digest.DigestUtils
 
 description = 'GoCD TFS SDK wrapper v14'
-
-def sdkTarget = layout.buildDirectory.dir("tfssdk")
-
-dependencies {
-  implementation project(path: ':common', configuration: 'runtimeElements')
-  implementation files(sdkTarget.get().file("lib/com.microsoft.tfs.sdk-${project.versions.tfsSdk}.jar"))
-  compileOnly project.deps.jetBrainsAnnotations
-
-  testImplementation project.deps.junit5Api
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
-  testImplementation project.deps.mockitoCore
-  testImplementation project.deps.assertJ
-}
 
 jar {
   archiveClassifier = 'classes'
 }
 
-private File destFile(String url) {
-  new File(gradle.gradleUserHomeDir, "download-cache/${DigestUtils.md5Hex(url)}/${new File(URI.create(url).toURL().path).name}")
+def destFile(String url) {
+  new File(gradle.gradleUserHomeDir, "download-cache/${TextUtils.md5Hex(url)}/${new File(URI.create(url).toURL().path).name}")
 }
 
-task downloadTfsSdk(type: DownloadFile) {
-  def srcUrl = "https://github.com/microsoft/team-explorer-everywhere/releases/download/${project.versions.tfsSdk}/TFS-SDK-${project.versions.tfsSdk}.zip"
+tasks.register('downloadTfsSdk', DownloadFile) {
+  def srcUrl = "https://github.com/microsoft/team-explorer-everywhere/releases/download/${rootProject.versions.tfsSdk}/TFS-SDK-${rootProject.versions.tfsSdk}.zip"
   src srcUrl
   dest destFile(srcUrl)
-  checksum = project.versions.tfsSdkSha256sum
+  checksum = rootProject.versions.tfsSdkSha256sum
 }
 
-task extractTfsSdk(type: Copy) {
+tasks.register('extractTfsSdk', Copy) {
+  dependsOn downloadTfsSdk
+  def sdk = downloadTfsSdk.outputs.files.singleFile
+  def sdkTarget = layout.buildDirectory.dir("tfssdk")
+  inputs.file(sdk)
+  outputs.dir(sdkTarget)
+
   doFirst {
     delete sdkTarget
   }
-  dependsOn downloadTfsSdk
-  from(project.zipTree(downloadTfsSdk.outputs.files.singleFile)) {
+
+  from(project.zipTree(sdk)) {
     include "*/redist/**"
-    eachFile { fcd ->
+    eachFile { FileCopyDetails fcd ->
       fcd.relativePath = new RelativePath(true, fcd.relativePath.segments.drop(2))
     }
     includeEmptyDirs = false
@@ -64,15 +56,29 @@ task extractTfsSdk(type: Copy) {
   into sdkTarget
 }
 
-compileJava.dependsOn extractTfsSdk
-generateLicenseReport.dependsOn extractTfsSdk
-rootProject.generateLicenseReport.dependsOn extractTfsSdk
+dependencies {
+  implementation project(':base')
+  implementation project(':common')
+  implementation project(':domain')
+  implementation files(tasks.named('extractTfsSdk').map { Copy copy -> new File(copy.destinationDir, "lib/com.microsoft.tfs.sdk-${rootProject.versions.tfsSdk}.jar") })
+  compileOnly rootProject.deps.jetBrainsAnnotations
 
-task fatJar(type: Jar) {
+  testImplementation rootProject.deps.junit5Api
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.mockitoCore
+  testImplementation rootProject.deps.assertJ
+}
+
+def fatJar = tasks.register('fatJar', Jar) {
   finalizedBy 'verifyJar'
   dependsOn extractTfsSdk, jar
+  def processedSdk = extractTfsSdk.outputs.files.singleFile
+  inputs.dir(processedSdk)
+
   from(jar.archiveFile) { into('lib/') }
-  from("${extractTfsSdk.outputs.files.singleFile}/lib") {
+
+  from("${processedSdk}/lib") {
     include "*.jar"
     into 'lib/'
   }
@@ -81,12 +87,12 @@ task fatJar(type: Jar) {
   }
 }
 
-task verifyJar(type: VerifyJarTask) {
+tasks.register('verifyJar', VerifyJarTask) {
   jarTask = fatJar
   expectedJars = [
     "lib": [
       "tfs-impl-14-${project.version}-classes.jar",
-      "com.microsoft.tfs.sdk-${project.versions.tfsSdk}.jar",
+      "com.microsoft.tfs.sdk-${rootProject.versions.tfsSdk}.jar",
     ]
   ]
 }

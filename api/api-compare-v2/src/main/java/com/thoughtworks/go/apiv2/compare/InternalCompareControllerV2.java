@@ -17,11 +17,12 @@ package com.thoughtworks.go.apiv2.compare;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv2.compare.representers.PipelineInstanceModelsRepresenter;
 import com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModels;
 import com.thoughtworks.go.server.service.PipelineHistoryService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,13 +36,13 @@ import static spark.Spark.*;
 
 @Component
 public class InternalCompareControllerV2 extends ApiController implements SparkSpringController {
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final PipelineHistoryService pipelineHistoryService;
 
     @Autowired
-    public InternalCompareControllerV2(ApiAuthenticationHelper apiAuthenticationHelper, PipelineHistoryService pipelineHistoryService) {
+    public InternalCompareControllerV2(ApiAuthorizationHelper apiAuthorizationHelper, PipelineHistoryService pipelineHistoryService) {
         super(ApiVersion.v2);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.pipelineHistoryService = pipelineHistoryService;
     }
 
@@ -51,12 +52,12 @@ public class InternalCompareControllerV2 extends ApiController implements SparkS
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("/*", mimeType, this::setContentType);
             before("/*", mimeType, this::verifyContentType);
 
-            before(Routes.CompareAPI.INTERNAL_LIST, mimeType, this.apiAuthenticationHelper::checkPipelineViewPermissionsAnd403);
+            before(Routes.CompareAPI.INTERNAL_LIST, mimeType, this.apiAuthorizationHelper::checkPipelineViewPermissionsAnd403);
 
             get(Routes.CompareAPI.INTERNAL_LIST, mimeType, this::list);
         });
@@ -64,7 +65,7 @@ public class InternalCompareControllerV2 extends ApiController implements SparkS
 
     String list(Request request, Response response) throws IOException {
         String pipelineName = request.params("pipeline_name");
-        Integer pageSize = getPageSize(request);
+        int pageSize = getPageSize(request);
         String pattern = request.queryParamOrDefault("pattern", "");
         HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
         PipelineInstanceModels pipelineInstanceModels = pipelineHistoryService.findMatchingPipelineInstances(pipelineName, pattern, pageSize, currentUsername(), result);

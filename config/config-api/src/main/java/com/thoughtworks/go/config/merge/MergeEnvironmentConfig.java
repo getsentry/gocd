@@ -40,12 +40,12 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
 
     public MergeEnvironmentConfig(List<EnvironmentConfig> configs) {
         boolean allPartsDoesNotHaveSameName = configs.stream()
-                .peek(this::add)
-                .map(EnvironmentConfig::name)
-                .distinct()
-                .count() > 1;
+            .peek(this::add)
+            .map(EnvironmentConfig::name)
+            .distinct()
+            .count() > 1;
 
-        if(allPartsDoesNotHaveSameName) {
+        if (allPartsDoesNotHaveSameName) {
             throw new IllegalArgumentException("partial environment configs must all have the same name");
         }
     }
@@ -60,8 +60,9 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
 
     public EnvironmentConfig getFirstEditablePart() {
         EnvironmentConfig found = getFirstEditablePartOrNull();
-        if (found == null)
+        if (found == null) {
             throw bomb("No editable configuration part");
+        }
 
         return found;
     }
@@ -76,27 +77,27 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
     private void validateDuplicateAgents() {
         Set<String> uuids = new HashSet<>();
         this.stream().flatMap(part -> part.getAgents().stream())
-                .map(EnvironmentAgentConfig::getUuid)
-                .filter(uuid -> !uuids.add(uuid))
-                .findFirst()
-                .ifPresent(uuid -> configErrors.add("agent", format("Environment agent '%s' is defined more than once.", uuid)));
+            .map(EnvironmentAgentConfig::getUuid)
+            .filter(uuid -> !uuids.add(uuid))
+            .findFirst()
+            .ifPresent(uuid -> configErrors.add("agent", format("Environment agent '%s' is defined more than once.", uuid)));
     }
 
     private void validateDuplicateEnvironmentVariables() {
         Set<String> envVariables = new HashSet<>();
         this.stream().flatMap(part -> part.getVariables().stream())
-                .map(EnvironmentVariableConfig::getName)
-                .filter(varName -> !envVariables.add(varName))
-                .findFirst()
-                .ifPresent(varName -> configErrors.add(CONSISTENT_KV, format("Environment variable '%s' is defined more than once with different values", varName)));
+            .map(EnvironmentVariableConfig::getName)
+            .filter(varName -> !envVariables.add(varName))
+            .findFirst()
+            .ifPresent(varName -> configErrors.add(CONSISTENT_KV, format("Environment variable '%s' is defined more than once with different values", varName)));
     }
 
     private void validateDuplicatePipelines() {
         Set<CaseInsensitiveString> pipelines = new HashSet<>();
         this.stream().flatMap(part -> part.getPipelineNames().stream())
-                .filter(pipeline -> !pipelines.add(pipeline))
-                .findFirst()
-                .ifPresent(pipelineName -> configErrors.add(CONSISTENT_KV, format("Environment pipeline '%s' is defined more than once.", pipelineName)));
+            .filter(pipeline -> !pipelines.add(pipeline))
+            .findFirst()
+            .ifPresent(pipelineName -> configErrors.add(CONSISTENT_KV, format("Environment pipeline '%s' is defined more than once.", pipelineName)));
     }
 
     @Override
@@ -163,7 +164,7 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
     @Override
     public void addAgentIfNew(String uuid) {
         boolean uuidExists = this.stream().anyMatch(part -> part.hasAgent(uuid));
-        if(!uuidExists){
+        if (!uuidExists) {
             this.stream().filter(this::isEditable).findFirst().ifPresent(envConfig -> envConfig.addAgentIfNew(uuid));
         }
     }
@@ -182,10 +183,11 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
     public void removeAgent(String uuid) {
         for (EnvironmentConfig part : this) {
             if (part.hasAgent(uuid)) {
-                if (isEditable(part))
+                if (isEditable(part)) {
                     part.removeAgent(uuid);
-                else
+                } else {
                     throw bomb("cannot remove agent defined in non-editable source");
+                }
             }
         }
     }
@@ -199,8 +201,9 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
     @Override
     public boolean hasVariable(String variableName) {
         for (EnvironmentConfig part : this) {
-            if (part.hasVariable(variableName))
+            if (part.hasVariable(variableName)) {
                 return true;
+            }
         }
         return false;
     }
@@ -208,15 +211,16 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
     @Override
     public boolean contains(String pipelineName) {
         for (EnvironmentConfig part : this) {
-            if (part.contains(pipelineName))
+            if (part.contains(pipelineName)) {
                 return true;
+            }
         }
         return false;
     }
 
     @Override
     public CaseInsensitiveString name() {
-        return this.first().name();
+        return this.getFirst().name();
     }
 
     @Override
@@ -224,8 +228,9 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
         EnvironmentAgentsConfig allAgents = new EnvironmentAgentsConfig();
         for (EnvironmentConfig part : this) {
             for (EnvironmentAgentConfig partAgent : part.getAgents()) {
-                if (!allAgents.contains(partAgent))
+                if (!allAgents.contains(partAgent)) {
                     allAgents.add(partAgent);
+                }
             }
         }
         return allAgents;
@@ -235,7 +240,7 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
     @Override
     public EnvironmentVariableContext createEnvironmentContext() {
         EnvironmentVariableContext context = new EnvironmentVariableContext(
-                EnvironmentVariableContext.GO_ENVIRONMENT_NAME, CaseInsensitiveString.str(this.name()));
+            EnvironmentVariableContext.GO_ENVIRONMENT_NAME, CaseInsensitiveString.str(this.name()));
         this.getVariables().addTo(context);
         return context;
     }
@@ -245,8 +250,9 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
         List<CaseInsensitiveString> allNames = new ArrayList<>();
         for (EnvironmentConfig part : this) {
             for (CaseInsensitiveString pipe : part.getPipelineNames()) {
-                if (!allNames.contains(pipe))
+                if (!allNames.contains(pipe)) {
                     allNames.add(pipe);
+                }
             }
         }
         return allNames;
@@ -258,8 +264,9 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
         for (EnvironmentConfig part : this) {
             EnvironmentPipelinesConfig partPipes = part.getPipelines();
             for (EnvironmentPipelineConfig partPipe : partPipes) {
-                if (!allPipelines.containsPipelineNamed(partPipe.getName()))
+                if (!allPipelines.containsPipelineNamed(partPipe.getName())) {
                     allPipelines.add(partPipe);
+                }
             }
         }
         return allPipelines;
@@ -270,8 +277,9 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
         EnvironmentVariablesConfig allVariables = new EnvironmentVariablesConfig();
         for (EnvironmentConfig part : this) {
             for (EnvironmentVariableConfig partVariable : part.getVariables()) {
-                if (!allVariables.contains(partVariable))
+                if (!allVariables.contains(partVariable)) {
                     allVariables.add(partVariable);
+                }
             }
         }
         return allVariables;
@@ -282,8 +290,9 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
         EnvironmentVariablesConfig allVariables = new EnvironmentVariablesConfig();
         for (EnvironmentConfig part : this) {
             for (EnvironmentVariableConfig partVariable : part.getPlainTextVariables()) {
-                if (!allVariables.contains(partVariable))
+                if (!allVariables.contains(partVariable)) {
                     allVariables.add(partVariable);
+                }
             }
         }
         return allVariables;
@@ -294,8 +303,9 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
         EnvironmentVariablesConfig allVariables = new EnvironmentVariablesConfig();
         for (EnvironmentConfig part : this) {
             for (EnvironmentVariableConfig partVariable : part.getSecureVariables()) {
-                if (!allVariables.contains(partVariable))
+                if (!allVariables.contains(partVariable)) {
                     allVariables.add(partVariable);
+                }
             }
         }
         return allVariables;
@@ -304,8 +314,9 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
     @Override
     public EnvironmentConfig getLocal() {
         for (EnvironmentConfig part : this) {
-            if (part.isLocal())
+            if (part.isLocal()) {
                 return part;
+            }
         }
         return null;
     }
@@ -313,8 +324,9 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
     @Override
     public boolean isLocal() {
         for (EnvironmentConfig part : this) {
-            if (!part.isLocal())
+            if (!part.isLocal()) {
                 return false;
+            }
         }
         return true;
     }
@@ -322,8 +334,9 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
     @Override
     public boolean isEnvironmentEmpty() {
         for (EnvironmentConfig part : this) {
-            if (!part.isEnvironmentEmpty())
+            if (!part.isEnvironmentEmpty()) {
                 return false;
+            }
         }
         return true;
     }
@@ -349,8 +362,9 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
     @Override
     public boolean containsPipelineRemotely(CaseInsensitiveString pipelineName) {
         for (EnvironmentConfig part : this) {
-            if (part.containsPipelineRemotely(pipelineName))
+            if (part.containsPipelineRemotely(pipelineName)) {
                 return true;
+            }
         }
         return false;
     }
@@ -413,44 +427,27 @@ public class MergeEnvironmentConfig extends BaseCollection<EnvironmentConfig> im
         return isValid;
     }
 
-    @SuppressWarnings("com.haulmont.jpb.EqualsDoesntCheckParameterClass")
     @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;
         }
 
-        EnvironmentConfig that = as(EnvironmentConfig.class, o);
-        if (that == null)
-            return false;
-
-        if (this.getAgents() != null ? !this.getAgents().equals(that.getAgents()) : that.getAgents() != null) {
-            return false;
-        }
-        if (this.name() != null ? !this.name().equals(that.name()) : that.name() != null) {
-            return false;
-        }
-        if (this.getPipelines() != null ? !this.getPipelines().equals(that.getPipelines()) : that.getPipelines() != null) {
-            return false;
-        }
-        return this.getVariables() != null ? this.getVariables().equals(that.getVariables()) : that.getVariables() == null;
+        return o instanceof EnvironmentConfig that &&
+            Objects.equals(this.getAgents(), that.getAgents()) &&
+            Objects.equals(this.name(), that.name()) &&
+            Objects.equals(this.getPipelines(), that.getPipelines()) &&
+            Objects.equals(this.getVariables(), that.getVariables());
     }
 
     @Override
     public int hashCode() {
-        int result = (this.name() != null ? this.name().hashCode() : 0);
+        int result = this.name() != null ? this.name().hashCode() : 0;
         result = 31 * result + (this.getAgents() != null ? this.getAgents().hashCode() : 0);
         result = 31 * result + (this.getPipelines() != null ? this.getPipelines().hashCode() : 0);
         EnvironmentVariablesConfig variablesConfig = this.getVariables();
         result = 31 * result + (variablesConfig != null ? variablesConfig.hashCode() : 0);
         return result;
-    }
-
-    private static <T> T as(Class<T> clazz, Object o) {
-        if (clazz.isInstance(o)) {
-            return clazz.cast(o);
-        }
-        return null;
     }
 
     @Override

@@ -25,13 +25,13 @@ describe "layouts/pipelines.html.erb" do
     @layout_name = 'layouts/pipelines'
     @user = Username.new(CaseInsensitiveString.new("blah-name"), "blah diaply name")
     assign(:user, @user)
-    now = org.joda.time.DateTime.new
-    @stages = PipelineHistoryMother.stagePerJob("stage", [PipelineHistoryMother.job(JobState::Completed, JobResult::Cancelled, now.toDate()),
-                                                          PipelineHistoryMother.job(JobState::Completed, JobResult::Cancelled, now.plusDays(1).toDate())])
+    now = ZonedDateTime.now
+    @stages = PipelineHistoryMother.stagePerJob("stage", [PipelineHistoryMother.job(JobState::Completed, JobResult::Cancelled, now.to_instant),
+                                                          PipelineHistoryMother.job(JobState::Completed, JobResult::Cancelled, now.plusDays(1).to_instant)])
 
-    @stages.get(0).setId(12)
-    @stages.get(1).setId(13)
-    @stages.get(0).setOperatePermission(true)
+    @stages.getFirst().setId(12)
+    @stages.getFirst().setOperatePermission(true)
+    @stages.getLast().setId(13)
 
     @stage_history_page = assigns[:stage_history_page] = last_stage_history_page(1)
 
@@ -43,7 +43,6 @@ describe "layouts/pipelines.html.erb" do
     params[:pipeline_name] = "cruise"
     params[:pipeline_counter] = "1"
     @request.path_parameters.reverse_merge!(params)
-    @feed_api_url = "/api/pipelines/pipeline-name/stages.xml"
     allow(view).to receive(:can_view_admin_page?).and_return(true)
     view.extend PipelinesHelper
     view.extend ApplicationHelper
@@ -59,43 +58,12 @@ describe "layouts/pipelines.html.erb" do
     allow(view).to receive(:admin_config_change_path)
   end
 
-  describe "stage configuration out of sync notification" do
-
-    before :each do
-      stage_summary_model = double('stage_summary_model')
-      @stage = double('stage')
-      allow(stage_summary_model).to receive(:getStage).and_return(@stage)
-      allow(stage_summary_model).to receive(:getName).and_return('stage-0')
-      allow(stage_summary_model).to receive(:getState).and_return(nil)
-      assign(:stage, stage_summary_model)
-      assign(:current_config_version, 'current_config_version')
-      assign(:stage, stage_summary_model)
-    end
-
-    it "should display message indicating that config is out of date and any actions performed on this page will use the latest config" do
-      allow(@stage).to receive(:getConfigVersion).and_return('stage_config_version')
-      allow(view).to receive(:is_config_used_to_run_this_stage_out_of_sync_with_current?).with("current_config_version", "stage_config_version").and_return(true)
-      render :inline => '<div>content</div>', :layout => @layout_name
-      Capybara.string(response.body).find("div.config_changed_info.notification").tap do |div|
-        expect(div).to have_selector("p.information", :text => "Configuration has since been updated and any operations performed will use the current configuration")
-      end
-    end
-
-    it "should not display message indicating that config is out of date and any actions performed on this page will use the latest config when configuration has not changed since" do
-      allow(@stage).to receive(:getConfigVersion).and_return('current_config_version')
-      allow(view).to receive(:is_config_used_to_run_this_stage_out_of_sync_with_current?).with("current_config_version", "current_config_version").and_return(false)
-      render :inline => '<div>content</div>', :layout => @layout_name
-      expect(response.body).to_not have_selector(".notification.config_changed_info p", :text => "Configuration has since been updated and any operations performed will use the current configuration")
-    end
-  end
-
   describe "pipeline bar" do
     before do
       @first_stage = StageSummaryModel.new(StageMother.scheduledStage("pipeline-name", 1, "stage-0", 1, "job"), Stages.new, JobDurationStrategy::ALWAYS_ZERO, nil)
       assign(:stage, @first_stage)
       stage = double('stage')
       allow(stage).to receive(:getConfigVersion).and_return('current_version')
-      allow(view).to receive(:is_config_used_to_run_this_stage_out_of_sync_with_current?).with(anything, anything).and_return(false)
     end
 
     describe "other_stage_runs" do
@@ -115,11 +83,6 @@ describe "layouts/pipelines.html.erb" do
       expect(response.body).to have_selector(".entity_status_wrapper .entity_title .name a[href='/pipeline/activity/pipeline-name']", :text => "pipeline-name")
       expect(response.body).to have_selector(".entity_status_wrapper .entity_title li", :text => "1")
       expect(response.body).to have_selector(".entity_status_wrapper .entity_title .last h1", :text => "stage-0")
-    end
-
-    it "should show the rss feed link" do
-      render :inline => '<div>content</div>', :layout => @layout_name
-      expect(response.body).to have_selector("a[href='/api/pipelines/pipeline-name/stages.xml'] .feed")
     end
 
     it "should display stage links" do
@@ -152,7 +115,7 @@ describe "layouts/pipelines.html.erb" do
 
     describe "run action" do
       before do
-        @stage_0 = @stages.get(0)
+        @stage_0 = @stages.getFirst()
         @stage_0.setCanRun(true)
 
         @stage_1 = @stages.get(1)
@@ -185,8 +148,8 @@ describe "layouts/pipelines.html.erb" do
 
     describe "cancel action" do
       before do
-        @stage_0 = @stages.get(0)
-        @stage_0.getBuildHistory().get(0).setState(JobState::Building)
+        @stage_0 = @stages.getFirst()
+        @stage_0.getBuildHistory().getFirst().setState(JobState::Building)
 
         @stage_1 = @stages.get(1)
         @stage_1.setCanRun(false)

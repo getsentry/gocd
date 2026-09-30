@@ -16,7 +16,8 @@
 package com.thoughtworks.go.validation;
 
 import com.thoughtworks.go.domain.materials.ValidationBean;
-import org.apache.commons.lang3.StringUtils;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 class PresenceValidator extends Validator<String> {
 
@@ -26,7 +27,7 @@ class PresenceValidator extends Validator<String> {
 
     @Override
     public ValidationBean validate(String value) {
-        if (StringUtils.isBlank(value)){
+        if (isBlank(value)) {
             return ValidationBean.notValid(errorMessage);
         } else {
             return ValidationBean.valid();

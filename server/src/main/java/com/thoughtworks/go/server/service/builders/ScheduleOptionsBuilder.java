@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.service.builders;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.EnvironmentVariableConfig;
 import com.thoughtworks.go.domain.materials.MaterialConfig;
 import com.thoughtworks.go.server.domain.MaterialForScheduling;
@@ -25,10 +24,11 @@ import com.thoughtworks.go.server.service.GoConfigService;
 import com.thoughtworks.go.server.service.result.HttpOperationResult;
 import com.thoughtworks.go.serverhealth.HealthStateScope;
 import com.thoughtworks.go.serverhealth.HealthStateType;
-import org.apache.commons.lang3.StringUtils;
 
 import java.util.List;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 public class ScheduleOptionsBuilder {
     private final GoConfigService goConfigService;
@@ -42,14 +42,15 @@ public class ScheduleOptionsBuilder {
     public ScheduleOptions build(HttpOperationResult result, String pipelineName, PipelineScheduleOptions pipelineScheduleOptions) {
         ScheduleOptions scheduleOptions = new ScheduleOptions();
         HealthStateType healthStateType = HealthStateType.general(HealthStateScope.forPipeline(pipelineName));
-        if (!goConfigService.hasPipelineNamed(new CaseInsensitiveString(pipelineName))) {
+        if (!goConfigService.hasPipelineNamed(cis(pipelineName))) {
             result.notFound(String.format("Pipeline '%s' not found.", pipelineName), "", healthStateType);
             return null;
         }
 
         for (Builder builder : builders) {
-            if (result.canContinue())
+            if (result.canContinue()) {
                 builder.build(scheduleOptions, result, pipelineName, pipelineScheduleOptions, healthStateType);
+            }
         }
         return scheduleOptions;
     }
@@ -58,8 +59,8 @@ public class ScheduleOptionsBuilder {
         void build(ScheduleOptions scheduleOptions, HttpOperationResult result, String pipelineName, PipelineScheduleOptions pipelineScheduleOptions, HealthStateType healthStateType);
     }
 
-    private class MaterialsBuilder implements Builder {
-        private GoConfigService goConfigService;
+    private static class MaterialsBuilder implements Builder {
+        private final GoConfigService goConfigService;
 
         public MaterialsBuilder(GoConfigService goConfigService) {
             this.goConfigService = goConfigService;
@@ -70,7 +71,7 @@ public class ScheduleOptionsBuilder {
             for (MaterialForScheduling materialForScheduling : pipelineScheduleOptions.getMaterials()) {
                 try {
                     MaterialConfig material = goConfigService.materialForPipelineWithFingerprint(pipelineName, materialForScheduling.getFingerprint());
-                    if (StringUtils.isBlank(materialForScheduling.getRevision())) {
+                    if (isBlank(materialForScheduling.getRevision())) {
                         result.unprocessableEntity("Request to schedule pipeline rejected", String.format("Material [%s] has empty revision", materialForScheduling.getFingerprint()), HealthStateType.general(HealthStateScope.GLOBAL));
                         return;
                     }
@@ -83,19 +84,15 @@ public class ScheduleOptionsBuilder {
         }
     }
 
-    private class MDUOptionBuilder implements Builder {
-
-        public MDUOptionBuilder() {
-        }
-
+    private static class MDUOptionBuilder implements Builder {
         @Override
         public void build(ScheduleOptions scheduleOptions, HttpOperationResult result, String pipelineName, PipelineScheduleOptions pipelineScheduleOptions, HealthStateType healthStateType) {
             scheduleOptions.shouldPerformMDUBeforeScheduling(pipelineScheduleOptions.shouldPerformMDUBeforeScheduling());
         }
     }
 
-    private class EnvironmentVariableBuilder implements Builder {
-        private GoConfigService goConfigService;
+    private static class EnvironmentVariableBuilder implements Builder {
+        private final GoConfigService goConfigService;
 
         public EnvironmentVariableBuilder(GoConfigService goConfigService) {
             this.goConfigService = goConfigService;
@@ -114,8 +111,8 @@ public class ScheduleOptionsBuilder {
         }
     }
 
-    private class SecureEnvironmentVariableBuilder implements Builder {
-        private GoConfigService goConfigService;
+    private static class SecureEnvironmentVariableBuilder implements Builder {
+        private final GoConfigService goConfigService;
 
         public SecureEnvironmentVariableBuilder(GoConfigService goConfigService) {
             this.goConfigService = goConfigService;

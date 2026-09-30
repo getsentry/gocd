@@ -14,24 +14,27 @@
  * limitations under the License.
  */
 
-
 import com.thoughtworks.go.build.DownloadFile
-import org.apache.commons.codec.digest.DigestUtils
+import com.thoughtworks.go.build.TextUtils
 
-private File destFile(String url) {
-  new File(gradle.gradleUserHomeDir, "download-cache/${DigestUtils.md5Hex(url)}/${new File(URI.create(url).toURL().path).name}")
+def destFile(String url) {
+  new File(gradle.gradleUserHomeDir, "download-cache/${TextUtils.md5Hex(url)}/${new File(URI.create(url).toURL().path).name}")
 }
 
-task downloadTanukiDeltaPack(type: DownloadFile) {
-  def srcUrl = "https://storage.googleapis.com/sentry-dev-infra-build-assets/gocd/wrapper-delta-pack-${project.versions.tanuki}.tar.gz"
-  // def srcUrl = "https://download.tanukisoftware.com/wrapper/${project.versions.tanuki.split("-").first()}/wrapper-delta-pack-${project.versions.tanuki}.tar.gz"
+def downloadTanukiDeltaPack = tasks.register('downloadTanukiDeltaPack', DownloadFile) {
+  def srcUrl = "https://download.tanukisoftware.com/wrapper/${rootProject.versions.tanuki.split('-').first()}/wrapper-delta-pack-${rootProject.versions.tanuki}.tar.gz"
   src srcUrl
   dest destFile(srcUrl)
-  checksum = project.versions.tanukiSha256sum
+  checksum = rootProject.versions.tanukiSha256sum
 }
 
-task extractDeltaPack(type: Copy) {
+tasks.register('extractDeltaPack', Copy) {
   dependsOn downloadTanukiDeltaPack
-  from(project.tarTree(downloadTanukiDeltaPack.outputs.files.singleFile))
-  into project.layout.buildDirectory
+  destinationDir = layout.buildDirectory.dir("tanuki").get().asFile
+  from(project.tarTree(downloadTanukiDeltaPack.map { it.outputFiles.first() })) {
+    eachFile { FileCopyDetails fcd ->
+      fcd.relativePath = new RelativePath(true, fcd.relativePath.segments.drop(1))
+    }
+    includeEmptyDirs = false
+  }
 }

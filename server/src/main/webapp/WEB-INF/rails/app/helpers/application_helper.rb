@@ -57,10 +57,6 @@ module ApplicationHelper
                               stage_counter: stage_identifier.getStageCounter()
   end
 
-  def duration_to_string(duration)
-    org.joda.time.format.PeriodFormat.getDefault().print(duration.toPeriod())
-  end
-
   def load_flash_message(key)
     flash_message_service.get(key.to_s) || session.delete(key) || (default_key?(key) ? load_from_flash : nil)
   end
@@ -110,7 +106,7 @@ module ApplicationHelper
   end
 
   def can_view_admin_page?
-    security_service.canViewAdminPage(current_user)
+    security_service.canViewSomeAdminPage(current_user)
   end
 
   def is_user_a_group_admin?
@@ -123,10 +119,6 @@ module ApplicationHelper
 
   def is_user_authorized_to_view_templates?
     security_service.isAuthorizedToViewTemplates(current_user)
-  end
-
-  def current_gocd_version
-    com.thoughtworks.go.CurrentGoCDVersion.getInstance().getGocdDistVersion()
   end
 
   def render_json(options = {})
@@ -146,18 +138,6 @@ module ApplicationHelper
     end
 
     @page_name
-  end
-
-  def version
-    @@version ||= com.thoughtworks.go.CurrentGoCDVersion.getInstance().formatted()
-  end
-
-  def docs_url(suffix)
-    CurrentGoCDVersion.docs_url(suffix)
-  end
-
-  def full_version
-    @@full_version ||= com.thoughtworks.go.CurrentGoCDVersion.getInstance().fullVersion()
   end
 
   def id_for(obj, prefix = nil)
@@ -226,7 +206,7 @@ module ApplicationHelper
   def vsm_analytics_chart_info
     plugin_info = first_plugin_which_supports_vsm_analytics
     if plugin_info
-      supported_analytics = plugin_info.getCapabilities().supportedVSMAnalytics().get(0)
+      supported_analytics = plugin_info.getCapabilities().supportedVSMAnalytics().getFirst()
       {
         "type" => 'vsm',
         "id" => supported_analytics.getId(),

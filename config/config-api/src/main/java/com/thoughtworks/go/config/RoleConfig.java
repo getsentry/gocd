@@ -20,6 +20,11 @@ import com.thoughtworks.go.domain.ConfigErrors;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static java.util.stream.Collectors.toSet;
 
 @ConfigTag("role")
 public class RoleConfig implements Role {
@@ -40,7 +45,7 @@ public class RoleConfig implements Role {
     }
 
     public RoleConfig(String name, RoleUser... users) {
-        this(new CaseInsensitiveString(name), users);
+        this(cis(name), users);
     }
 
     public RoleConfig(CaseInsensitiveString name, RoleUser... users) {
@@ -108,17 +113,13 @@ public class RoleConfig implements Role {
         this.policy = policy;
     }
 
-    @Override
-    public void removeUser(RoleUser roleUser) {
-        this.users.remove(roleUser);
-    }
-
     public void addUsersWithName(List<String> usersToAdd) {
         usersToAdd.forEach(user -> addUser(new RoleUser(user)));
     }
 
     public void removeUsersWithName(List<String> usersToRemove) {
-        usersToRemove.forEach(user -> removeUser(new RoleUser(user)));
+        Set<CaseInsensitiveString> users = usersToRemove.stream().map(CaseInsensitiveString::new).collect(toSet());
+        this.users.removeFirstIf(u -> users.contains(u.getName()));
     }
 
     @Override
@@ -133,13 +134,17 @@ public class RoleConfig implements Role {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         RoleConfig that = (RoleConfig) o;
 
-        if (name != null ? !name.equals(that.name) : that.name != null) return false;
-        return users != null ? users.equals(that.users) : that.users == null;
+        return Objects.equals(name, that.name) &&
+            Objects.equals(users, that.users);
     }
 
     @Override

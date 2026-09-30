@@ -19,11 +19,12 @@ import com.thoughtworks.go.config.materials.git.GitMaterial;
 import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.server.materials.postcommit.PostCommitHookImplementer;
 import com.thoughtworks.go.server.materials.postcommit.UrlMatchers;
-import org.apache.commons.lang3.StringUtils;
 
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 public class GitPostCommitHookImplementer implements PostCommitHookImplementer {
 
@@ -32,20 +33,18 @@ public class GitPostCommitHookImplementer implements PostCommitHookImplementer {
 
     @Override
     public Set<Material> prune(Set<Material> materials, Map<String, String> params) {
-        HashSet<Material> prunedCollection = new HashSet<>();
+        Set<Material> prunedCollection = new HashSet<>();
         if (params.containsKey(REPO_URL_PARAM_KEY)) {
             String paramRepoUrl = params.get(REPO_URL_PARAM_KEY);
-            if (StringUtils.isNotBlank(paramRepoUrl)) {
+            if (isNotBlank(paramRepoUrl)) {
                 for (Material material : materials) {
-                    if (material instanceof GitMaterial && isUrlEqual(paramRepoUrl, (GitMaterial) material)) {
+                    if (material instanceof GitMaterial gitMaterial && isUrlEqual(paramRepoUrl, gitMaterial)) {
                         prunedCollection.add(material);
                     }
                 }
             }
-            return prunedCollection;
-        } else {
-            return prunedCollection;
         }
+        return prunedCollection;
     }
 
     boolean isUrlEqual(String paramRepoUrl, GitMaterial material) {

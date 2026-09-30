@@ -17,6 +17,7 @@ package com.thoughtworks.go.server.newsecurity.filters;
 
 import com.thoughtworks.go.config.SecurityAuthConfig;
 import com.thoughtworks.go.domain.AccessToken;
+import com.thoughtworks.go.remote.StandardHeaders;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.newsecurity.handlers.renderer.ContentTypeNegotiationMessageRenderer;
 import com.thoughtworks.go.server.newsecurity.models.AccessTokenCredential;
@@ -43,18 +44,22 @@ import java.sql.Timestamp;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static java.net.HttpURLConnection.HTTP_UNAUTHORIZED;
 import static org.apache.commons.lang3.StringUtils.isBlank;
-import static org.apache.http.HttpStatus.SC_UNAUTHORIZED;
 
 @Component
 public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
-    protected final Logger LOGGER = LoggerFactory.getLogger(getClass());
+    protected final Logger LOGGER = LoggerFactory.getLogger(AccessTokenAuthenticationFilter.class);
+    @SuppressWarnings("LoggerInitializedWithForeignClass")
     protected final Logger ACCESS_TOKEN_LOGGER = LoggerFactory.getLogger(AccessToken.class);
+
+    private static final Pattern BEARER_AUTH_EXTRACTOR_PATTERN = Pattern.compile("bearer (.*)", Pattern.CASE_INSENSITIVE);
     private static final String BAD_CREDENTIALS_MSG = "Invalid Personal Access Token.";
+
     protected final SecurityService securityService;
-    private SecurityAuthConfigService securityAuthConfigService;
+    private final SecurityAuthConfigService securityAuthConfigService;
     private final AccessTokenBasedPluginAuthenticationProvider authenticationProvider;
-    private AccessTokenService accessTokenService;
+    private final AccessTokenService accessTokenService;
 
     @Autowired
     public AccessTokenAuthenticationFilter(SecurityService securityService,
@@ -79,7 +84,7 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
 
         AccessTokenCredential credential;
         try {
-            credential = extractAuthTokenCredential(request.getHeader("Authorization"));
+            credential = extractAuthTokenCredential(request.getHeader(StandardHeaders.REQUEST_AUTH));
         } catch (Exception e) {
             onAuthenticationFailure(request, response, e.getMessage());
             return;
@@ -89,7 +94,7 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
             LOGGER.debug("[Bearer Authentication] Authorization header found for user '{}'", credential.getAccessToken().getUsername());
         }
 
-        LOGGER.debug("Security Enabled: " + securityService.isSecurityEnabled());
+        LOGGER.debug("Security Enabled: {}", securityService.isSecurityEnabled());
         if (securityService.isSecurityEnabled()) {
             filterWhenSecurityEnabled(request, response, filterChain, credential);
         } else {
@@ -98,8 +103,6 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private AccessTokenCredential extractAuthTokenCredential(String authorizationHeader) {
-        final Pattern BEARER_AUTH_EXTRACTOR_PATTERN = Pattern.compile("bearer (.*)", Pattern.CASE_INSENSITIVE);
-
         if (isBlank(authorizationHeader)) {
             return null;
         }
@@ -129,21 +132,22 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
         } else {
             accessTokenService.updateLastUsedCacheWith(accessTokenCredential.getAccessToken());
             ACCESS_TOKEN_LOGGER.debug("[Bearer Token Authentication] Authenticating bearer token for: " +
-                            "GoCD User: '{}'. " +
-                            "GoCD API endpoint: '{}', " +
-                            "API Client: '{}', " +
-                            "Is Admin Scoped Token: '{}', " +
-                            "Current Time: '{}'."
-                    , accessTokenCredential.getAccessToken().getUsername()
-                    , request.getRequestURI()
-                    , request.getHeader("User-Agent")
-                    , securityService.isUserAdmin(new Username(accessTokenCredential.getAccessToken().getUsername()))
-                    , new Timestamp(System.currentTimeMillis()));
+                    "GoCD User: '{}'. " +
+                    "GoCD API endpoint: '{}', " +
+                    "API Client: '{}', " +
+                    "Is Admin Scoped Token: '{}', " +
+                    "Current Time: '{}'.",
+                accessTokenCredential.getAccessToken().getUsername(),
+                request.getRequestURI(),
+                request.getHeader("User-Agent"),
+                securityService.isUserAdmin(new Username(accessTokenCredential.getAccessToken().getUsername())),
+                new Timestamp(System.currentTimeMillis())
+            );
 
             try {
                 String authConfigId = accessTokenCredential.getAccessToken().getAuthConfigId();
                 SecurityAuthConfig authConfig = securityAuthConfigService.findProfile(authConfigId);
-                if(authConfig == null) {
+                if (authConfig == null) {
                     String errorMessage = String.format("Can not find authorization configuration \"%s\" to which the requested personal access token belongs. Authorization Configuration \"%s\" might have been renamed or deleted. Please revoke the existing token and create a new one for the same.", authConfigId, authConfigId);
                     onAuthenticationFailure(request, response, errorMessage);
                     return;
@@ -174,7 +178,7 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private void onAuthenticationFailure(HttpServletRequest request, HttpServletResponse response, String errorMessage) throws IOException {
-        response.setStatus(SC_UNAUTHORIZED);
+        response.setStatus(HTTP_UNAUTHORIZED);
         ContentTypeAwareResponse contentTypeAwareResponse = new ContentTypeNegotiationMessageRenderer().getResponse(request);
         response.setCharacterEncoding("utf-8");
         response.setContentType(contentTypeAwareResponse.getContentType().toString());

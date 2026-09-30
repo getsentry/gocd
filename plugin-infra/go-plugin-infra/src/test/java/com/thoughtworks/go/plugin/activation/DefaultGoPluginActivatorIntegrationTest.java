@@ -31,7 +31,6 @@ import com.thoughtworks.go.util.SystemEnvironment;
 import com.thoughtworks.go.util.ZipUtil;
 import lib.test.DummyTestPluginInLibDirectory;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
 import org.apache.felix.framework.util.FelixConstants;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,9 +38,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
-import org.ops4j.pax.tinybundles.core.InnerClassStrategy;
-import org.ops4j.pax.tinybundles.core.TinyBundle;
-import org.ops4j.pax.tinybundles.core.TinyBundles;
+import org.ops4j.pax.tinybundles.InnerClassStrategy;
+import org.ops4j.pax.tinybundles.TinyBundle;
+import org.ops4j.pax.tinybundles.TinyBundles;
 import org.osgi.framework.*;
 
 import java.io.File;
@@ -55,11 +54,11 @@ import java.util.zip.ZipInputStream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class DefaultGoPluginActivatorIntegrationTest {
-    private File tmpDir;
     private static final String BUNDLE_DIR_WHICH_HAS_PROPER_ACTIVATOR = "DefaultGoPluginActivatorIntegrationTest.bundleDirWhichHasProperActivator";
     private static final String NO_EXT_ERR_MSG = "No extensions found in this plugin. Please check for @Extension annotations";
     private static final String GO_TEST_DUMMY_SYMBOLIC_NAME = "Go-Test-Dummy-Symbolic-Name";
 
+    private File tmpDir;
     private FelixGoPluginOSGiFramework framework;
     private StubOfDefaultPluginRegistry registry;
 
@@ -98,7 +97,7 @@ class DefaultGoPluginActivatorIntegrationTest {
 
         GoPluginDescriptor descriptor = registry.getPlugin(GO_TEST_DUMMY_SYMBOLIC_NAME);
         assertThat(descriptor.isInvalid()).isTrue();
-        String error = descriptor.getStatus().getMessages().get(0);
+        String error = descriptor.getStatus().getMessages().getFirst();
         assertThat(error.contains("DummyGoPluginWithOneArgConstructorOnly")).isTrue();
         assertThat(error.contains("Make sure it and all of its parent classes have a default constructor.")).isTrue();
     }
@@ -114,7 +113,7 @@ class DefaultGoPluginActivatorIntegrationTest {
 
     @Test
     void shouldNotLoadClassesFoundInMETA_INFEvenIfTheyAreProperGoExtensionPoints() throws Exception {
-        File bundleWithActivator = createBundleWithActivator(BUNDLE_DIR_WHICH_HAS_PROPER_ACTIVATOR, DummyTestPlugin.class);
+        File bundleWithActivator = createBundleWithActivator(DummyTestPlugin.class);
         File sourceClassFile = new File(bundleWithActivator, "com/thoughtworks/go/plugin/activation/test/DummyTestPlugin.class");
         File destinationFile = new File(bundleWithActivator, "META-INF/com/thoughtworks/go/plugin/activation/test/");
         FileUtils.moveFileToDirectory(sourceClassFile, destinationFile, true);
@@ -128,7 +127,7 @@ class DefaultGoPluginActivatorIntegrationTest {
 
     @Test
     void shouldNotFailToRegisterOtherClassesIfAClassCannotBeLoadedBecauseOfWrongPath() throws Exception {
-        File bundleWithActivator = createBundleWithActivator(BUNDLE_DIR_WHICH_HAS_PROPER_ACTIVATOR, DummyTestPlugin.class);
+        File bundleWithActivator = createBundleWithActivator(DummyTestPlugin.class);
         File sourceClassFile = new File(bundleWithActivator, "com/thoughtworks/go/plugin/activation/test/DummyTestPlugin.class");
         File destinationFile = new File(bundleWithActivator, "ABC-DEF/com/thoughtworks/go/plugin/activation/test/");
         FileUtils.copyFileToDirectory(sourceClassFile, destinationFile, true);
@@ -182,7 +181,7 @@ class DefaultGoPluginActivatorIntegrationTest {
 
         GoPluginDescriptor descriptor = registry.getPlugin(GO_TEST_DUMMY_SYMBOLIC_NAME);
         assertThat(descriptor.isInvalid()).isTrue();
-        String error = descriptor.getStatus().getMessages().get(0);
+        String error = descriptor.getStatus().getMessages().getFirst();
         assertThat(error.contains("DummyGoPluginWhichThrowsAnExceptionDuringConstruction")).isTrue();
         assertThat(error.contains("java.lang.RuntimeException: Ouch! I failed!")).isTrue();
     }
@@ -190,7 +189,7 @@ class DefaultGoPluginActivatorIntegrationTest {
     @Test
     @DisabledOnOs(OS.WINDOWS)
     void shouldRegisterANestedClassImplementingGoPluginAsAnOSGiService() throws Exception {
-        File bundleWithActivator = createBundleWithActivator(BUNDLE_DIR_WHICH_HAS_PROPER_ACTIVATOR, TestPluginOuterClass.class,
+        File bundleWithActivator = createBundleWithActivator(TestPluginOuterClass.class,
                 TestPluginOuterClass.NestedClass.class,
                 TestPluginOuterClass.InnerClass.class,
                 TestPluginOuterClass.InnerClass.SecondLevelInnerClass.class,
@@ -355,7 +354,7 @@ class DefaultGoPluginActivatorIntegrationTest {
     }
 
     private Bundle installBundleWithClasses(Class<?>... classesToBeLoaded) throws IOException {
-        return installBundleFoundInDirectory(createBundleWithActivator(BUNDLE_DIR_WHICH_HAS_PROPER_ACTIVATOR, classesToBeLoaded));
+        return installBundleFoundInDirectory(createBundleWithActivator(classesToBeLoaded));
     }
 
     private Bundle installBundleFoundInDirectory(File bundleWithActivator) {
@@ -374,30 +373,28 @@ class DefaultGoPluginActivatorIntegrationTest {
         return bundle.getBundleContext();
     }
 
-    private File createBundleWithActivator(String destinationDir, Class<?>... classesToBeAdded) throws IOException {
+    private File createBundleWithActivator(Class<?>... classesToBeAdded) throws IOException {
         TinyBundle bundleBeingBuilt = TinyBundles.bundle()
-                .add(GoPluginActivator.class)
-                .add(DefaultGoPluginActivator.class, InnerClassStrategy.ALL)
-                .set(Constants.BUNDLE_ACTIVATOR, DefaultGoPluginActivator.class.getCanonicalName())
-                .set(Constants.BUNDLE_CLASSPATH, ".,lib/dependency.jar")
-                .set(Constants.BUNDLE_SYMBOLICNAME, GO_TEST_DUMMY_SYMBOLIC_NAME);
+            .addClass(GoPluginActivator.class)
+            .activator(DefaultGoPluginActivator.class)
+            .symbolicName(GO_TEST_DUMMY_SYMBOLIC_NAME)
+            .setHeader(Constants.BUNDLE_CLASSPATH, ".,lib/dependency.jar");
         for (Class<?> aClass : classesToBeAdded) {
-            bundleBeingBuilt.add(aClass, InnerClassStrategy.NONE);
+            bundleBeingBuilt.addClass(aClass, InnerClassStrategy.NONE);
         }
-        ZipInputStream src = new ZipInputStream(bundleBeingBuilt.build());
-        File bundleExplodedDir = explodeBundleIntoDirectory(src, destinationDir);
-        IOUtils.closeQuietly(src);
-        return bundleExplodedDir;
+        try (ZipInputStream src = new ZipInputStream(bundleBeingBuilt.build(TinyBundles.rawBuilder()))) {
+            return explodeBundleIntoDirectory(src);
+        }
     }
 
-    private File explodeBundleIntoDirectory(ZipInputStream src, String destinationDir) throws IOException {
-        File destinationPluginBundleLocation = new File(tmpDir, destinationDir);
+    private File explodeBundleIntoDirectory(ZipInputStream src) throws IOException {
+        File destinationPluginBundleLocation = new File(tmpDir, BUNDLE_DIR_WHICH_HAS_PROPER_ACTIVATOR);
         destinationPluginBundleLocation.mkdirs();
         new ZipUtil().unzip(src, destinationPluginBundleLocation);
         return destinationPluginBundleLocation;
     }
 
-    private class StubOfDefaultPluginRegistry extends DefaultPluginRegistry {
+    private static class StubOfDefaultPluginRegistry extends DefaultPluginRegistry {
         void fakeRegistrationOfPlugin(GoPluginDescriptor pluginDescriptor) {
             idToDescriptorMap.putIfAbsent(pluginDescriptor.id().toLowerCase(), pluginDescriptor);
         }

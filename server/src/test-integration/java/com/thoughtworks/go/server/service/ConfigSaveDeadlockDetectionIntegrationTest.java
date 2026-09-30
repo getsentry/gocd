@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.service;
 
-import com.google.gson.Gson;
 import com.thoughtworks.go.config.*;
 import com.thoughtworks.go.config.remote.ConfigRepoConfig;
 import com.thoughtworks.go.config.remote.ConfigReposConfig;
@@ -29,7 +28,7 @@ import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
 import com.thoughtworks.go.server.service.support.ServerStatusService;
 import com.thoughtworks.go.util.GoConfigFileHelper;
-import org.apache.commons.io.FileUtils;
+import com.thoughtworks.go.util.json.JsonHelper;
 import org.apache.commons.lang3.SystemUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,19 +37,24 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.extension.TestExecutionExceptionHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.git;
+import static com.thoughtworks.go.util.TestUtils.sleepQuietly;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -63,6 +67,7 @@ import static org.junit.jupiter.api.Assertions.fail;
         "classpath:/spring-all-servlet.xml",
 })
 public class ConfigSaveDeadlockDetectionIntegrationTest {
+    private static final Logger LOG = LoggerFactory.getLogger(ConfigSaveDeadlockDetectionIntegrationTest.class);
     @Autowired
     private GoConfigDao goConfigDao;
     @Autowired
@@ -98,7 +103,7 @@ public class ConfigSaveDeadlockDetectionIntegrationTest {
                 && throwable.getSuppressed()[0] instanceof InterruptedException) {
             throw new RuntimeException(
                     "Test timed out, possible deadlock. Thread Dump: " +
-                            new Gson().toJson(serverStatusService.asJson(Username.ANONYMOUS, new HttpLocalizedOperationResult())),
+                            JsonHelper.toJson(serverStatusService.asJsonCompatibleMap()),
                     throwable);
         }
         throw throwable;
@@ -107,7 +112,7 @@ public class ConfigSaveDeadlockDetectionIntegrationTest {
 
     @Test
     @Timeout(value = 3, unit = TimeUnit.MINUTES)
-    public void shouldNotDeadlockWhenAllPossibleWaysOfUpdatingTheConfigAreBeingUsedAtTheSameTime() {
+    public void shouldNotDeadlockWhenAllPossibleWaysOfUpdatingTheConfigAreBeingUsedAtTheSameTime() throws InterruptedException {
         int EXISTING_ENV_COUNT = goConfigService.cruiseConfig().getEnvironments().size();
         final List<Thread> group1 = new ArrayList<>();
         final List<Thread> group2 = new ArrayList<>();
@@ -148,34 +153,28 @@ public class ConfigSaveDeadlockDetectionIntegrationTest {
         }
         configHelper.setConfigRepos(configRepos);
         for (int i = 0; i < count; i++) {
-            Thread timerThread = null;
+            Thread timerThread;
             timerThread = createThread(() -> {
                 try {
                     writeConfigToFile(new File(goConfigDao.fileLocation()));
                 } catch (Exception e) {
-                    e.printStackTrace();
-                    fail("Failed with error: " + e.getMessage());
+                    fail("Failed with error: ", e);
                 }
                 cachedGoConfig.forceReload();
             }, "timer-thread");
 
-            try {
-                group1.get(i).start();
-                group2.get(i).start();
-                group3.get(i).start();
-                group4.get(i).start();
-                group5.get(i).start();
-                timerThread.start();
-                group1.get(i).join();
-                group2.get(i).join();
-                group3.get(i).join();
-                group4.get(i).join();
-                group5.get(i).join();
-                timerThread.join();
-            } catch (InterruptedException e) {
-                fail(e.getMessage());
-            }
-
+            group1.get(i).start();
+            group2.get(i).start();
+            group3.get(i).start();
+            group4.get(i).start();
+            group5.get(i).start();
+            timerThread.start();
+            group1.get(i).join();
+            group2.get(i).join();
+            group3.get(i).join();
+            group4.get(i).join();
+            group5.get(i).join();
+            timerThread.join();
         }
 
         assertThat(goConfigService.getAllPipelineConfigs().size()).isEqualTo(count + count + count);
@@ -194,13 +193,8 @@ public class ConfigSaveDeadlockDetectionIntegrationTest {
                 update(configFile);
                 return;
             } catch (IOException e) {
-                try {
-                    System.out.println(String.format("Retry attempt - %s. Error: %s", retries, e.getMessage()));
-                    e.printStackTrace();
-                    Thread.sleep(10);
-                } catch (InterruptedException e1) {
-                    e1.printStackTrace();
-                }
+                LOG.info("Retry attempt - {}. Error: {}", retries, e, e);
+                sleepQuietly(10);
                 retries = retries + 1;
             }
         }
@@ -208,9 +202,9 @@ public class ConfigSaveDeadlockDetectionIntegrationTest {
     }
 
     private void update(File configFile) throws IOException {
-        String currentConfig = FileUtils.readFileToString(configFile, UTF_8);
+        String currentConfig = Files.readString(configFile.toPath(), UTF_8);
         String updatedConfig = currentConfig.replaceFirst("artifactsdir=\".*\"", "artifactsdir=\"" + UUID.randomUUID().toString() + "\"");
-        FileUtils.writeStringToFile(configFile, updatedConfig, UTF_8);
+        Files.writeString(configFile.toPath(), updatedConfig, UTF_8);
     }
 
     private Thread configRepoSaveThread(final ConfigRepoConfig configRepoConfig, final int counter) {
@@ -219,15 +213,11 @@ public class ConfigSaveDeadlockDetectionIntegrationTest {
 
     private Thread fullConfigSaveThread(final int counter) {
         return createThread(() -> {
-            try {
-                CruiseConfig cruiseConfig = cachedGoConfig.loadForEditing();
-                CruiseConfig cruiseConfig1 = configHelper.deepClone(cruiseConfig);
-                cruiseConfig1.addEnvironment(UUID.randomUUID().toString());
+            CruiseConfig cruiseConfig = cachedGoConfig.loadForEditing();
+            CruiseConfig cruiseConfig1 = configHelper.deepClone(cruiseConfig);
+            cruiseConfig1.addEnvironment(UUID.randomUUID().toString());
 
-                goConfigDao.updateFullConfig(new FullConfigUpdateCommand(cruiseConfig1, cruiseConfig.getMd5()));
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            goConfigDao.updateFullConfig(new FullConfigUpdateCommand(cruiseConfig1, cruiseConfig.getMd5()));
         }, "full-config-save-thread" + counter);
 
     }
@@ -244,7 +234,7 @@ public class ConfigSaveDeadlockDetectionIntegrationTest {
         return createThread(() -> {
             PipelineConfig pipelineConfig = GoConfigMother.createPipelineConfigWithMaterialConfig(UUID.randomUUID().toString(), git("FOO"));
             HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
-            pipelineConfigService.createPipelineConfig(new Username(new CaseInsensitiveString("root")), pipelineConfig, result, "default");
+            pipelineConfigService.createPipelineConfig(new Username(cis("root")), pipelineConfig, result, "default");
             assertThat(result.isSuccessful()).describedAs(result.message()).isTrue();
         }, "pipeline-config-save-thread" + counter);
     }
@@ -260,7 +250,6 @@ public class ConfigSaveDeadlockDetectionIntegrationTest {
     private Thread createThread(Runnable runnable, String name) {
         Thread thread = new Thread(runnable, name);
         thread.setUncaughtExceptionHandler((t, e) -> {
-            e.printStackTrace();
             throw new RuntimeException(e.getMessage(), e);
         });
         return thread;

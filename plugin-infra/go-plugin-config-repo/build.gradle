@@ -17,38 +17,41 @@
 description = 'GoCD Model Contract for (de)Serializing GoCD data structures'
 
 dependencies {
-  implementation project(path: ':base', configuration: 'runtimeElements')
-  implementation project(path: ':config:config-api', configuration: 'runtimeElements')
-  implementation project.deps.gson
-  annotationProcessor project.deps.lombok
-  compileOnly project.deps.lombok
-  compileOnly project.deps.jetBrainsAnnotations
+  implementation project(':base')
+  implementation project(':config:config-api')
+  implementation rootProject.deps.gson
+  implementation rootProject.deps.commonsLang3
+  annotationProcessor rootProject.deps.lombok
+  compileOnly rootProject.deps.lombok
+  compileOnly rootProject.deps.jetBrainsAnnotations
 
-  testImplementation project.deps.mockitoCore
-  testImplementation project.deps.mockitoJunit5
-  testImplementation project(path: ':test:test-utils', configuration: 'runtimeElements')
-  testImplementation project.deps.junit5Api
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.mockitoJunit5
+  testImplementation rootProject.deps.junit5Api
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.assertJ
 }
 
-task sourcesJar(type: Jar, dependsOn: classes) {
+tasks.register('sourcesJar', Jar) {
+  dependsOn classes
   archiveClassifier = 'sources'
   from sourceSets.main.allSource
 }
 
 javadoc {
   title = 'GoCD Plugin Config Repo Contract'
-
   options {
     windowTitle = 'GoCD Plugin Config Repo Contract'
     docTitle = 'GoCD Plugin Config Repo Contract'
     header = 'GoCD Plugin Config Repo Contract'
     bottom = "Copyright &copy; Thoughtworks, Inc. GoCD Version: ${project.version}"
+
+    addBooleanOption('Xdoclint:-missing', true)
   }
 }
 
-task javadocJar(type: Jar, dependsOn: javadoc) {
+tasks.register('javadocJar', Jar) {
+  dependsOn javadoc
   archiveClassifier = 'javadoc'
   from javadoc.destinationDir
 }

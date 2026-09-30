@@ -17,34 +17,46 @@ package com.thoughtworks.go.agent.bootstrapper;
 
 import com.thoughtworks.go.util.FileUtil;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import static java.lang.String.join;
+import static java.lang.System.lineSeparator;
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.nio.file.StandardOpenOption.*;
+
 class LauncherTempFileHandler implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(LauncherTempFileHandler.class);
-    private static final String LAUNCHER_TMP_FILE_LIST = ".tmp.file.list";
+
+    private static final Path LAUNCHER_TMP_FILE_LIST = Path.of(".tmp.file.list");
+    private static final int LAUNCHER_TMP_CLEANUP_INTERVAL_MINUTES = 10;
+
     private static volatile Thread reaperThread;
 
     @Override
     public void run() {
         while (!Thread.currentThread().isInterrupted()) {
             reapFiles();
-            sleepForAMoment();
+            try {
+                Thread.sleep(TimeUnit.MINUTES.toMillis(LAUNCHER_TMP_CLEANUP_INTERVAL_MINUTES));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
     private void reapFiles() {
-        try (FileReader tmpFileReader = new FileReader(LAUNCHER_TMP_FILE_LIST)) {
-            List<String> fileList = IOUtils.readLines(tmpFileReader);
+        try {
+            List<String> fileList = Files.readAllLines(LAUNCHER_TMP_FILE_LIST);
             Set<String> fileSet = new HashSet<>(fileList);
             for (String fileName : fileSet) {
                 File file = new File(fileName);
@@ -60,7 +72,7 @@ class LauncherTempFileHandler implements Runnable {
         }
     }
 
-    public synchronized static void startTempFileReaper() {
+    public synchronized static void startReaperIfNecessary() {
         if (reaperThread == null) {
             reaperThread = new Thread(new LauncherTempFileHandler());
             reaperThread.setName("TempFileReaper" + reaperThread.getName());
@@ -69,19 +81,19 @@ class LauncherTempFileHandler implements Runnable {
         }
     }
 
+    public synchronized static void stopReaperIfNecessary() {
+        if (reaperThread != null && reaperThread.isAlive()) {
+            reaperThread.interrupt();
+            reaperThread = null;
+        }
+    }
+
     synchronized static void writeToFile(final List<String> rows, final boolean append) {
         try {
-            FileUtils.writeLines(new File(LAUNCHER_TMP_FILE_LIST), rows, append);
+            Files.writeString(LAUNCHER_TMP_FILE_LIST, join(lineSeparator(), rows), UTF_8, CREATE, WRITE, append ? APPEND : TRUNCATE_EXISTING);
         } catch (IOException e) {
             LOG.error("Could not update temp files list", e);
         }
     }
 
-    private static void sleepForAMoment() {
-        try {
-            Thread.sleep(TimeUnit.MINUTES.toMillis(10));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
 }

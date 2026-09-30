@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.*;
@@ -55,8 +56,8 @@ class JobConfigTest {
 
         config.setConfigAttributes(Map.of(JobConfig.NAME, "foo-job", JobConfig.TASKS, Map.of(Tasks.TASK_OPTIONS, "exec", "exec",
                 Map.of(Task.TASK_TYPE, "exec", ExecTask.COMMAND, "ls", ExecTask.ARGS, "-la", ExecTask.WORKING_DIR, "/tmp"))), taskFactory);
-        assertThat(config.name()).isEqualTo(new CaseInsensitiveString("foo-job"));
-        assertThat(config.getTasks().get(0)).isEqualTo(new ExecTask("ls", "-la", "/tmp"));
+        assertThat(config.name()).isEqualTo(cis("foo-job"));
+        assertThat(config.getTasks().getFirst()).isEqualTo(new ExecTask("ls", "-la", "/tmp"));
         assertThat(config.getTasks().size()).isEqualTo(1);
     }
 
@@ -95,7 +96,7 @@ class JobConfigTest {
     void shouldNotSetJobNameIfNotGiven() {
         JobConfig config = new JobConfig("some-job-name");
         config.setConfigAttributes(Map.of());
-        assertThat(config.name()).isEqualTo(new CaseInsensitiveString("some-job-name"));
+        assertThat(config.name()).isEqualTo(cis("some-job-name"));
         Map<String, Object> attributes = new HashMap<>();
         attributes.put(JobConfig.NAME, null);
         config.setConfigAttributes(attributes);
@@ -106,7 +107,7 @@ class JobConfigTest {
     void shouldReturnAntTaskAsDefaultIfNoTasksSpecified() {
         JobConfig jobConfig = new JobConfig();
         assertThat(jobConfig.tasks()).hasSize(1);
-        Task task = jobConfig.tasks().first();
+        Task task = jobConfig.tasks().getFirst();
         assertThat(task).isInstanceOf(NullTask.class);
     }
 
@@ -117,7 +118,7 @@ class JobConfigTest {
         task.setTarget("hello");
         config.addTask(task);
         config.setConfigAttributes(Map.of());
-        AntTask taskAfterUpdate = (AntTask) config.getTasks().get(0);
+        AntTask taskAfterUpdate = (AntTask) config.getTasks().getFirst();
         assertThat(taskAfterUpdate.getTarget()).isEqualTo("hello");
         assertThat(config.getTasks().size()).isEqualTo(1);
         Map<String, Object> attributes = new HashMap<>();
@@ -131,14 +132,14 @@ class JobConfigTest {
         assertThat(createJobAndValidate(".name").errors().isEmpty()).isTrue();
         ConfigErrors configErrors = createJobAndValidate("name pavan").errors();
         assertThat(configErrors.isEmpty()).isFalse();
-        assertThat(configErrors.on(JobConfig.NAME)).isEqualTo("Invalid job name 'name pavan'. This must be alphanumeric and may contain underscores and periods. The maximum allowed length is 255 characters.");
+        assertThat(configErrors.firstErrorOn(JobConfig.NAME)).isEqualTo("Invalid job name 'name pavan'. This must be alphanumeric and may contain underscores and periods. The maximum allowed length is 255 characters.");
     }
 
     @Test
     void shouldFailValidationWhenJobNameIsEmpty() {
         ConfigErrors configErrors = createJobAndValidate(null).errors();
         assertThat(configErrors.isEmpty()).isFalse();
-        assertThat(configErrors.on(JobConfig.NAME)).isEqualTo("Name is a required field");
+        assertThat(configErrors.firstErrorOn(JobConfig.NAME)).isEqualTo("Name is a required field");
     }
 
     @Test
@@ -146,7 +147,7 @@ class JobConfigTest {
         String jobName = "a-runOnAll-1";
         ConfigErrors configErrors = createJobAndValidate(jobName).errors();
         assertThat(configErrors.isEmpty()).isFalse();
-        assertThat(configErrors.on(JobConfig.NAME)).isEqualTo(String.format("A job cannot have 'runOnAll' in it's name: %s because it is a reserved keyword", jobName));
+        assertThat(configErrors.firstErrorOn(JobConfig.NAME)).isEqualTo(String.format("A job cannot have 'runOnAll' in it's name: %s because it is a reserved keyword", jobName));
     }
 
     @Test
@@ -154,42 +155,42 @@ class JobConfigTest {
         String jobName = "a-runInstance-1";
         ConfigErrors configErrors = createJobAndValidate(jobName).errors();
         assertThat(configErrors.isEmpty()).isFalse();
-        assertThat(configErrors.on(JobConfig.NAME)).isEqualTo(String.format("A job cannot have 'runInstance' in it's name: %s because it is a reserved keyword", jobName));
+        assertThat(configErrors.firstErrorOn(JobConfig.NAME)).isEqualTo(String.format("A job cannot have 'runInstance' in it's name: %s because it is a reserved keyword", jobName));
     }
 
     @Test
     void shouldValidateAgainstSettingRunInstanceCountToIncorrectValue() {
-        JobConfig jobConfig1 = new JobConfig(new CaseInsensitiveString("test"));
+        JobConfig jobConfig1 = new JobConfig(cis("test"));
         jobConfig1.setRunInstanceCount(-1);
 
         jobConfig1.validate(ConfigSaveValidationContext.forChain(new BasicCruiseConfig()));
 
         ConfigErrors configErrors1 = jobConfig1.errors();
         assertThat(configErrors1.isEmpty()).isFalse();
-        assertThat(configErrors1.on(JobConfig.RUN_TYPE)).isEqualTo("'Run Instance Count' cannot be a negative number as it represents number of instances GoCD needs to spawn during runtime.");
+        assertThat(configErrors1.firstErrorOn(JobConfig.RUN_TYPE)).isEqualTo("'Run Instance Count' cannot be a negative number as it represents number of instances GoCD needs to spawn during runtime.");
 
-        JobConfig jobConfig2 = new JobConfig(new CaseInsensitiveString("test"));
+        JobConfig jobConfig2 = new JobConfig(cis("test"));
         ReflectionUtil.setField(jobConfig2, "runInstanceCount", "abcd");
 
         jobConfig2.validate(ConfigSaveValidationContext.forChain(new BasicCruiseConfig()));
 
         ConfigErrors configErrors2 = jobConfig2.errors();
         assertThat(configErrors2.isEmpty()).isFalse();
-        assertThat(configErrors2.on(JobConfig.RUN_TYPE)).isEqualTo("'Run Instance Count' should be a valid positive integer as it represents number of instances GoCD needs to spawn during runtime.");
+        assertThat(configErrors2.firstErrorOn(JobConfig.RUN_TYPE)).isEqualTo("'Run Instance Count' should be a valid positive integer as it represents number of instances GoCD needs to spawn during runtime.");
 
-        JobConfig jobConfig3 = new JobConfig(new CaseInsensitiveString("test"));
+        JobConfig jobConfig3 = new JobConfig(cis("test"));
         ReflectionUtil.setField(jobConfig3, "runInstanceCount", "0");
 
         jobConfig3.validate(ConfigSaveValidationContext.forChain(new BasicCruiseConfig()));
 
         ConfigErrors configErrors3 = jobConfig3.errors();
         assertThat(configErrors3.isEmpty()).isFalse();
-        assertThat(configErrors3.on(JobConfig.RUN_TYPE)).isEqualTo("'Run Instance Count' cannot be 0 as it represents number of instances GoCD needs to spawn during runtime.");
+        assertThat(configErrors3.firstErrorOn(JobConfig.RUN_TYPE)).isEqualTo("'Run Instance Count' cannot be 0 as it represents number of instances GoCD needs to spawn during runtime.");
     }
 
     @Test
     void shouldValidateAgainstSettingRunOnAllAgentsAndRunInstanceCountSetTogether() {
-        JobConfig jobConfig = new JobConfig(new CaseInsensitiveString("test"));
+        JobConfig jobConfig = new JobConfig(cis("test"));
         jobConfig.setRunOnAllAgents(true);
         jobConfig.setRunInstanceCount(10);
 
@@ -197,7 +198,7 @@ class JobConfigTest {
 
         ConfigErrors configErrors = jobConfig.errors();
         assertThat(configErrors.isEmpty()).isFalse();
-        assertThat(configErrors.on(JobConfig.RUN_TYPE)).isEqualTo("Job cannot be 'run on all agents' type and 'run multiple instance' type together.");
+        assertThat(configErrors.firstErrorOn(JobConfig.RUN_TYPE)).isEqualTo("Job cannot be 'run on all agents' type and 'run multiple instance' type together.");
     }
 
     @Test
@@ -209,7 +210,7 @@ class JobConfigTest {
         when(validationContext.getStage()).thenReturn(pipelineConfig.getFirstStageConfig());
         jobConfig.validate(validationContext);
         assertThat(jobConfig.errors().isEmpty()).isFalse();
-        assertThat(jobConfig.errors().getAll().get(0)).isEqualTo("Empty resource name in job \"defaultJob\" of stage \"mingle\" of pipeline \"pipeline1\". If a template is used, please ensure that the resource parameters are defined for this pipeline.");
+        assertThat(jobConfig.errors().getAll().getFirst()).isEqualTo("Empty resource name in job \"defaultJob\" of stage \"mingle\" of pipeline \"pipeline1\". If a template is used, please ensure that the resource parameters are defined for this pipeline.");
     }
 
     @Test
@@ -225,8 +226,8 @@ class JobConfigTest {
         jobConfig.validate(validationContext);
 
         assertThat(jobConfig.errors().isEmpty()).isFalse();
-        assertThat(jobConfig.errors().on(JobConfig.ELASTIC_PROFILE_ID)).isEqualTo("Job cannot have both `resource` and `elasticProfileId`");
-        assertThat(jobConfig.errors().on(JobConfig.RESOURCES)).isEqualTo("Job cannot have both `resource` and `elasticProfileId`");
+        assertThat(jobConfig.errors().firstErrorOn(JobConfig.ELASTIC_PROFILE_ID)).isEqualTo("Job cannot have both `resource` and `elasticProfileId`");
+        assertThat(jobConfig.errors().firstErrorOn(JobConfig.RESOURCES)).isEqualTo("Job cannot have both `resource` and `elasticProfileId`");
     }
 
     @Test
@@ -244,7 +245,7 @@ class JobConfigTest {
         jobConfig.validate(validationContext);
 
         assertThat(jobConfig.errors().isEmpty()).isFalse();
-        assertThat(jobConfig.errors().on(JobConfig.ELASTIC_PROFILE_ID)).isEqualTo("No profile defined corresponding to profile_id 'non-existent-profile-id'");
+        assertThat(jobConfig.errors().firstErrorOn(JobConfig.ELASTIC_PROFILE_ID)).isEqualTo("No profile defined corresponding to profile_id 'non-existent-profile-id'");
     }
 
     @Test
@@ -255,13 +256,13 @@ class JobConfigTest {
         defaultJob.validateNameUniqueness(visitedConfigs);
 
         assertThat(defaultJob.errors().isEmpty()).isFalse();
-        assertThat(defaultJob.errors().on(JobConfig.NAME)).isEqualTo("You have defined multiple jobs called 'defaultJob'. Job names are case-insensitive and must be unique.");
+        assertThat(defaultJob.errors().firstErrorOn(JobConfig.NAME)).isEqualTo("You have defined multiple jobs called 'defaultJob'. Job names are case-insensitive and must be unique.");
 
         JobConfig defaultJobAllLowerCase = new JobConfig("defaultjob");
         defaultJobAllLowerCase.validateNameUniqueness(visitedConfigs);
 
         assertThat(defaultJobAllLowerCase.errors().isEmpty()).isFalse();
-        assertThat(defaultJobAllLowerCase.errors().on(JobConfig.NAME)).isEqualTo("You have defined multiple jobs called 'defaultjob'. Job names are case-insensitive and must be unique.");
+        assertThat(defaultJobAllLowerCase.errors().firstErrorOn(JobConfig.NAME)).isEqualTo("You have defined multiple jobs called 'defaultjob'. Job names are case-insensitive and must be unique.");
     }
 
     @Test
@@ -305,7 +306,7 @@ class JobConfigTest {
         map.put(JobConfig.RESOURCES, value);
         ResourceConfigs resourceConfigs = new ResourceConfigs();
         resourceConfigs.add(new ResourceConfig("z"));
-        JobConfig jobConfig = new JobConfig(new CaseInsensitiveString("job-name"), resourceConfigs, null);
+        JobConfig jobConfig = new JobConfig(cis("job-name"), resourceConfigs, null);
 
         jobConfig.setConfigAttributes(map);
 
@@ -319,10 +320,10 @@ class JobConfigTest {
         jobConfig.setConfigAttributes(Map.of(JobConfig.TABS, List.of(Map.of(Tab.NAME, "tab1", Tab.PATH, "path1"), Map.of(Tab.NAME, "tab2", Tab.PATH, "path2"))));
 
         assertThat(jobConfig.getTabs().size()).isEqualTo(2);
-        assertThat(jobConfig.getTabs().get(0).getName()).isEqualTo("tab1");
-        assertThat(jobConfig.getTabs().get(1).getName()).isEqualTo("tab2");
-        assertThat(jobConfig.getTabs().get(0).getPath()).isEqualTo("path1");
-        assertThat(jobConfig.getTabs().get(1).getPath()).isEqualTo("path2");
+        assertThat(jobConfig.getTabs().getFirst().getName()).isEqualTo("tab1");
+        assertThat(jobConfig.getTabs().getFirst().getPath()).isEqualTo("path1");
+        assertThat(jobConfig.getTabs().getLast().getName()).isEqualTo("tab2");
+        assertThat(jobConfig.getTabs().getLast().getPath()).isEqualTo("path2");
     }
 
     @Test
@@ -415,7 +416,7 @@ class JobConfigTest {
         valueHashMap.put("src1", "dest1");
         map.put(JobConfig.ARTIFACT_CONFIGS, valueHashMap);
         ArtifactTypeConfigs mockArtifactTypeConfigs = mock(ArtifactTypeConfigs.class);
-        JobConfig jobConfig = new JobConfig(new CaseInsensitiveString("job-name"), new ResourceConfigs(), mockArtifactTypeConfigs);
+        JobConfig jobConfig = new JobConfig(cis("job-name"), new ResourceConfigs(), mockArtifactTypeConfigs);
 
         jobConfig.setConfigAttributes(map);
 
@@ -445,7 +446,7 @@ class JobConfigTest {
         job.validate(ConfigSaveValidationContext.forChain(new BasicCruiseConfig()));
         assertThat(job.errors().isEmpty()).isFalse();
         assertThat(job.errors().size()).isEqualTo(1);
-        assertThat(job.errors().on(JobConfig.TASKS)).isEqualTo("Job 'job' must have at least one task.");
+        assertThat(job.errors().firstErrorOn(JobConfig.TASKS)).isEqualTo("Job 'job' must have at least one task.");
     }
 
     @Test
@@ -454,7 +455,7 @@ class JobConfigTest {
         job.setTimeout("5.5MN");
         job.validate(ConfigSaveValidationContext.forChain(new BasicCruiseConfig()));
         assertThat(job.errors().isEmpty()).isFalse();
-        assertThat(job.errors().on(JobConfig.TIMEOUT)).isEqualTo("Timeout should be a valid number as it represents number of minutes");
+        assertThat(job.errors().firstErrorOn(JobConfig.TIMEOUT)).isEqualTo("Timeout should be a valid number as it represents number of minutes");
     }
 
     @Test
@@ -485,7 +486,7 @@ class JobConfigTest {
         jobConfig.validate(ConfigSaveValidationContext.forChain(new BasicCruiseConfig()));
 
         assertThat(jobConfig.errors().isEmpty()).isFalse();
-        assertThat(jobConfig.errors().on(JobConfig.TIMEOUT)).isEqualTo("Timeout cannot be a negative number as it represents number of minutes");
+        assertThat(jobConfig.errors().firstErrorOn(JobConfig.TIMEOUT)).isEqualTo("Timeout cannot be a negative number as it represents number of minutes");
     }
 
     @Test
@@ -497,13 +498,13 @@ class JobConfigTest {
         Tabs tabs = mock(Tabs.class);
         EnvironmentVariablesConfig variables = mock(EnvironmentVariablesConfig.class);
         when(tasks.size()).thenReturn(1);
-        when(tasks.validateTree(any(PipelineConfigSaveValidationContext.class))).thenReturn(true);
-        when(resourceConfigs.validateTree(any(PipelineConfigSaveValidationContext.class))).thenReturn(true);
-        when(artifactTypeConfigs.validateTree(any(PipelineConfigSaveValidationContext.class))).thenReturn(true);
-        when(tabs.validateTree(any(PipelineConfigSaveValidationContext.class))).thenReturn(true);
-        when(variables.validateTree(any(PipelineConfigSaveValidationContext.class))).thenReturn(true);
+        when(tasks.validateTree(any())).thenReturn(true);
+        when(resourceConfigs.validateTree(any())).thenReturn(true);
+        when(artifactTypeConfigs.validateTree(any())).thenReturn(true);
+        when(tabs.validateTree(any())).thenReturn(true);
+        when(variables.validateTree(any())).thenReturn(true);
 
-        JobConfig jobConfig = new JobConfig(new CaseInsensitiveString("job"), resourceConfigs, artifactTypeConfigs, tasks);
+        JobConfig jobConfig = new JobConfig(cis("job"), resourceConfigs, artifactTypeConfigs, tasks);
         jobConfig.setTabs(tabs);
         jobConfig.setVariables(variables);
 
@@ -528,13 +529,13 @@ class JobConfigTest {
         Tasks tasks = mock(Tasks.class);
         Tabs tabs = mock(Tabs.class);
         EnvironmentVariablesConfig variables = mock(EnvironmentVariablesConfig.class);
-        when(tasks.validateTree(any(PipelineConfigSaveValidationContext.class))).thenReturn(false);
-        when(resourceConfigs.validateTree(any(PipelineConfigSaveValidationContext.class))).thenReturn(false);
-        when(artifactTypeConfigs.validateTree(any(PipelineConfigSaveValidationContext.class))).thenReturn(false);
-        when(tabs.validateTree(any(PipelineConfigSaveValidationContext.class))).thenReturn(false);
-        when(variables.validateTree(any(PipelineConfigSaveValidationContext.class))).thenReturn(false);
+        when(tasks.validateTree(any())).thenReturn(false);
+        when(resourceConfigs.validateTree(any())).thenReturn(false);
+        when(artifactTypeConfigs.validateTree(any())).thenReturn(false);
+        when(tabs.validateTree(any())).thenReturn(false);
+        when(variables.validateTree(any())).thenReturn(false);
 
-        JobConfig jobConfig = new JobConfig(new CaseInsensitiveString("job"), resourceConfigs, artifactTypeConfigs, tasks);
+        JobConfig jobConfig = new JobConfig(cis("job"), resourceConfigs, artifactTypeConfigs, tasks);
         jobConfig.setTabs(tabs);
         jobConfig.setVariables(variables);
 
@@ -553,7 +554,7 @@ class JobConfigTest {
 
     @Test
     void shouldValidateAgainstSettingRunOnAllAgentsForAJobAssignedToElasticAgent() {
-        JobConfig jobConfig = new JobConfig(new CaseInsensitiveString("test"));
+        JobConfig jobConfig = new JobConfig(cis("test"));
         jobConfig.setRunOnAllAgents(true);
         jobConfig.setElasticProfileId("ubuntu-dev");
 
@@ -561,18 +562,18 @@ class JobConfigTest {
 
         ConfigErrors configErrors = jobConfig.errors();
         assertThat(configErrors.isEmpty()).isFalse();
-        assertThat(configErrors.on(JobConfig.RUN_TYPE)).isEqualTo("Job cannot be set to 'run on all agents' when assigned to an elastic agent");
+        assertThat(configErrors.firstErrorOn(JobConfig.RUN_TYPE)).isEqualTo("Job cannot be set to 'run on all agents' when assigned to an elastic agent");
     }
 
     @Test
     void shouldEncryptSecurePropertiesForOnlyFetchExternalArtifactTask() {
-        JobConfig jobConfig = new JobConfig(new CaseInsensitiveString("job"));
+        JobConfig jobConfig = new JobConfig(cis("job"));
         FetchPluggableArtifactTask mockFetchExternalArtifactTask = mock(FetchPluggableArtifactTask.class);
         jobConfig.addTask(mockFetchExternalArtifactTask);
 
         jobConfig.encryptSecureProperties(new BasicCruiseConfig(), new PipelineConfig(), jobConfig);
 
-        verify(mockFetchExternalArtifactTask).encryptSecureProperties(any(CruiseConfig.class), any(PipelineConfig.class), any(FetchPluggableArtifactTask.class));
+        verify(mockFetchExternalArtifactTask).encryptSecureProperties(any(), any(), any());
     }
 
     @Nested

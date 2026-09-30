@@ -16,12 +16,8 @@
 package com.thoughtworks.go.fixture;
 
 import com.thoughtworks.go.config.StageConfig;
-import com.thoughtworks.go.domain.DefaultSchedulingContext;
-import com.thoughtworks.go.domain.JobResult;
-import com.thoughtworks.go.domain.Pipeline;
-import com.thoughtworks.go.domain.Stage;
+import com.thoughtworks.go.domain.*;
 import com.thoughtworks.go.server.persistence.MaterialRepository;
-import com.thoughtworks.go.server.service.InstanceFactory;
 import com.thoughtworks.go.server.transaction.TransactionTemplate;
 import com.thoughtworks.go.util.TimeProvider;
 
@@ -29,9 +25,9 @@ import java.nio.file.Path;
 
 import static com.thoughtworks.go.util.ExceptionUtils.bombIf;
 
-public class PipelineWithMultipleStages extends PipelineWithTwoStages implements PreCondition {
-    private int stagesSize;
-    private String[] stageNames;
+public class PipelineWithMultipleStages extends PipelineWithTwoStages {
+    private final int stagesSize;
+    private final String[] stageNames;
 
     public PipelineWithMultipleStages(int stagesSize, MaterialRepository materialRepository, final TransactionTemplate transactionTemplate, Path tempDir) {
         super(materialRepository, transactionTemplate, tempDir);

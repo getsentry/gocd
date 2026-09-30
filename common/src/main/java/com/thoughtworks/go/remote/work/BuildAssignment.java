@@ -31,6 +31,7 @@ import java.io.File;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import static java.util.stream.StreamSupport.stream;
 
@@ -133,38 +134,34 @@ public class BuildAssignment implements Serializable, SecretParamAware {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof BuildAssignment that)) return false;
+        if (this == o) {
+            return true;
+        }
+        return o instanceof BuildAssignment that &&
+            fetchMaterials == that.fetchMaterials &&
+            cleanWorkingDirectory == that.cleanWorkingDirectory &&
+            Objects.equals(builders, that.builders) &&
+            Objects.equals(artifactPlans, that.artifactPlans) &&
+            Objects.equals(artifactStores, that.artifactStores) &&
+            Objects.equals(buildWorkingDirectory, that.buildWorkingDirectory) &&
+            Objects.equals(jobIdentifier, that.jobIdentifier) &&
+            initialContext.equals(that.initialContext) &&
+            materialRevisions.equals(that.materialRevisions) &&
+            Objects.equals(approver, that.approver);
 
-        if (fetchMaterials != that.fetchMaterials) return false;
-        if (cleanWorkingDirectory != that.cleanWorkingDirectory) return false;
-        if (builders != null ? !builders.equals(that.builders) : that.builders != null) return false;
-        if (artifactPlans != null ? !artifactPlans.equals(that.artifactPlans) : that.artifactPlans != null)
-            return false;
-        if (artifactStores != null ? !artifactStores.equals(that.artifactStores) : that.artifactStores != null)
-            return false;
-        if (buildWorkingDirectory != null ? !buildWorkingDirectory.equals(that.buildWorkingDirectory) : that.buildWorkingDirectory != null)
-            return false;
-        if (jobIdentifier != null ? !jobIdentifier.equals(that.jobIdentifier) : that.jobIdentifier != null)
-            return false;
-        if (initialContext != null ? !initialContext.equals(that.initialContext) : that.initialContext != null)
-            return false;
-        if (materialRevisions != null ? !materialRevisions.equals(that.materialRevisions) : that.materialRevisions != null)
-            return false;
-        return approver != null ? approver.equals(that.approver) : that.approver == null;
     }
 
     @Override
     public int hashCode() {
-        int result = (fetchMaterials ? 1 : 0);
+        int result = fetchMaterials ? 1 : 0;
         result = 31 * result + (cleanWorkingDirectory ? 1 : 0);
         result = 31 * result + (builders != null ? builders.hashCode() : 0);
         result = 31 * result + (artifactPlans != null ? artifactPlans.hashCode() : 0);
         result = 31 * result + (artifactStores != null ? artifactStores.hashCode() : 0);
         result = 31 * result + (buildWorkingDirectory != null ? buildWorkingDirectory.hashCode() : 0);
         result = 31 * result + (jobIdentifier != null ? jobIdentifier.hashCode() : 0);
-        result = 31 * result + (initialContext != null ? initialContext.hashCode() : 0);
-        result = 31 * result + (materialRevisions != null ? materialRevisions.hashCode() : 0);
+        result = 31 * result + initialContext.hashCode();
+        result = 31 * result + materialRevisions.hashCode();
         result = 31 * result + (approver != null ? approver.hashCode() : 0);
         return result;
     }

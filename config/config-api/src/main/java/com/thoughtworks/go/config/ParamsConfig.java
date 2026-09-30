@@ -17,12 +17,14 @@ package com.thoughtworks.go.config;
 
 import com.thoughtworks.go.domain.BaseCollection;
 import com.thoughtworks.go.domain.ConfigErrors;
-import org.apache.commons.lang3.StringUtils;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @ConfigTag("params")
 @ConfigCollection(ParamConfig.class)
@@ -47,9 +49,7 @@ public class ParamsConfig extends BaseCollection<ParamConfig> implements Validat
     public ParamsConfig addOrReplace(ParamsConfig newParams) {
         ParamsConfig myCopy = new ParamsConfig(this);
         for (ParamConfig newParam : newParams) {
-            if (myCopy.hasParamNamed(newParam.getName())) {
-                myCopy.removeParamNamed(newParam.getName());
-            }
+            myCopy.removeParamNamedIfExists(newParam.getName());
             myCopy.add(newParam);
         }
         return myCopy;
@@ -77,35 +77,21 @@ public class ParamsConfig extends BaseCollection<ParamConfig> implements Validat
         return configErrors;
     }
 
-    public int getIndex(String name) {
-        for (int i = 0; i < this.size(); i++) {
-            if (get(i).getName().equals(name)) {
-                return i;
-            }
-        }
-        throw new IllegalArgumentException("param '" + name + "' not found");
-    }
-
     @Override
     public void addError(String fieldName, String message) {
         configErrors.add(fieldName, message);
     }
 
-    private void removeParamNamed(String name) {
-        this.remove(getParamNamed(name));
+    private void removeParamNamedIfExists(String name) {
+        removeFirstIf(p -> p.getName().equals(name));
     }
 
     public boolean hasParamNamed(String name) {
-        return getParamNamed(name) != null;
+        return stream().anyMatch(c -> c.getName().equals(name));
     }
 
-    public ParamConfig getParamNamed(String name) {
-        for (ParamConfig paramConfig : this) {
-            if (paramConfig.getName().equals(name)) {
-                return paramConfig;
-            }
-        }
-        return null;
+    public @Nullable ParamConfig getParamNamed(String name) {
+        return stream().filter(c -> c.getName().equals(name)).findFirst().orElse(null);
     }
 
     @SuppressWarnings("unchecked")
@@ -115,7 +101,7 @@ public class ParamsConfig extends BaseCollection<ParamConfig> implements Validat
             for (Map<String, String> attributeMap : (List<Map<String, String>>) attributes) {
                 String name = attributeMap.get(ParamConfig.NAME);
                 String value = attributeMap.get(ParamConfig.VALUE);
-                if (StringUtils.isBlank(name) && StringUtils.isBlank(value)) {
+                if (isBlank(name) && isBlank(value)) {
                     continue;
                 }
                 this.add(new ParamConfig(name, value));
@@ -129,5 +115,15 @@ public class ParamsConfig extends BaseCollection<ParamConfig> implements Validat
             names.add(paramConfig.getName());
         }
         return names;
+    }
+
+    public ParamsConfig deepClone() {
+        return this.stream()
+            .map(pc -> {
+                ParamConfig paramConfig = new ParamConfig(pc.getName(), pc.getValue());
+                paramConfig.errors().addAll(pc.errors()); // Unsure if these are needed, but replicating old Cloner usage
+                return paramConfig;
+            })
+            .collect(ParamsConfig::new, ParamsConfig::add, ParamsConfig::addAll);
     }
 }

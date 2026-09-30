@@ -22,7 +22,6 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.Transport;
 import jakarta.mail.internet.MimeMessage;
 import lombok.EqualsAndHashCode;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,6 +29,7 @@ import java.util.Properties;
 
 import static com.thoughtworks.go.util.SystemEnvironment.DEFAULT_MAIL_SENDER_TIMEOUT_IN_MILLIS;
 import static jakarta.mail.Message.RecipientType.TO;
+import static org.apache.commons.lang3.StringUtils.trimToNull;
 
 @EqualsAndHashCode
 public class GoSmtpMailSender implements GoMailSender {
@@ -55,7 +55,7 @@ public class GoSmtpMailSender implements GoMailSender {
             Properties props = mailProperties();
             MailSession session = MailSession.getInstance().createWith(props, mailHost.getUsername(), mailHost.getPassword());
             transport = session.getTransport();
-            transport.connect(mailHost.getHostName(), mailHost.getPort(), StringUtils.trimToNull(mailHost.getUsername()), StringUtils.trimToNull(mailHost.getPassword()));
+            transport.connect(mailHost.getHostName(), mailHost.getPort(), trimToNull(mailHost.getUsername()), trimToNull(mailHost.getPassword()));
             MimeMessage msg = session.createMessage(mailHost.getFrom(), to, subject, body);
             transport.sendMessage(msg, msg.getRecipients(TO));
             return ValidationBean.valid();
@@ -106,7 +106,12 @@ public class GoSmtpMailSender implements GoMailSender {
     public static String emailBody() {
         String ip = SystemUtil.getFirstLocalNonLoopbackIpAddress();
         String hostName = SystemUtil.getLocalhostName();
-        return String.format("You received this configuration test email from Go Server:\n\n%s (%s)\n\nThank you.", hostName, ip);
+        return String.format("""
+            You received this configuration test email from Go Server:
+            
+            %s (%s)
+            
+            Thank you.""", hostName, ip);
     }
 
     public static GoMailSender createSender(MailHost mailHost) {

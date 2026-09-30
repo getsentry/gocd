@@ -23,10 +23,10 @@ import com.thoughtworks.go.util.ClonerFactory;
 import com.thoughtworks.go.util.DFSCycleDetector;
 import com.thoughtworks.go.util.Node;
 import com.thoughtworks.go.util.PipelineDependencyState;
-import org.apache.commons.lang3.StringUtils;
 
-import java.util.ArrayList;
 import java.util.List;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 public class PipelineConfigTreeValidator {
     private final PipelineConfig pipelineConfig;
@@ -46,14 +46,9 @@ public class PipelineConfigTreeValidator {
         for (StageConfig stageConfig : pipelineConfig.getStages()) {
             isValid = stageConfig.validateTree(contextForChildren) && isValid;
             if (pipelineConfig.hasTemplateApplied()) {
-                final List<ConfigErrors> allErrors = new ArrayList<>();
-                new GoConfigGraphWalker(stageConfig).walk(new ErrorCollectingHandler(allErrors) {
-                    @Override
-                    public void handleValidation(Validatable validatable, ValidationContext context) {
-                    }
-                });
+                List<ConfigErrors> allErrors = ErrorCollector.getAllErrors(stageConfig);
                 for (ConfigErrors error : allErrors) {
-                    pipelineConfig.errors().add("template", StringUtils.join(error.getAll(), ", "));
+                    pipelineConfig.errors().add("template", error.asString());
                 }
             }
         }
@@ -61,10 +56,12 @@ public class PipelineConfigTreeValidator {
         isValid = pipelineConfig.materialConfigs().validateTree(contextForChildren) && isValid;
         isValid = pipelineConfig.getParams().validateTree(contextForChildren) && isValid;
         isValid = pipelineConfig.getVariables().validateTree(contextForChildren) && isValid;
-        if (pipelineConfig.getTrackingTool() != null)
+        if (pipelineConfig.getTrackingTool() != null) {
             isValid = pipelineConfig.getTrackingTool().validateTree(contextForChildren) && isValid;
-        if (pipelineConfig.getTimer() != null)
+        }
+        if (pipelineConfig.getTimer() != null) {
             isValid = pipelineConfig.getTimer().validateTree(contextForChildren) && isValid;
+        }
         return isValid;
     }
 
@@ -86,9 +83,13 @@ public class PipelineConfigTreeValidator {
     }
 
     void validateDependencies(PipelineConfigSaveValidationContext validationContext) {
-        if (validationContext.isPipelineBeingCreated()) return;
+        if (validationContext.isPipelineBeingCreated()) {
+            return;
+        }
         for (CaseInsensitiveString selected : validationContext.getPipelinesWithDependencyMaterials()) {
-            if (selected.equals(pipelineConfig.name())) continue;
+            if (selected.equals(pipelineConfig.name())) {
+                continue;
+            }
             PipelineConfig selectedPipeline = validationContext.getPipelineConfigByName(selected);
             validateDependencyMaterialsForDownstreams(validationContext, selected, selectedPipeline);
             validateFetchTasksForOtherPipelines(validationContext, selectedPipeline);
@@ -100,8 +101,8 @@ public class PipelineConfigTreeValidator {
         for (Node.DependencyNode dependencyNode : dependenciesOfSelectedPipeline.getDependencies()) {
             if (dependencyNode.getPipelineName().equals(pipelineConfig.name())) {
                 for (MaterialConfig materialConfig : downstreamPipeline.materialConfigs()) {
-                    if (materialConfig instanceof DependencyMaterialConfig) {
-                        DependencyMaterialConfig dependencyMaterialConfig = ClonerFactory.instance().deepClone((DependencyMaterialConfig) materialConfig);
+                    if (materialConfig instanceof DependencyMaterialConfig config) {
+                        DependencyMaterialConfig dependencyMaterialConfig = ClonerFactory.instance().deepClone(config);
                         dependencyMaterialConfig.validate(validationContext.withParent(downstreamPipeline));
                         List<String> allErrors = dependencyMaterialConfig.errors().getAll();
                         for (String error : allErrors) {
@@ -118,7 +119,7 @@ public class PipelineConfigTreeValidator {
             for (JobConfig jobConfig : stageConfig.getJobs()) {
                 for (Task task : jobConfig.getTasks()) {
                     if (task instanceof FetchTask fetchTask) {
-                        if (fetchTask.getPipelineNamePathFromAncestor() != null && !StringUtils.isBlank(CaseInsensitiveString.str(fetchTask.getPipelineNamePathFromAncestor().getPath())) && fetchTask.getPipelineNamePathFromAncestor().pathIncludingAncestor().contains(pipelineConfig.name())) {
+                        if (fetchTask.getPipelineNamePathFromAncestor() != null && !isBlank(CaseInsensitiveString.str(fetchTask.getPipelineNamePathFromAncestor().getPath())) && fetchTask.getPipelineNamePathFromAncestor().pathIncludingAncestor().contains(pipelineConfig.name())) {
                             fetchTask = ClonerFactory.instance().deepClone(fetchTask);
                             fetchTask.validateTask(validationContext.withParent(downstreamPipeline).withParent(stageConfig).withParent(jobConfig));
                             List<String> allErrors = fetchTask.errors().getAll();
@@ -132,9 +133,9 @@ public class PipelineConfigTreeValidator {
         }
     }
 
-    private class PipelineConfigValidationContextDependencyState implements PipelineDependencyState {
-        private PipelineConfig pipelineConfig;
-        private PipelineConfigSaveValidationContext validationContext;
+    private static class PipelineConfigValidationContextDependencyState implements PipelineDependencyState {
+        private final PipelineConfig pipelineConfig;
+        private final PipelineConfigSaveValidationContext validationContext;
 
         public PipelineConfigValidationContextDependencyState(PipelineConfig pipelineConfig, PipelineConfigSaveValidationContext validationContext) {
             this.pipelineConfig = pipelineConfig;
@@ -148,8 +149,9 @@ public class PipelineConfigTreeValidator {
 
         @Override
         public Node getDependencyMaterials(CaseInsensitiveString pipelineName) {
-            if (pipelineConfig.name().equals(pipelineName))
+            if (pipelineConfig.name().equals(pipelineName)) {
                 return pipelineConfig.getDependenciesAsNode();
+            }
             return validationContext.getDependencyMaterialsFor(pipelineName);
         }
     }

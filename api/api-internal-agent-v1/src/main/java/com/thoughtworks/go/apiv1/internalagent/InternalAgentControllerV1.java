@@ -20,12 +20,14 @@ import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.apiv1.internalagent.representers.*;
 import com.thoughtworks.go.remote.AgentInstruction;
+import com.thoughtworks.go.remote.StandardHeaders;
 import com.thoughtworks.go.remote.request.*;
 import com.thoughtworks.go.remote.work.Work;
 import com.thoughtworks.go.server.messaging.BuildRepositoryMessageProducer;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import spark.Request;
@@ -51,7 +53,7 @@ public class InternalAgentControllerV1 extends ApiController implements SparkSpr
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
@@ -135,9 +137,9 @@ public class InternalAgentControllerV1 extends ApiController implements SparkSpr
 
     public void ensureAgentIsMakingARequestForItself(AgentRequest agentRequest, Request request) {
         String uuidInRuntimeInfo = agentRequest.getAgentRuntimeInfo().getUUId();
-        String uuidInRequest = request.headers("X-Agent-GUID");
+        String uuidInRequest = request.headers(StandardHeaders.REQUEST_UUID);
 
-        if (!StringUtils.equals(uuidInRequest, uuidInRuntimeInfo)) {
+        if (!Strings.CS.equals(uuidInRequest, uuidInRuntimeInfo)) {
             String message = String.format("Agent with uuid: '%s' is attempting a request for agent: '%s'.", uuidInRequest,
                     uuidInRuntimeInfo);
             haltBecauseForbidden(message);

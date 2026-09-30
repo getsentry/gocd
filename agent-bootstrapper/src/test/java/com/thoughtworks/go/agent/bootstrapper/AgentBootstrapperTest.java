@@ -19,20 +19,23 @@ import com.thoughtworks.cruise.agent.common.launcher.AgentLaunchDescriptor;
 import com.thoughtworks.cruise.agent.common.launcher.AgentLauncher;
 import com.thoughtworks.go.agent.common.AgentBootstrapperArgs;
 import com.thoughtworks.go.agent.common.util.Downloader;
-import com.thoughtworks.go.util.ReflectionUtil;
-import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.io.File;
+import java.io.IOException;
+import java.net.URI;
 import java.net.URL;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
+import static com.thoughtworks.go.agent.bootstrapper.AgentBootstrapper.returnDesc;
+import static com.thoughtworks.go.util.TestUtils.doInterruptiblyQuietlyRethrowInterrupt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -41,15 +44,18 @@ import static org.mockito.Mockito.spy;
 
 public class AgentBootstrapperTest {
 
+    private URL serverUrl;
+
     @BeforeEach
-    public void setUp() {
+    public void setUp() throws Exception {
         System.setProperty(AgentBootstrapper.WAIT_TIME_BEFORE_RELAUNCH_IN_MS, "0");
+        serverUrl = URI.create("http://ghost-name:3518/go").toURL();
     }
 
     @AfterEach
-    public void tearDown() {
+    public void tearDown() throws IOException {
         System.clearProperty(AgentBootstrapper.WAIT_TIME_BEFORE_RELAUNCH_IN_MS);
-        FileUtils.deleteQuietly(new File(Downloader.AGENT_LAUNCHER));
+        Files.deleteIfExists(new File(Downloader.AGENT_LAUNCHER).toPath());
     }
 
     @Test
@@ -90,29 +96,26 @@ public class AgentBootstrapperTest {
         final AgentBootstrapper spyBootstrapper = stubJVMExit(bootstrapper);
 
         Thread stopLoopThd = new Thread(() -> {
-            try {
-                waitForLauncherCreation.acquire();
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-            ReflectionUtil.setField(spyBootstrapper, "loop", false);
+            doInterruptiblyQuietlyRethrowInterrupt(waitForLauncherCreation::acquire);
+            spyBootstrapper.stopLooping();
         });
+        stopLoopThd.setDaemon(true);
         stopLoopThd.start();
         try {
-            spyBootstrapper.go(true, new AgentBootstrapperArgs().setServerUrl(new URL("http://" + "ghost-name" + ":" + 3518 + "/go")).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
+            spyBootstrapper.go(new AgentBootstrapperArgs().setServerUrl(serverUrl).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
             stopLoopThd.join();
         } catch (Exception e) {
-            fail("should not have propagated exception thrown while creating launcher");
+            stopLoopThd.interrupt();
+            fail("should not have propagated exception thrown while creating launcher", e);
         }
         assertThat(reLaunchWaitIsCalled[0]).isTrue();
     }
-
 
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     public void shouldNotRelaunchAgentLauncherWhenItReturnsAnIrrecoverableCode() {
         final boolean[] destroyCalled = new boolean[1];
-        final AgentBootstrapper bootstrapper = new AgentBootstrapper(){
+        final AgentBootstrapper bootstrapper = new AgentBootstrapper() {
 
             @Override
             AgentLauncherCreator getLauncherCreator() {
@@ -133,15 +136,14 @@ public class AgentBootstrapperTest {
         final AgentBootstrapper spyBootstrapper = stubJVMExit(bootstrapper);
 
         try {
-            spyBootstrapper.go(true, new AgentBootstrapperArgs().setServerUrl(new URL("http://" + "ghost-name" + ":" + 3518 + "/go")).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
+            spyBootstrapper.go(new AgentBootstrapperArgs().setServerUrl(serverUrl).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
         } catch (Exception e) {
-            fail("should not have propagated exception thrown while invoking the launcher");
+            fail("should not have propagated exception thrown while invoking the launcher", e);
         }
         assertThat(destroyCalled[0]).isTrue();
     }
 
     @Test
-    @Timeout(value = 10, unit = TimeUnit.SECONDS)
     public void shouldNotDieWhenInvocationOfLauncherRaisesException_butCreationOfLauncherWentThrough() throws InterruptedException {
         final Semaphore waitForLauncherInvocation = new Semaphore(1);
         waitForLauncherInvocation.acquire();
@@ -172,19 +174,17 @@ public class AgentBootstrapperTest {
         final AgentBootstrapper spyBootstrapper = stubJVMExit(bootstrapper);
 
         Thread stopLoopThd = new Thread(() -> {
-            try {
-                waitForLauncherInvocation.acquire();
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-            ReflectionUtil.setField(spyBootstrapper, "loop", false);
+            doInterruptiblyQuietlyRethrowInterrupt(waitForLauncherInvocation::acquire);
+            spyBootstrapper.stopLooping();
         });
+        stopLoopThd.setDaemon(true);
         stopLoopThd.start();
         try {
-            spyBootstrapper.go(true, new AgentBootstrapperArgs().setServerUrl(new URL("http://" + "ghost-name" + ":" + 3518 + "/go")).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
+            spyBootstrapper.go(new AgentBootstrapperArgs().setServerUrl(serverUrl).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
             stopLoopThd.join();
         } catch (Exception e) {
-            fail("should not have propagated exception thrown while invoking the launcher");
+            stopLoopThd.interrupt();
+            fail("should not have propagated exception thrown while invoking the launcher", e);
         }
     }
 
@@ -228,7 +228,7 @@ public class AgentBootstrapperTest {
             }
         };
         AgentBootstrapper spy = stubJVMExit(agentBootstrapper);
-        spy.go(true, new AgentBootstrapperArgs().setServerUrl(new URL("http://" + "localhost" + ":" + 80 + "/go")).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
+        spy.go(new AgentBootstrapperArgs().setServerUrl(URI.create("http://localhost:80/go").toURL()).setRootCertFile(null).setSslVerificationMode(AgentBootstrapperArgs.SslMode.NONE));
     }
 
     private AgentBootstrapper stubJVMExit(AgentBootstrapper bootstrapper) {
@@ -237,4 +237,12 @@ public class AgentBootstrapperTest {
         return spy;
     }
 
+    @Test
+    void shouldFormatLauncherReturnDescriptions() {
+        assertThat(returnDesc(0xBADBAD)).isEqualTo("IRRECOVERABLE_ERROR (12245933 / 0xbadbad)");
+        assertThat(returnDesc(60)).isEqualTo("NOT_UP_TO_DATE (60 / 0x3c)");
+        assertThat(returnDesc(0)).isEqualTo("DONE (0 / 0x0)");
+        assertThat(returnDesc(-1)).isEqualTo("UNKNOWN (-1 / 0xffffffff)");
+        assertThat(returnDesc(-373)).isEqualTo("AGENT_FATAL_EXCEPTION_OCCURRED (-373 / 0xfffffe8b)");
+    }
 }

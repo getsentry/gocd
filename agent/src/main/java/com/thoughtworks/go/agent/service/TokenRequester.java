@@ -15,9 +15,8 @@
  */
 package com.thoughtworks.go.agent.service;
 
-import com.thoughtworks.go.agent.common.ssl.GoAgentServerHttpClient;
+import com.thoughtworks.go.agent.common.GoAgentServerHttpClient;
 import com.thoughtworks.go.config.AgentRegistry;
-import org.apache.commons.io.IOUtils;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.client.methods.RequestBuilder;
@@ -30,7 +29,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
-import static org.apache.http.HttpStatus.SC_OK;
+import static java.net.HttpURLConnection.HTTP_OK;
 
 public class TokenRequester {
     private static final Logger LOGGER = LoggerFactory.getLogger(TokenRequester.class);
@@ -52,8 +51,7 @@ public class TokenRequester {
                 .build();
 
         try (CloseableHttpResponse response = httpClient.execute(getTokenRequest)) {
-            if (response.getStatusLine().getStatusCode() == SC_OK) {
-                LOGGER.info("The server has generated token for the agent.");
+            if (response.getStatusLine().getStatusCode() == HTTP_OK) {
                 return responseBody(response);
             } else {
                 LOGGER.error("[Agent Registration] Got status {} from GoCD", response.getStatusLine());
@@ -64,14 +62,12 @@ public class TokenRequester {
                     .orElseGet(() -> responseBody(response));
                 throw new RuntimeException(String.format("Agent registration could not acquire token due to %s: %s", response.getStatusLine(), error));
             }
-        } finally {
-            getTokenRequest.releaseConnection();
         }
     }
 
     private String responseBody(CloseableHttpResponse response) {
         try (InputStream is = response.getEntity() == null ? InputStream.nullInputStream() : response.getEntity().getContent()) {
-            return IOUtils.toString(is, StandardCharsets.UTF_8);
+            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

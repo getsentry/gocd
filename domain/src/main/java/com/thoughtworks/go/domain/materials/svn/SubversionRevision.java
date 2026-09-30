@@ -17,7 +17,7 @@ package com.thoughtworks.go.domain.materials.svn;
 
 import com.thoughtworks.go.domain.materials.Revision;
 import com.thoughtworks.go.domain.materials.mercurial.StringRevision;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 
 public class SubversionRevision extends StringRevision {
 
@@ -40,11 +40,9 @@ public class SubversionRevision extends StringRevision {
         if (this == o) {
             return true;
         }
-        if (!(o instanceof SubversionRevision that)) {
-            return false;
-        }
+        return o instanceof SubversionRevision that &&
+            Strings.CI.equals(revision, that.revision);
 
-        return StringUtils.equalsIgnoreCase(revision, that.revision);
     }
 
     @Override

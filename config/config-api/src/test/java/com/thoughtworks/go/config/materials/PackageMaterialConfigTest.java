@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.git;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -36,7 +37,7 @@ public class PackageMaterialConfigTest {
         packageMaterialConfig.validateConcreteMaterial(new ConfigSaveValidationContext(null, null));
 
         assertThat(packageMaterialConfig.errors().getAll().size()).isEqualTo(1);
-        assertThat(packageMaterialConfig.errors().on(PackageMaterialConfig.PACKAGE_ID)).isEqualTo("Please select a repository and package");
+        assertThat(packageMaterialConfig.errors().firstErrorOn(PackageMaterialConfig.PACKAGE_ID)).isEqualTo("Please select a repository and package");
     }
 
     @Test
@@ -45,13 +46,13 @@ public class PackageMaterialConfigTest {
         when(configSaveValidationContext.findPackageById(anyString())).thenReturn(mock(PackageRepository.class));
         PackageRepository packageRepository = mock(PackageRepository.class);
         when(packageRepository.doesPluginExist()).thenReturn(true);
-        PackageMaterialConfig packageMaterialConfig = new PackageMaterialConfig(new CaseInsensitiveString("package-name"), "package-id", PackageDefinitionMother.create("package-id"));
+        PackageMaterialConfig packageMaterialConfig = new PackageMaterialConfig(cis("package-name"), "package-id", PackageDefinitionMother.create("package-id"));
         packageMaterialConfig.getPackageDefinition().setRepository(packageRepository);
 
         packageMaterialConfig.validateTree(configSaveValidationContext);
 
         assertThat(packageMaterialConfig.errors().getAll().size()).isEqualTo(1);
-        assertThat(packageMaterialConfig.errors().on(PackageMaterialConfig.PACKAGE_ID)).isEqualTo("Could not find plugin for given package id:[package-id].");
+        assertThat(packageMaterialConfig.errors().firstErrorOn(PackageMaterialConfig.PACKAGE_ID)).isEqualTo("Could not find plugin for given package id:[package-id].");
     }
 
     @Test
@@ -60,13 +61,13 @@ public class PackageMaterialConfigTest {
         when(configSaveValidationContext.findPackageById(anyString())).thenReturn(mock(PackageRepository.class));
         PackageRepository packageRepository = mock(PackageRepository.class);
         when(packageRepository.doesPluginExist()).thenReturn(false);
-        PackageMaterialConfig packageMaterialConfig = new PackageMaterialConfig(new CaseInsensitiveString("package-name"), "package-id", PackageDefinitionMother.create("package-id"));
+        PackageMaterialConfig packageMaterialConfig = new PackageMaterialConfig(cis("package-name"), "package-id", PackageDefinitionMother.create("package-id"));
         packageMaterialConfig.getPackageDefinition().setRepository(packageRepository);
 
         packageMaterialConfig.validateTree(configSaveValidationContext);
 
         assertThat(packageMaterialConfig.errors().getAll().size()).isEqualTo(1);
-        assertThat(packageMaterialConfig.errors().on(PackageMaterialConfig.PACKAGE_ID)).isEqualTo("Could not find plugin for given package id:[package-id].");
+        assertThat(packageMaterialConfig.errors().firstErrorOn(PackageMaterialConfig.PACKAGE_ID)).isEqualTo("Could not find plugin for given package id:[package-id].");
     }
 
     @Test
@@ -75,15 +76,15 @@ public class PackageMaterialConfigTest {
 
         Map<CaseInsensitiveString, AbstractMaterialConfig> nameToMaterialMap = new HashMap<>();
         PackageMaterialConfig existingMaterial = new PackageMaterialConfig("package-id");
-        nameToMaterialMap.put(new CaseInsensitiveString("package-id"), existingMaterial);
-        nameToMaterialMap.put(new CaseInsensitiveString("foo"), git("url"));
+        nameToMaterialMap.put(cis("package-id"), existingMaterial);
+        nameToMaterialMap.put(cis("foo"), git("url"));
 
         packageMaterialConfig.validateNameUniqueness(nameToMaterialMap);
 
         assertThat(packageMaterialConfig.errors().getAll().size()).isEqualTo(1);
-        assertThat(packageMaterialConfig.errors().on(PackageMaterialConfig.PACKAGE_ID)).isEqualTo("Duplicate package material detected!");
+        assertThat(packageMaterialConfig.errors().firstErrorOn(PackageMaterialConfig.PACKAGE_ID)).isEqualTo("Duplicate package material detected!");
         assertThat(existingMaterial.errors().getAll().size()).isEqualTo(1);
-        assertThat(existingMaterial.errors().on(PackageMaterialConfig.PACKAGE_ID)).isEqualTo("Duplicate package material detected!");
+        assertThat(existingMaterial.errors().firstErrorOn(PackageMaterialConfig.PACKAGE_ID)).isEqualTo("Duplicate package material detected!");
         assertThat(nameToMaterialMap.size()).isEqualTo(2);
     }
 
@@ -92,8 +93,8 @@ public class PackageMaterialConfigTest {
         PackageMaterialConfig packageMaterialConfig = new PackageMaterialConfig("package-id");
 
         Map<CaseInsensitiveString, AbstractMaterialConfig> nameToMaterialMap = new HashMap<>();
-        nameToMaterialMap.put(new CaseInsensitiveString("repo-name:pkg-name"), new PackageMaterialConfig("package-id-new"));
-        nameToMaterialMap.put(new CaseInsensitiveString("foo"), git("url"));
+        nameToMaterialMap.put(cis("repo-name:pkg-name"), new PackageMaterialConfig("package-id-new"));
+        nameToMaterialMap.put(cis("foo"), git("url"));
 
         packageMaterialConfig.validateNameUniqueness(nameToMaterialMap);
 
@@ -173,6 +174,7 @@ public class PackageMaterialConfigTest {
         p2 = new PackageMaterialConfig();
         assertThat(p1.equals(p2)).isFalse();
 
+        //noinspection ConstantValue
         assertThat(p1.equals(null)).isFalse();
     }
 
@@ -180,7 +182,7 @@ public class PackageMaterialConfigTest {
     public void shouldDelegateToPackageDefinitionForAutoUpdate() {
         PackageDefinition packageDefinition = mock(PackageDefinition.class);
         when(packageDefinition.isAutoUpdate()).thenReturn(false);
-        PackageMaterialConfig materialConfig = new PackageMaterialConfig(new CaseInsensitiveString("name"), "package-id", packageDefinition);
+        PackageMaterialConfig materialConfig = new PackageMaterialConfig(cis("name"), "package-id", packageDefinition);
 
         assertThat(materialConfig.isAutoUpdate()).isFalse();
 

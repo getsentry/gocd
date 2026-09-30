@@ -1,38 +1,23 @@
-<%
-#########################################################################
-# Copyright Thoughtworks, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#########################################################################
--%>
+<%#
+  Copyright Thoughtworks, Inc.
 
-<%= ERB.new(File.read(File.join(install_scripts_dir, 'shared', 'partials', "_#{name}-config-migration.sh.erb")), trim_mode: '-', eoutvar: "_#{SecureRandom.hex}").result(binding) %>
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
 
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+%>
+
+    # Check if the service is running, and stop it before upgrading
     rm -rf /var/run/<%= name %>-running-check-from-deb-package
-
-    # Prior to GoCD v19.6.0 Check if go-agent is running using /etc/init.d
-    if [ -f "/etc/init.d/<%= name %>" ]; then
-      # Use /etc/init.d/SCRIPT status to determine service is running or not.
-      if /etc/init.d/<%= name %> status > /dev/null 2>&1; then
-        mkdir -p /var/run/<%= name %>-running-check-from-deb-package
-        touch /var/run/<%= name %>-running-check-from-deb-package/running
-        /etc/init.d/<%= name %> stop || true
-      fi
-    else
-      # Use invoke-rc.d SCRIPT status to determine service is running or not.
-      if invoke-rc.d <%= name %> status > /dev/null 2>&1; then
-        mkdir -p /var/run/<%= name %>-running-check-from-deb-package
-        touch /var/run/<%= name %>-running-check-from-deb-package/running
-        invoke-rc.d <%= name %> stop || true
-      fi
+    if invoke-rc.d <%= name %> status > /dev/null 2>&1; then
+      mkdir -p /var/run/<%= name %>-running-check-from-deb-package
+      touch /var/run/<%= name %>-running-check-from-deb-package/running
+      invoke-rc.d <%= name %> stop || true
     fi

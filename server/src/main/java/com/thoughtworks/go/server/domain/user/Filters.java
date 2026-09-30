@@ -25,14 +25,14 @@ import static com.thoughtworks.go.server.domain.user.DashboardFilter.DEFAULT_NAM
 import static com.thoughtworks.go.server.domain.user.Marshaling.*;
 
 public class Filters {
-    private static final Gson GSON = new GsonBuilder().
-            registerTypeAdapter(Filters.class, new FiltersDeserializer()).
-            registerTypeAdapter(Filters.class, new FiltersSerializer()).
-            registerTypeAdapter(DashboardFilter.class, new DashboardFilterDeserializer()).
-            registerTypeAdapter(DashboardFilter.class, new DashboardFilterSerializer()).
-            registerTypeAdapter(CaseInsensitiveString.class, new CaseInsensitiveStringDeserializer()).
-            registerTypeAdapter(CaseInsensitiveString.class, new CaseInsensitiveStringSerializer()).
-            create();
+    private static final Gson GSON = new GsonBuilder()
+        .registerTypeAdapter(Filters.class, new FiltersDeserializer())
+        .registerTypeAdapter(Filters.class, new FiltersSerializer())
+        .registerTypeAdapter(DashboardFilter.class, new DashboardFilterDeserializer())
+        .registerTypeAdapter(DashboardFilter.class, new DashboardFilterSerializer())
+        .registerTypeAdapter(CaseInsensitiveString.class, new CaseInsensitiveStringDeserializer())
+        .registerTypeAdapter(CaseInsensitiveString.class, new CaseInsensitiveStringSerializer())
+        .create();
 
     public static final DashboardFilter WILDCARD_FILTER = new ExcludesFilter(DEFAULT_NAME, Collections.emptyList(), new HashSet<>());
 
@@ -65,7 +65,7 @@ public class Filters {
 
     public DashboardFilter named(String name) {
         FilterValidator.validateNamePresent(name);
-        return this.filterMap.getOrDefault(name.toLowerCase(), filters.get(0));
+        return this.filterMap.getOrDefault(name.toLowerCase(), filters.getFirst());
     }
 
     public List<DashboardFilter> filters() {
@@ -74,7 +74,7 @@ public class Filters {
 
     private void updateIndex() {
         this.filterMap = new HashMap<>();
-        this.filters.forEach((f) -> {
+        this.filters.forEach(f -> {
             FilterValidator.validateFilter(filterMap, f);
             filterMap.put(f.name().toLowerCase(), f);
         });
@@ -84,8 +84,12 @@ public class Filters {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         Filters that = (Filters) o;
         return Objects.equals(filters, that.filters);
     }

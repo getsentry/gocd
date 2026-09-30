@@ -22,15 +22,17 @@ import com.thoughtworks.go.domain.NullTask;
 import com.thoughtworks.go.domain.Task;
 import com.thoughtworks.go.service.TaskFactory;
 import com.thoughtworks.go.util.XmlUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.TestOnly;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.commons.lang3.StringUtils.isEmpty;
 
 /**
  * Understands configuratin for a job
@@ -103,7 +105,7 @@ public class JobConfig implements Validatable, ParamsAttributeAware, Environment
     }
 
     public JobConfig(String planName) {
-        this(new CaseInsensitiveString(planName), new ResourceConfigs(), new ArtifactTypeConfigs());
+        this(cis(planName), new ResourceConfigs(), new ArtifactTypeConfigs());
     }
 
     @Override
@@ -112,7 +114,7 @@ public class JobConfig implements Validatable, ParamsAttributeAware, Environment
     }
 
     public void setName(String name) {
-        setName(new CaseInsensitiveString(name));
+        setName(cis(name));
     }
 
     public void setName(CaseInsensitiveString name) {
@@ -130,24 +132,25 @@ public class JobConfig implements Validatable, ParamsAttributeAware, Environment
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         JobConfig jobConfig = (JobConfig) o;
 
-        if (runOnAllAgents != jobConfig.runOnAllAgents) return false;
-        if (jobName != null ? !jobName.equals(jobConfig.jobName) : jobConfig.jobName != null) return false;
-        if (variables != null ? !variables.equals(jobConfig.variables) : jobConfig.variables != null) return false;
-        if (tasks != null ? !tasks.equals(jobConfig.tasks) : jobConfig.tasks != null) return false;
-        if (tabs != null ? !tabs.equals(jobConfig.tabs) : jobConfig.tabs != null) return false;
-        if (resourceConfigs != null ? !resourceConfigs.equals(jobConfig.resourceConfigs) : jobConfig.resourceConfigs != null)
-            return false;
-        if (artifactTypeConfigs != null ? !artifactTypeConfigs.equals(jobConfig.artifactTypeConfigs) : jobConfig.artifactTypeConfigs != null)
-            return false;
-        if (runInstanceCount != null ? !runInstanceCount.equals(jobConfig.runInstanceCount) : jobConfig.runInstanceCount != null)
-            return false;
-        if (timeout != null ? !timeout.equals(jobConfig.timeout) : jobConfig.timeout != null) return false;
-        return elasticProfileId != null ? elasticProfileId.equals(jobConfig.elasticProfileId) : jobConfig.elasticProfileId == null;
+        return runOnAllAgents == jobConfig.runOnAllAgents &&
+            Objects.equals(jobName, jobConfig.jobName) &&
+            Objects.equals(variables, jobConfig.variables) &&
+            Objects.equals(tasks, jobConfig.tasks) &&
+            Objects.equals(tabs, jobConfig.tabs) &&
+            Objects.equals(resourceConfigs, jobConfig.resourceConfigs) &&
+            Objects.equals(artifactTypeConfigs, jobConfig.artifactTypeConfigs) &&
+            Objects.equals(runInstanceCount, jobConfig.runInstanceCount) &&
+            Objects.equals(timeout, jobConfig.timeout) &&
+            Objects.equals(elasticProfileId, jobConfig.elasticProfileId);
 
     }
 
@@ -204,11 +207,11 @@ public class JobConfig implements Validatable, ParamsAttributeAware, Environment
 
     public Tasks getTasksForView() {
         return tasks.stream().map(task -> {
-            if (task instanceof FetchTask) {
-                return new FetchTaskAdapter((FetchTask) task);
+            if (task instanceof FetchTask fetchTask) {
+                return new FetchTaskAdapter(fetchTask);
             }
-            if (task instanceof FetchPluggableArtifactTask) {
-                return new FetchTaskAdapter((FetchPluggableArtifactTask) task);
+            if (task instanceof FetchPluggableArtifactTask fetchPluggableArtifactTask) {
+                return new FetchTaskAdapter(fetchPluggableArtifactTask);
             }
             return task;
         }).collect(Collectors.toCollection(Tasks::new));
@@ -249,7 +252,7 @@ public class JobConfig implements Validatable, ParamsAttributeAware, Environment
         return runInstanceCount;
     }
 
-    public void setRunInstanceCount(Integer runInstanceCount) {
+    public void setRunInstanceCount(int runInstanceCount) {
         setRunInstanceCount(Integer.toString(runInstanceCount));
     }
 
@@ -310,15 +313,6 @@ public class JobConfig implements Validatable, ParamsAttributeAware, Environment
         return variables.hasVariable(variableName);
     }
 
-    public boolean hasTests() {
-        for (ArtifactTypeConfig artifactTypeConfig : artifactTypeConfigs) {
-            if (artifactTypeConfig.getArtifactType().isTest()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     public boolean validateTree(ValidationContext validationContext) {
         validate(validationContext);
         boolean isValid = errors.isEmpty();
@@ -337,8 +331,8 @@ public class JobConfig implements Validatable, ParamsAttributeAware, Environment
         artifactConfigs.forEach(artifactConfig -> artifactConfig.encryptSecureProperties(preprocessedConfig, preprocessedArtifactConfigs.get(artifactConfigs.indexOf(artifactConfig))));
 
         tasks.forEach(task -> {
-            if (task instanceof FetchPluggableArtifactTask) {
-                ((FetchPluggableArtifactTask) task).encryptSecureProperties(preprocessedConfig, preprocessedPipelineConfig, (FetchPluggableArtifactTask) preprocessedJobConfig.getTasks().get(tasks.indexOf(task)));
+            if (task instanceof FetchPluggableArtifactTask fetchPluggableArtifactTask) {
+                fetchPluggableArtifactTask.encryptSecureProperties(preprocessedConfig, preprocessedPipelineConfig, (FetchPluggableArtifactTask) preprocessedJobConfig.getTasks().get(tasks.indexOf(task)));
             }
         });
     }
@@ -359,7 +353,7 @@ public class JobConfig implements Validatable, ParamsAttributeAware, Environment
         if (isBlank(CaseInsensitiveString.str(jobName))) {
             errors.add(NAME, "Name is a required field");
         } else {
-            if ((CaseInsensitiveString.str(jobName).length() > 255 || XmlUtils.doesNotMatchUsingXsdRegex(JOB_NAME_PATTERN_REGEX, CaseInsensitiveString.str(jobName)))) {
+            if (CaseInsensitiveString.str(jobName).length() > 255 || XmlUtils.doesNotMatchUsingXsdRegex(JOB_NAME_PATTERN_REGEX, CaseInsensitiveString.str(jobName))) {
                 String message = String.format("Invalid job name '%s'. This must be alphanumeric and may contain underscores and periods. The maximum allowed length is %d characters.", jobName,
                     NameTypeValidator.MAX_LENGTH);
                 errors.add(NAME, message);
@@ -410,7 +404,7 @@ public class JobConfig implements Validatable, ParamsAttributeAware, Environment
             errors().add(ELASTIC_PROFILE_ID, "Must not be a blank string");
         }
         for (ResourceConfig resourceConfig : resourceConfigs) {
-            if (StringUtils.isEmpty(resourceConfig.getName())) {
+            if (isEmpty(resourceConfig.getName())) {
                 CaseInsensitiveString pipelineName = validationContext.getPipeline().name();
                 CaseInsensitiveString stageName = validationContext.getStage().name();
                 String message = String.format("Empty resource name in job \"%s\" of stage \"%s\" of pipeline \"%s\". If a template is used, please ensure that the resource parameters are defined for this pipeline.", jobName, stageName, pipelineName);
@@ -439,7 +433,7 @@ public class JobConfig implements Validatable, ParamsAttributeAware, Environment
         @SuppressWarnings("unchecked") Map<String, ?> attributesMap = (Map<String, ?>) attributes;
         if (attributesMap.containsKey(NAME)) {
             String nameString = (String) attributesMap.get(NAME);
-            jobName = nameString == null ? null : new CaseInsensitiveString(nameString);
+            jobName = nameString == null ? null : cis(nameString);
         }
         if (attributesMap.containsKey("elasticProfileId")) {
             String elasticProfileId = (String) attributesMap.get("elasticProfileId");
@@ -505,7 +499,9 @@ public class JobConfig implements Validatable, ParamsAttributeAware, Environment
     }
 
     public void validateNameUniqueness(Map<String, JobConfig> visitedConfigs) {
-        if (isBlank(CaseInsensitiveString.str(name()))) return;
+        if (isBlank(CaseInsensitiveString.str(name()))) {
+            return;
+        }
 
         String currentJob = name().toLower();
         if (visitedConfigs.containsKey(CaseInsensitiveString.str(name())) || visitedConfigs.containsKey(currentJob)) {
@@ -539,10 +535,12 @@ public class JobConfig implements Validatable, ParamsAttributeAware, Environment
     }
 
     public String getRunType() {
-        if (isRunOnAllAgents())
+        if (isRunOnAllAgents()) {
             return RUN_ON_ALL_AGENTS;
-        if (isRunMultipleInstanceType())
+        }
+        if (isRunMultipleInstanceType()) {
             return RUN_MULTIPLE_INSTANCE;
+        }
         return RUN_SINGLE_INSTANCE;
     }
 

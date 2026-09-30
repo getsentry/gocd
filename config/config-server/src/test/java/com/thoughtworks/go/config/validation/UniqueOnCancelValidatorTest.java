@@ -24,7 +24,6 @@ import org.jdom2.Element;
 import org.jdom2.JDOMException;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -249,14 +248,14 @@ public class UniqueOnCancelValidatorTest {
         }
     }
 
-    @SafeVarargs
+    @SafeVarargs @SuppressWarnings("varargs")
     private List<Class<? extends Task>> tasks(Class<? extends Task>... taskClasses) {
         List<Class<? extends Task>> tasks = new ArrayList<>();
         Collections.addAll(tasks, taskClasses);
         return tasks;
     }
 
-    private Element elementFor(String content) throws JDOMException, IOException {
+    private Element elementFor(String content) throws JDOMException {
         return XmlUtils.buildXmlDocument(content).getRootElement();
     }
 }

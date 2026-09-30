@@ -18,17 +18,12 @@ package com.thoughtworks.go.config;
 import com.thoughtworks.go.domain.SecureSiteUrl;
 import com.thoughtworks.go.domain.SiteUrl;
 import com.thoughtworks.go.security.GoCipher;
-import com.thoughtworks.go.util.SystemEnvironment;
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.annotation.PostConstruct;
-import java.io.File;
-import java.io.IOException;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -43,14 +38,14 @@ public class ServerConfigTest {
     }
 
     @Test
-    public void shouldReturnSiteUrlAsSecurePreferedSiteUrlIfSecureSiteUrlIsNotDefined() {
+    public void shouldReturnSiteUrlAsSecurePreferredSiteUrlIfSecureSiteUrlIsNotDefined() {
         defaultServerConfig.setSiteUrl("http://example.com");
         defaultServerConfig.setSecureSiteUrl(null);
         assertThat(defaultServerConfig.getSiteUrlPreferablySecured().getUrl()).isEqualTo("http://example.com");
     }
 
     @Test
-    public void shouldReturnSecureSiteUrlAsSecurePreferedSiteUrlIfBothSiteUrlAndSecureSiteUrlIsDefined() {
+    public void shouldReturnSecureSiteUrlAsSecurePreferredSiteUrlIfBothSiteUrlAndSecureSiteUrlIsDefined() {
         defaultServerConfig.setSiteUrl("http://example.com");
         defaultServerConfig.setSecureSiteUrl("https://example.com");
         assertThat(defaultServerConfig.getSiteUrlPreferablySecured().getUrl()).isEqualTo("https://example.com");
@@ -77,10 +72,7 @@ public class ServerConfigTest {
     }
 
     @Test
-    public void shouldNotUpdatePasswordForMailHostIfNotChangedOrNull() throws IOException {
-        File cipherFile = new SystemEnvironment().getDESCipherFile();
-        FileUtils.deleteQuietly(cipherFile);
-        FileUtils.writeStringToFile(cipherFile, "269298bc31c44620", UTF_8);
+    public void shouldNotUpdatePasswordForMailHostIfNotChangedOrNull() {
         GoCipher goCipher = new GoCipher();
         MailHost mailHost = new MailHost("abc", 12, "admin", "p", null, true, true, "anc@mail.com", "anc@mail.com", goCipher);
         ServerConfig serverConfig = new ServerConfig(null, mailHost, null, null);
@@ -126,7 +118,7 @@ public class ServerConfigTest {
         ServerConfig serverConfig = new ServerConfig("artifacts", new SecurityConfig(), 10, 20, "30M");
         serverConfig.validate(null);
         assertThat(serverConfig.errors().isEmpty()).isFalse();
-        assertThat(serverConfig.errors().on(ServerConfig.JOB_TIMEOUT)).isEqualTo("Timeout should be a valid number as it represents number of minutes");
+        assertThat(serverConfig.errors().firstErrorOn(ServerConfig.JOB_TIMEOUT)).isEqualTo("Timeout should be a valid number as it represents number of minutes");
     }
 
     @Test
@@ -143,7 +135,7 @@ public class ServerConfigTest {
         assertNull(serverConfig.getAgentAutoRegisterKey());
         assertNotNull(serverConfig.getClass().getMethod("ensureAgentAutoregisterKeyExists").getAnnotation(PostConstruct.class));
         serverConfig.ensureAgentAutoregisterKeyExists();
-        assertTrue(StringUtils.isNotBlank(serverConfig.getAgentAutoRegisterKey()));
+        assertTrue(isNotBlank(serverConfig.getAgentAutoRegisterKey()));
     }
 
     @Test
@@ -152,7 +144,7 @@ public class ServerConfigTest {
         assertNull(serverConfig.getWebhookSecret());
         assertNotNull(serverConfig.getClass().getMethod("ensureWebhookSecretExists").getAnnotation(PostConstruct.class));
         serverConfig.ensureWebhookSecretExists();
-        assertTrue(StringUtils.isNotBlank(serverConfig.getWebhookSecret()));
+        assertTrue(isNotBlank(serverConfig.getWebhookSecret()));
     }
 
     @Test
@@ -161,7 +153,7 @@ public class ServerConfigTest {
         assertNull(serverConfig.getTokenGenerationKey());
         assertNotNull(serverConfig.getClass().getMethod("ensureTokenGenerationKeyExists").getAnnotation(PostConstruct.class));
         serverConfig.ensureTokenGenerationKeyExists();
-        assertTrue(StringUtils.isNotBlank(serverConfig.getTokenGenerationKey()));
+        assertTrue(isNotBlank(serverConfig.getTokenGenerationKey()));
     }
 
 
@@ -171,6 +163,6 @@ public class ServerConfigTest {
         assertNull(serverConfig.getArtifactConfig().getArtifactsDir().getArtifactDir());
         assertNotNull(serverConfig.getClass().getMethod("ensureArtifactConfigExists").getAnnotation(PostConstruct.class));
         serverConfig.ensureArtifactConfigExists();
-        assertTrue(StringUtils.isNotBlank(serverConfig.getArtifactConfig().getArtifactsDir().getArtifactDir()));
+        assertTrue(isNotBlank(serverConfig.getArtifactConfig().getArtifactsDir().getArtifactDir()));
     }
 }

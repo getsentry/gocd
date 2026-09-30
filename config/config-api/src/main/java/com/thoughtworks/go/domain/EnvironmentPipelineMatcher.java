@@ -20,6 +20,8 @@ import com.thoughtworks.go.config.EnvironmentPipelinesConfig;
 
 import java.util.List;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+
 /**
  * Understands how to reference an logical grouping of machines
  */
@@ -36,16 +38,17 @@ public class EnvironmentPipelineMatcher {
 
     @Override
     public boolean equals(Object that) {
-        if (this == that) { return true; }
-        if (that == null) { return false; }
-        if (getClass() != that.getClass()) { return false; }
+        if (this == that) {
+            return true;
+        }
+        if (that == null) {
+            return false;
+        }
+        if (getClass() != that.getClass()) {
+            return false;
+        }
 
-        return equals((EnvironmentPipelineMatcher) that);
-    }
-
-    private boolean equals(EnvironmentPipelineMatcher that) {
-        if (!name.equals(that.name)) { return false; }
-        return true;
+        return name.equals(((EnvironmentPipelineMatcher) that).name);
     }
 
     @Override
@@ -62,7 +65,7 @@ public class EnvironmentPipelineMatcher {
     }
 
     public boolean hasPipeline(String pipelineName) {
-        return pipelineConfigs.containsPipelineNamed(new CaseInsensitiveString(pipelineName));
+        return pipelineConfigs.containsPipelineNamed(cis(pipelineName));
     }
 
     public CaseInsensitiveString name() {

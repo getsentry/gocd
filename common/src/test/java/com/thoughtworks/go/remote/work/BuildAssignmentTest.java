@@ -15,9 +15,7 @@
  */
 package com.thoughtworks.go.remote.work;
 
-import com.google.gson.Gson;
 import com.thoughtworks.go.config.ArtifactStores;
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.SecretParam;
 import com.thoughtworks.go.config.SecretParams;
 import com.thoughtworks.go.config.materials.PackageMaterial;
@@ -40,6 +38,7 @@ import com.thoughtworks.go.helper.ModificationsMother;
 import com.thoughtworks.go.helper.SvnTestRepo;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
+import com.thoughtworks.go.util.json.JsonHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -51,6 +50,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.MaterialsMother.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -72,9 +72,9 @@ public class BuildAssignmentTest {
         svnRepoFixture = new SvnTestRepo(tempDir);
 
         svnMaterial = new SvnMaterial(new SvnCommand(null, svnRepoFixture.end2endRepositoryUrl()));
-        dependencyMaterial = new DependencyMaterial(new CaseInsensitiveString("upstream1"), new CaseInsensitiveString(STAGE_NAME));
-        dependencyMaterialWithName = new DependencyMaterial(new CaseInsensitiveString("upstream2"), new CaseInsensitiveString(STAGE_NAME));
-        dependencyMaterialWithName.setName(new CaseInsensitiveString("dependency_material_name"));
+        dependencyMaterial = new DependencyMaterial(cis("upstream1"), cis(STAGE_NAME));
+        dependencyMaterialWithName = new DependencyMaterial(cis("upstream2"), cis(STAGE_NAME));
+        dependencyMaterialWithName.setName(cis("dependency_material_name"));
         setupHgRepo(tempDir);
     }
 
@@ -163,8 +163,8 @@ public class BuildAssignmentTest {
         Map<String, String> additionalData = new HashMap<>();
         additionalData.put("a1", "v1");
         additionalData.put("a2", "v2");
-        String additionalDataAsString = new Gson().toJson(additionalData);
-        packageMaterialRevision.getModifications().first().setAdditionalData(additionalDataAsString);
+        String additionalDataAsString = JsonHelper.toJson(additionalData);
+        packageMaterialRevision.getModifications().getFirst().setAdditionalData(additionalDataAsString);
         MaterialRevisions materialRevisions = new MaterialRevisions(packageMaterialRevision);
         BuildCause buildCause = BuildCause.createWithModifications(materialRevisions, "user1");
 
@@ -173,7 +173,7 @@ public class BuildAssignmentTest {
         assertThat(buildAssignment.getBuildApprover()).isEqualTo("user1");
         assertThat(buildAssignment.materialRevisions().getRevisions().size()).isEqualTo(materialRevisions.getRevisions().size());
         assertRevisions(buildAssignment, packageMaterialRevision);
-        Modification actualModification = buildAssignment.materialRevisions().getRevisions().get(0).getModification(0);
+        Modification actualModification = buildAssignment.materialRevisions().getRevisions().getFirst().getModification(0);
         assertThat(actualModification.getAdditionalData()).isEqualTo(additionalDataAsString);
         assertThat(actualModification.getAdditionalDataMap()).isEqualTo(additionalData);
     }
@@ -266,7 +266,7 @@ public class BuildAssignmentTest {
             environmentVariableContext.setProperty("Token", "{{SECRET:[secret_config_id][token]}}", false);
 
             ConfigurationProperty k1 = ConfigurationPropertyMother.create("k1", false, "{{SECRET:[secret_config_id][token]}}");
-            k1.getSecretParams().get(0).setValue("resolved-value");
+            k1.getSecretParams().getFirst().setValue("resolved-value");
             ConfigurationProperty k2 = ConfigurationPropertyMother.create("k2", false, "v2");
             PluggableSCMMaterial pluggableSCMMaterial = pluggableSCMMaterial("scm-id", "scm-name", k1, k2);
             MaterialRevision gitRevision = new MaterialRevision(pluggableSCMMaterial, new Modification());
@@ -286,7 +286,7 @@ public class BuildAssignmentTest {
             environmentVariableContext.setProperty("Token", "{{SECRET:[secret_config_id][token]}}", false);
 
             ConfigurationProperty k1 = ConfigurationPropertyMother.create("k1", false, "{{SECRET:[secret_config_id][token]}}");
-            k1.getSecretParams().get(0).setValue("resolved-value");
+            k1.getSecretParams().getFirst().setValue("resolved-value");
             PackageMaterial packageMaterial = packageMaterial();
             MaterialRevision gitRevision = new MaterialRevision(packageMaterial, new Modification());
             BuildCause buildCause = BuildCause.createManualForced(new MaterialRevisions(gitRevision), Username.ANONYMOUS);
@@ -324,7 +324,7 @@ public class BuildAssignmentTest {
                 ModificationsMother.oneModifiedFile(svnRepoFixture.latestRevision()));
 
         MaterialRevision hgRevision = new MaterialRevision(hgMaterial,
-                ModificationsMother.oneModifiedFile(hgTestRepo.latestModifications().get(0).getRevision()));
+                ModificationsMother.oneModifiedFile(hgTestRepo.latestModifications().getFirst().getRevision()));
 
         MaterialRevision dependencyRevision1 = ModificationsMother.dependencyMaterialRevision(0,
                 dependencyMaterial.getPipelineName() + "-label", 1,

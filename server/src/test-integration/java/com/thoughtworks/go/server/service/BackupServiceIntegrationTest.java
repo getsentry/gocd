@@ -33,17 +33,12 @@ import com.thoughtworks.go.server.messaging.SendEmailMessage;
 import com.thoughtworks.go.server.messaging.ServerBackupQueue;
 import com.thoughtworks.go.server.persistence.ServerBackupRepository;
 import com.thoughtworks.go.server.service.backup.BackupUpdateListener;
-import com.thoughtworks.go.service.ConfigRepository;
 import com.thoughtworks.go.util.*;
 import com.thoughtworks.go.util.command.InMemoryStreamConsumer;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.filefilter.NameFileFilter;
 import org.apache.commons.io.filefilter.TrueFileFilter;
-import org.joda.time.DateTime;
-import org.joda.time.format.DateTimeFormatter;
-import org.joda.time.format.ISODateTimeFormat;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,14 +50,19 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Semaphore;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static com.thoughtworks.go.util.TestUtils.doInterruptiblyQuietlyRethrowInterrupt;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.commons.codec.binary.Hex.encodeHexString;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -107,7 +107,7 @@ public class BackupServiceIntegrationTest {
     public void setUp() throws Exception {
         configHelper.onSetUp();
         dbHelper.onSetUp();
-        admin = new Username(new CaseInsensitiveString("admin"));
+        admin = new Username(cis("admin"));
         configHelper.enableSecurity();
         configHelper.addAdmins(CaseInsensitiveString.str(admin.getUsername()));
         goConfigDao.forceReload();
@@ -115,9 +115,9 @@ public class BackupServiceIntegrationTest {
         cleanupBackups();
         originalCipher = new DESCipherProvider(systemEnvironment).getKey();
 
-        FileUtils.writeStringToFile(new File(systemEnvironment.getConfigDir(), "cruise-config.xml"), "invalid crapy config", UTF_8);
-        FileUtils.writeStringToFile(new File(systemEnvironment.getConfigDir(), "cipher"), "invalid crapy cipher", UTF_8);
-        FileUtils.writeStringToFile(new File(systemEnvironment.getConfigDir(), "cipher.aes"), "invalid crapy cipher", UTF_8);
+        Files.writeString(new File(systemEnvironment.getConfigDir(), "cruise-config.xml").toPath(), "invalid crapy config", UTF_8);
+        Files.writeString(new File(systemEnvironment.getConfigDir(), "cipher").toPath(), "invalid crapy cipher", UTF_8);
+        Files.writeString(new File(systemEnvironment.getConfigDir(), "cipher.aes").toPath(), "invalid crapy cipher", UTF_8);
 
         systemEnvSpy = spy(systemEnvironment);
         when(systemEnvSpy.wrapperConfigDirPath()).thenReturn(Optional.of(WRAPPER_CONFIG_DIR));
@@ -129,8 +129,8 @@ public class BackupServiceIntegrationTest {
     public void tearDown() throws Exception {
         dbHelper.onTearDown();
         cleanupBackups();
-        FileUtils.writeStringToFile(new File(systemEnvironment.getConfigDir(), "cruise-config.xml"), goConfigService.xml(), UTF_8);
-        FileUtils.writeByteArrayToFile(systemEnvironment.getDESCipherFile(), originalCipher);
+        Files.writeString(new File(systemEnvironment.getConfigDir(), "cruise-config.xml").toPath(), goConfigService.xml(), UTF_8);
+        Files.write(systemEnvironment.getDESCipherFile().toPath(), originalCipher);
         configHelper.onTearDown();
     }
 
@@ -197,7 +197,7 @@ public class BackupServiceIntegrationTest {
             createWrapperConfigFile("foo", "foo_foo");
             createWrapperConfigFile("bar", "bar_bar");
 
-            when(systemEnvSpy.wrapperConfigDirPath()).thenReturn(Optional.ofNullable(null));
+            when(systemEnvSpy.wrapperConfigDirPath()).thenReturn(Optional.empty());
 
             ServerBackup backup = backupService.startBackup(admin);
 
@@ -225,15 +225,12 @@ public class BackupServiceIntegrationTest {
         GitMaterial git = new GitMaterial(repoDir.getAbsolutePath());
 
         List<Modification> modifications = git.latestModification(cloneDir, subprocessExecutionContext);
-        String latestChangeRev = modifications.get(0).getRevision();
+        String latestChangeRev = modifications.getFirst().getRevision();
         git.checkout(cloneDir, new StringRevision(latestChangeRev), subprocessExecutionContext);
-        assertThat(FileUtils.readFileToString(new File(cloneDir, "cruise-config.xml"), UTF_8).indexOf("too-unique-to-be-present")).isGreaterThan(0);
+        assertThat(Files.readString(new File(cloneDir, "cruise-config.xml").toPath(), UTF_8).indexOf("too-unique-to-be-present")).isGreaterThan(0);
         StringRevision revision = new StringRevision(latestChangeRev + "~1");
         git.updateTo(new InMemoryStreamConsumer(), cloneDir, new RevisionContext(revision), subprocessExecutionContext);
-        assertThat(FileUtils.readFileToString(new File(cloneDir, "cruise-config.xml"), UTF_8).indexOf("too-unique-to-be-present")).isEqualTo(-1);
-
-        // Workaround issue with deletion of symlinks via JUnit TempDir by pre-deleting
-        FileUtils.deleteQuietly(cloneDir);
+        assertThat(Files.readString(new File(cloneDir, "cruise-config.xml").toPath(), UTF_8).indexOf("too-unique-to-be-present")).isEqualTo(-1);
     }
 
     @Test
@@ -244,7 +241,7 @@ public class BackupServiceIntegrationTest {
         assertThat(backup.getMessage()).isEqualTo("Backup was generated successfully.");
 
         File version = backedUpFile("version.txt");
-        assertThat(FileUtils.readFileToString(version, UTF_8)).isEqualTo(CurrentGoCDVersion.getInstance().formatted());
+        assertThat(Files.readString(version.toPath(), UTF_8)).isEqualTo(CurrentGoCDVersion.getInstance().formatted());
     }
 
     @Test
@@ -259,15 +256,17 @@ public class BackupServiceIntegrationTest {
         when(configService.isUserAdmin(admin)).thenReturn(true);
 
         TimeProvider timeProvider = mock(TimeProvider.class);
-        DateTime now = new DateTime();
-        when(timeProvider.currentDateTime()).thenReturn(now);
+        LocalDateTime now = LocalDateTime.of(2023, 10, 1, 12, 0, 4, 5600);
+        when(timeProvider.currentLocalDateTime()).thenReturn(now);
 
         BackupService service = new BackupService(artifactsDirHolder, configService, timeProvider, backupInfoRepository, systemEnvSpy, configRepository,
                 databaseStrategy, null);
         service.startBackup(admin);
 
         String ipAddress = SystemUtil.getFirstLocalNonLoopbackIpAddress();
-        String body = String.format("Backup of the Go server at '%s' was successfully completed. The backup is stored at location: %s. This backup was triggered by 'admin'.", ipAddress, backupDir(now).getAbsolutePath());
+        String body = String.format("Backup of the Go server at '%s' was successfully completed. The backup is stored at location: %s. This backup was triggered by 'admin'.",
+            ipAddress,
+            new File(backupsDirectory, BackupService.BACKUP + "20231001-120004").getAbsolutePath());
 
         verify(goMailSender).send(new SendEmailMessage("Server Backup Completed Successfully", body, "mail@admin.com"));
         verifyNoMoreInteractions(goMailSender);
@@ -285,8 +284,8 @@ public class BackupServiceIntegrationTest {
         when(configService.isUserAdmin(admin)).thenReturn(true);
 
         TimeProvider timeProvider = mock(TimeProvider.class);
-        DateTime now = new DateTime();
-        when(timeProvider.currentDateTime()).thenReturn(now);
+        LocalDateTime now = LocalDateTime.now();
+        when(timeProvider.currentLocalDateTime()).thenReturn(now);
 
         BackupService service = new BackupService(artifactsDirHolder, configService, timeProvider, backupInfoRepository, systemEnvSpy, configRepository,
                 databaseStrategy, null);
@@ -307,12 +306,12 @@ public class BackupServiceIntegrationTest {
         when(configService.getMailSender()).thenReturn(goMailSender);
         when(configService.isUserAdmin(admin)).thenReturn(true);
 
-        DateTime now = new DateTime();
         TimeProvider timeProvider = mock(TimeProvider.class);
-        when(timeProvider.currentDateTime()).thenReturn(now);
+        LocalDateTime now = LocalDateTime.now();
+        when(timeProvider.currentLocalDateTime()).thenReturn(now);
 
         Database databaseStrategyMock = mock(Database.class);
-        doThrow(new RuntimeException("Oh no!")).when(databaseStrategyMock).backup(any(File.class));
+        doThrow(new RuntimeException("Oh no!")).when(databaseStrategyMock).backup(any());
         BackupService service = new BackupService(artifactsDirHolder, configService, timeProvider, backupInfoRepository, systemEnvSpy, configRepository,
                 databaseStrategyMock, null);
         ServerBackup backup = service.startBackup(admin);
@@ -340,12 +339,12 @@ public class BackupServiceIntegrationTest {
         when(configService.getMailSender()).thenReturn(goMailSender);
         when(configService.isUserAdmin(admin)).thenReturn(true);
 
-        DateTime now = new DateTime();
         TimeProvider timeProvider = mock(TimeProvider.class);
-        when(timeProvider.currentDateTime()).thenReturn(now);
+        LocalDateTime now = LocalDateTime.now();
+        when(timeProvider.currentLocalDateTime()).thenReturn(now);
 
         Database databaseStrategyMock = mock(Database.class);
-        doThrow(new RuntimeException("Oh no!")).when(databaseStrategyMock).backup(any(File.class));
+        doThrow(new RuntimeException("Oh no!")).when(databaseStrategyMock).backup(any());
         BackupService service = new BackupService(artifactsDirHolder, configService, timeProvider, backupInfoRepository, systemEnvSpy, configRepository,
                 databaseStrategyMock, null);
         ServerBackup backup = service.startBackup(admin);
@@ -359,7 +358,7 @@ public class BackupServiceIntegrationTest {
 
     @Test
     public void shouldReturnBackupRunningSinceValue_inISO8601_format() throws InterruptedException {
-        assertThat(backupService.backupRunningSinceISO8601()).isEqualTo(Optional.empty());
+        assertThat(backupService.backupRunningSinceISO8601()).isEmpty();
 
         final Semaphore waitForBackupToStart = new Semaphore(1);
         final Semaphore waitForAssertionToCompleteWhileBackupIsOn = new Semaphore(1);
@@ -370,11 +369,7 @@ public class BackupServiceIntegrationTest {
                 if (!backupStarted) {
                     backupStarted = true;
                     waitForBackupToStart.release();
-                    try {
-                        waitForAssertionToCompleteWhileBackupIsOn.acquire();
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    }
+                    doInterruptiblyQuietlyRethrowInterrupt(waitForAssertionToCompleteWhileBackupIsOn::acquire);
                 }
             }
 
@@ -393,19 +388,21 @@ public class BackupServiceIntegrationTest {
 
         backupThd.start();
         waitForBackupToStart.acquire();
-        String backupStartedTimeString = backupService.backupRunningSinceISO8601().get();
-        DateTimeFormatter dateTimeFormatter = ISODateTimeFormat.dateTime();
-        DateTime backupTime = dateTimeFormatter.parseDateTime(backupStartedTimeString);
+        try {
+            String backupStartedTimeString = backupService.backupRunningSinceISO8601().get();
+            Date backupTime = Dates.parseIso8601CompactOffsetNoMillis(backupStartedTimeString);
 
-        ServerBackup runningBackup = ReflectionUtil.getField(backupService, "runningBackup");
-        assertThat(new DateTime(runningBackup.getTime())).isEqualTo(backupTime);
-        waitForAssertionToCompleteWhileBackupIsOn.release();
-        backupThd.join();
+            ServerBackup runningBackup = ReflectionUtil.getField(backupService, "runningBackup");
+            assertThat(runningBackup.getTime()).isCloseTo(backupTime, 1000L); // No millis in format
+        } finally {
+            waitForAssertionToCompleteWhileBackupIsOn.release();
+            backupThd.join();
+        }
     }
 
     @Test
     public void shouldReturnBackupStartedBy() throws InterruptedException {
-        assertThat(backupService.backupStartedBy()).isEqualTo(Optional.empty());
+        assertThat(backupService.backupStartedBy()).isEmpty();
 
         final Semaphore waitForBackupToStart = new Semaphore(1);
         final Semaphore waitForAssertionToCompleteWhileBackupIsOn = new Semaphore(1);
@@ -416,11 +413,7 @@ public class BackupServiceIntegrationTest {
                 if (!backupStarted) {
                     backupStarted = true;
                     waitForBackupToStart.release();
-                    try {
-                        waitForAssertionToCompleteWhileBackupIsOn.acquire();
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    }
+                    doInterruptiblyQuietlyRethrowInterrupt(waitForAssertionToCompleteWhileBackupIsOn::acquire);
                 }
             }
 
@@ -460,8 +453,8 @@ public class BackupServiceIntegrationTest {
         when(configService.adminEmail()).thenReturn("mail@admin.com");
         when(configService.isUserAdmin(admin)).thenReturn(true);
         TimeProvider timeProvider = mock(TimeProvider.class);
-        DateTime now = new DateTime();
-        when(timeProvider.currentDateTime()).thenReturn(now);
+        LocalDateTime now = LocalDateTime.now();
+        when(timeProvider.currentLocalDateTime()).thenReturn(now);
 
         final MessageCollectingBackupUpdateListener backupUpdateListener = new MessageCollectingBackupUpdateListener(waitForBackupToComplete);
 
@@ -489,8 +482,8 @@ public class BackupServiceIntegrationTest {
         when(configService.adminEmail()).thenReturn("mail@admin.com");
         when(configService.isUserAdmin(admin)).thenReturn(true);
         TimeProvider timeProvider = mock(TimeProvider.class);
-        DateTime now = new DateTime();
-        when(timeProvider.currentDateTime()).thenReturn(now);
+        LocalDateTime now = LocalDateTime.now();
+        when(timeProvider.currentLocalDateTime()).thenReturn(now);
 
         final MessageCollectingBackupUpdateListener backupUpdateListener = new MessageCollectingBackupUpdateListener(waitForBackupToComplete);
 
@@ -517,8 +510,8 @@ public class BackupServiceIntegrationTest {
         when(configService.isUserAdmin(admin)).thenReturn(true);
 
         TimeProvider timeProvider = mock(TimeProvider.class);
-        DateTime now = new DateTime();
-        when(timeProvider.currentDateTime()).thenReturn(now);
+        LocalDateTime now = LocalDateTime.now();
+        when(timeProvider.currentLocalDateTime()).thenReturn(now);
 
         BackupService service = new BackupService(artifactsDirHolder, configService, timeProvider, backupInfoRepository, systemEnvSpy, configRepository,
                 databaseStrategy, null);
@@ -534,8 +527,8 @@ public class BackupServiceIntegrationTest {
         }
     }
 
-    private boolean fileExists(String fileName) {
-        return !FileUtils.listFiles(backupsDirectory, new NameFileFilter(fileName), TrueFileFilter.TRUE).isEmpty();
+    private boolean fileExists(@SuppressWarnings("SameParameterValue") String fileName) {
+        return new File(backupsDirectory, fileName).exists();
     }
 
     private void deleteConfigFileIfExists(String ...fileNames) {
@@ -545,22 +538,16 @@ public class BackupServiceIntegrationTest {
     }
 
     private String fileContents(File location, String filename) throws IOException {
-        ZipInputStream zipIn = null;
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try {
-            zipIn = new ZipInputStream(new FileInputStream(location));
-            while (zipIn.available() > 0) {
-                ZipEntry nextEntry = zipIn.getNextEntry();
+        try (ZipInputStream zipIn = new ZipInputStream(new FileInputStream(location))) {
+            ZipEntry nextEntry;
+            while ((nextEntry = zipIn.getNextEntry()) != null) {
                 if (nextEntry.getName().equals(filename)) {
-                    IOUtils.copy(zipIn, out);
+                    zipIn.transferTo(out);
                 }
             }
-        } finally {
-            if (zipIn != null) {
-                zipIn.close();
-            }
         }
-        return out.toString();
+        return out.toString(UTF_8);
     }
 
     private void createWrapperConfigFile(String fileName, String content) throws IOException {
@@ -601,7 +588,7 @@ public class BackupServiceIntegrationTest {
             waitForBackupToBegin.release();
             waitForAssertion_whichHasToHappen_whileBackupIsRunning.acquire();
             return null;
-        }).when(databaseStrategyMock).backup(any(File.class));
+        }).when(databaseStrategyMock).backup(any());
 
 
         final BackupService backupService = new BackupService(artifactsDirHolder, goConfigService, new TimeProvider(), backupInfoRepository, systemEnvSpy,
@@ -623,12 +610,8 @@ public class BackupServiceIntegrationTest {
         return new File(new SystemEnvironment().getConfigDir());
     }
 
-    private File backupDir(DateTime now) {
-        return new File(backupsDirectory, BackupService.BACKUP + now.toString("YYYYMMdd-HHmmss"));
-    }
-
     private File backedUpFile(final String filename) {
-        return new ArrayList<>(FileUtils.listFiles(backupsDirectory, new NameFileFilter(filename), TrueFileFilter.TRUE)).get(0);
+        return new ArrayList<>(FileUtils.listFiles(backupsDirectory, new NameFileFilter(filename), TrueFileFilter.TRUE)).getFirst();
     }
 
     private void cleanupBackups() {

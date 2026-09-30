@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.config.materials.mercurial;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.SecretParam;
 import com.thoughtworks.go.config.materials.Filter;
 import com.thoughtworks.go.config.materials.PasswordAwareMaterial;
@@ -29,7 +28,6 @@ import com.thoughtworks.go.domain.materials.mercurial.HgVersion;
 import com.thoughtworks.go.domain.materials.mercurial.StringRevision;
 import com.thoughtworks.go.helper.HgTestRepo;
 import com.thoughtworks.go.helper.MaterialsMother;
-import com.thoughtworks.go.util.ReflectionUtil;
 import com.thoughtworks.go.util.TempDirUtils;
 import com.thoughtworks.go.util.command.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +42,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.hg;
 import static com.thoughtworks.go.util.command.ProcessOutputStreamConsumer.inMemoryConsumer;
 import static java.lang.String.format;
@@ -131,7 +130,7 @@ public class HgMaterialTest {
         void shouldGetModifications() {
             List<Modification> mods = hgMaterial.modificationsSince(workingFolder, new StringRevision(REVISION_0), new TestSubprocessExecutionContext());
             assertThat(mods.size()).isEqualTo(2);
-            Modification modification = mods.get(0);
+            Modification modification = mods.getFirst();
             assertThat(modification.getRevision()).isEqualTo(REVISION_2);
             assertThat(modification.getModifiedFiles().size()).isEqualTo(1);
         }
@@ -148,9 +147,9 @@ public class HgMaterialTest {
             List<Modification> modificationsSince = hgMaterial.modificationsSince(workingFolder,
                     new StringRevision(REVISION_0), new TestSubprocessExecutionContext());
 
-            assertThat(modificationsSince.get(0).getRevision()).isEqualTo(REVISION_2);
-            assertThat(modificationsSince.get(1).getRevision()).isEqualTo(REVISION_1);
             assertThat(modificationsSince.size()).isEqualTo(2);
+            assertThat(modificationsSince.getFirst().getRevision()).isEqualTo(REVISION_2);
+            assertThat(modificationsSince.getLast().getRevision()).isEqualTo(REVISION_1);
         }
 
         @Test
@@ -265,7 +264,7 @@ public class HgMaterialTest {
             List<Modification> modification = hgMaterial.latestModification(workingFolder, new TestSubprocessExecutionContext());
 
             assertThat(modification.size()).isEqualTo(1);
-            assertThat(modification.get(0).getComment()).isEqualTo(comment);
+            assertThat(modification.getFirst().getComment()).isEqualTo(comment);
         }
 
         @Test
@@ -300,7 +299,7 @@ public class HgMaterialTest {
         final ConsoleResult consoleResult = mock(ConsoleResult.class);
         when(consoleResult.outputAsString()).thenReturn("http://user@domain:9999/path");
         when(hgCommand.workingRepositoryUrl()).thenReturn(consoleResult);
-        assertThat((Boolean) ReflectionUtil.invoke(material, "isRepositoryChanged", hgCommand)).isFalse();
+        assertThat(material.isRepositoryChanged(hgCommand)).isFalse();
     }
 
     @Test
@@ -310,37 +309,37 @@ public class HgMaterialTest {
         final ConsoleResult consoleResult = mock(ConsoleResult.class);
         when(consoleResult.outputAsString()).thenReturn("http://user:pwd@domain:9999/path");
         when(hgCommand.workingRepositoryUrl()).thenReturn(consoleResult);
-        assertThat((Boolean) ReflectionUtil.invoke(material, "isRepositoryChanged", hgCommand)).isTrue();
+        assertThat(material.isRepositoryChanged(hgCommand)).isTrue();
     }
 
     @Test
     void shouldBeEqualWhenUrlSameForHgMaterial() {
-        final Material material = MaterialsMother.hgMaterials("url1", "hgdir").get(0);
-        final Material anotherMaterial = MaterialsMother.hgMaterials("url1", "hgdir").get(0);
+        final Material material = MaterialsMother.hgMaterials("url1", "hgdir").getFirst();
+        final Material anotherMaterial = MaterialsMother.hgMaterials("url1", "hgdir").getFirst();
         assertThat(material.equals(anotherMaterial)).isTrue();
         assertThat(anotherMaterial.equals(material)).isTrue();
     }
 
     @Test
     void shouldNotBeEqualWhenUrlDifferent() {
-        final Material material1 = MaterialsMother.hgMaterials("url1", "hgdir").get(0);
-        final Material material2 = MaterialsMother.hgMaterials("url2", "hgdir").get(0);
+        final Material material1 = MaterialsMother.hgMaterials("url1", "hgdir").getFirst();
+        final Material material2 = MaterialsMother.hgMaterials("url2", "hgdir").getFirst();
         assertThat(material1.equals(material2)).isFalse();
         assertThat(material2.equals(material1)).isFalse();
     }
 
     @Test
     void shouldNotBeEqualWhenTypeDifferent() {
-        final Material material = MaterialsMother.hgMaterials("url1", "hgdir").get(0);
-        final Material svnMaterial = MaterialsMother.defaultSvnMaterialsWithUrl("url1").get(0);
+        final Material material = MaterialsMother.hgMaterials("url1", "hgdir").getFirst();
+        final Material svnMaterial = MaterialsMother.defaultSvnMaterialsWithUrl("url1").getFirst();
         assertThat(material.equals(svnMaterial)).isFalse();
         assertThat(svnMaterial.equals(material)).isFalse();
     }
 
     @Test
     void shouldBeEqual() {
-        final Material hgMaterial1 = MaterialsMother.hgMaterials("url1", "hgdir").get(0);
-        final Material hgMaterial2 = MaterialsMother.hgMaterials("url1", "hgdir").get(0);
+        final Material hgMaterial1 = MaterialsMother.hgMaterials("url1", "hgdir").getFirst();
+        final Material hgMaterial2 = MaterialsMother.hgMaterials("url1", "hgdir").getFirst();
         assertThat(hgMaterial1.equals(hgMaterial2)).isTrue();
         assertThat(hgMaterial1.hashCode()).isEqualTo(hgMaterial2.hashCode());
     }
@@ -518,7 +517,7 @@ public class HgMaterialTest {
         void shouldBuildFromConfigObject() {
             final HgMaterialConfig materialConfig = hg(new HgUrlArgument("http://example.com"), "bob", "pass",
                     "feature", true, Filter.create("igrnored"), false, "destination",
-                    new CaseInsensitiveString("example"));
+                    cis("example"));
 
             final HgMaterial hgMaterial = new HgMaterial(materialConfig);
 
@@ -543,7 +542,7 @@ public class HgMaterialTest {
             hgMaterial.setPassword("pass");
             hgMaterial.setBranch("feature");
             hgMaterial.setAutoUpdate(true);
-            hgMaterial.setName(new CaseInsensitiveString("example"));
+            hgMaterial.setName(cis("example"));
             hgMaterial.setInvertFilter(true);
             hgMaterial.setFolder("destination");
             hgMaterial.setFilter(Filter.create("allow"));
@@ -612,7 +611,7 @@ public class HgMaterialTest {
             String password = "{{SECRET:[test][id]}}";
             gitMaterial.setPassword(password);
 
-            SecretParam secretParam = gitMaterial.getSecretParams().get(0);
+            SecretParam secretParam = gitMaterial.getSecretParams().getFirst();
             secretParam.setValue("p@ssw:rd");
 
             assertThat(gitMaterial.urlForCommandLine()).isEqualTo("http://bob%40example.com:p%40ssw:rd@exampele.com");
@@ -653,7 +652,7 @@ public class HgMaterialTest {
         void shouldReplaceUrlForCommandLineWithUrlForDisplay_whenCredntialsAreProvidedInUrl() {
             HgMaterial hgMaterial = new HgMaterial("https://bob:pass@example.com", "destinations");
 
-            String info = hgMaterial.secrets().get(0).replaceSecretInfo("https://bob:pass@example.com");
+            String info = hgMaterial.secrets().getFirst().redactFrom("https://bob:pass@example.com");
 
             assertThat(info).isEqualTo(hgMaterial.getUriForDisplay());
         }
@@ -664,7 +663,7 @@ public class HgMaterialTest {
             hgMaterial.setUserName("bob");
             hgMaterial.setPassword("pass");
 
-            String info = hgMaterial.secrets().get(0).replaceSecretInfo("https://bob:pass@example.com");
+            String info = hgMaterial.secrets().getFirst().redactFrom("https://bob:pass@example.com");
 
             assertThat(info).isEqualTo(hgMaterial.getUriForDisplay());
         }

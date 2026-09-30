@@ -21,27 +21,31 @@ import com.thoughtworks.go.domain.materials.Modification;
 import com.thoughtworks.go.domain.materials.Revision;
 import com.thoughtworks.go.domain.materials.SCMCommand;
 import com.thoughtworks.go.domain.materials.mercurial.StringRevision;
+import com.thoughtworks.go.util.Dates;
 import com.thoughtworks.go.util.NamedProcessTag;
 import com.thoughtworks.go.util.command.*;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.TestOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.helpers.MessageFormatter;
 
 import java.io.File;
+import java.time.Instant;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import static com.thoughtworks.go.config.materials.git.GitMaterial.UNSHALLOW_TRYOUT_STEP;
 import static com.thoughtworks.go.config.materials.git.RefSpecHelper.REFS_HEADS;
 import static com.thoughtworks.go.domain.materials.ModifiedAction.parseGitAction;
-import static com.thoughtworks.go.util.DateUtils.formatRFC822;
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
 import static com.thoughtworks.go.util.command.ProcessOutputStreamConsumer.inMemoryConsumer;
 import static java.lang.String.format;
+import static java.lang.String.join;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.commons.lang3.StringUtils.defaultIfBlank;
 
 public class GitCommand extends SCMCommand {
     public static final String GIT_CLEAN_KEEP_IGNORED_FILES_FLAG = "toggle.agent.git.clean.keep.ignored.files";
@@ -56,15 +60,15 @@ public class GitCommand extends SCMCommand {
     private static final int MAX_RETRIES = 3;
 
     private final File workingDir;
-    private final List<SecretString> secrets;
+    private final List<SecretRedactor> secrets;
     private final String branch;
     private final boolean isSubmodule;
 
-    public GitCommand(String materialFingerprint, File workingDir, String branch, boolean isSubmodule, List<SecretString> secrets) {
+    public GitCommand(String materialFingerprint, File workingDir, String branch, boolean isSubmodule, List<SecretRedactor> secrets) {
         super(materialFingerprint);
         this.workingDir = workingDir;
         this.secrets = secrets != null ? secrets : new ArrayList<>();
-        this.branch = StringUtils.defaultIfBlank(branch, GitMaterialConfig.DEFAULT_BRANCH);
+        this.branch = defaultIfBlank(branch, GitMaterialConfig.DEFAULT_BRANCH);
         this.isSubmodule = isSubmodule;
     }
 
@@ -97,11 +101,11 @@ public class GitCommand extends SCMCommand {
     }
 
     public int cloneWithNoCheckout(ConsoleOutputStreamConsumer outputStreamConsumer, String url) {
-        CommandLine gitClone = cloneCommand().
-                when(!hasRefSpec(), git -> git.withArgs("--branch", branch)).
-                withArg("--no-checkout").
-                withArg(new UrlArgument(url)).
-                withArg(workingDir.getAbsolutePath());
+        CommandLine gitClone = cloneCommand()
+            .when(!hasRefSpec(), git -> git.withArgs("--branch", branch))
+            .withArg("--no-checkout")
+            .withArg(new UrlArgument(url))
+            .withArg(workingDir.getAbsolutePath());
 
         if (!hasRefSpec()) {
             return runWithRetries(gitClone, outputStreamConsumer, MAX_RETRIES);
@@ -111,21 +115,21 @@ public class GitCommand extends SCMCommand {
         final String fullLocalRef = abbrevBranch.startsWith("refs/") ? abbrevBranch : REFS_HEADS + abbrevBranch;
 
         return runCascadeWithRetries(outputStreamConsumer,
-                MAX_RETRIES,
-                gitClone,
-                git_C().withArgs("config", "--replace-all", "remote.origin.fetch", "+" + expandRefSpec()),
-                git_C().withArgs("fetch", "--prune", "--recurse-submodules=no"),
-                // Enter a detached head state without updating/restoring files in the workspace.
-                // This covers an edge-case where the destination ref is the same as the default
-                // branch, which would otherwise cause `git branch -f <local-ref> <remote-ref>` to
-                // fail when local-ref == current-ref.
-                git_C().withArgs("update-ref", "--no-deref", "HEAD", "HEAD"),
-                // Important to create a "real" local branch and not just use `symbolic-ref`
-                // to update HEAD in order to ensure that GitMaterial#isBranchEqual() passes;
-                // failing this check will cause the working directory to be obliterated and we
-                // will re-clone the given repository every time. Yikes!
-                git_C().withArgs("branch", "-f", abbrevBranch, remoteBranch()),
-                git_C().withArgs("symbolic-ref", "HEAD", fullLocalRef)
+            MAX_RETRIES,
+            gitClone,
+            git_C().withArgs("config", "--replace-all", "remote.origin.fetch", "+" + expandRefSpec()),
+            git_C().withArgs("fetch", "--prune", "--recurse-submodules=no"),
+            // Enter a detached head state without updating/restoring files in the workspace.
+            // This covers an edge-case where the destination ref is the same as the default
+            // branch, which would otherwise cause `git branch -f <local-ref> <remote-ref>` to
+            // fail when local-ref == current-ref.
+            git_C().withArgs("update-ref", "--no-deref", "HEAD", "HEAD"),
+            // Important to create a "real" local branch and not just use `symbolic-ref`
+            // to update HEAD in order to ensure that GitMaterial#isBranchEqual() passes;
+            // failing this check will cause the working directory to be obliterated and we
+            // will re-clone the given repository every time. Yikes!
+            git_C().withArgs("branch", "-f", abbrevBranch, remoteBranch()),
+            git_C().withArgs("symbolic-ref", "HEAD", fullLocalRef)
         );
     }
 
@@ -136,36 +140,36 @@ public class GitCommand extends SCMCommand {
 
     // Clone repository from url with specified depth.
     // Special depth 2147483647 (Integer.MAX_VALUE) are treated as full clone
-    public int clone(ConsoleOutputStreamConsumer outputStreamConsumer, String url, Integer depth) {
-        CommandLine gitClone = cloneCommand().
-                when(!hasRefSpec(), git -> git.withArgs("--branch", branch)).
-                when(depth < Integer.MAX_VALUE, git -> git.withArg(format("--depth=%s", depth))).
-                withArg(new UrlArgument(url)).withArg(workingDir.getAbsolutePath());
+    public int clone(ConsoleOutputStreamConsumer outputStreamConsumer, String url, int depth) {
+        CommandLine gitClone = cloneCommand()
+            .when(!hasRefSpec(), git -> git.withArgs("--branch", branch))
+            .when(depth < Integer.MAX_VALUE, git -> git.withArg(format("--depth=%s", depth)))
+            .withArg(new UrlArgument(url)).withArg(workingDir.getAbsolutePath());
 
         if (!hasRefSpec()) {
             return runWithRetries(gitClone, outputStreamConsumer, MAX_RETRIES);
         }
 
         return runCascadeWithRetries(outputStreamConsumer,
-                MAX_RETRIES,
-                gitClone,
-                git_C().withArgs("config", "--replace-all", "remote.origin.fetch", "+" + expandRefSpec()),
-                git_C().withArgs("fetch", "--prune", "--recurse-submodules=no"),
-                git_C().withArgs("checkout", "-B", localBranch(), remoteBranch())
+            MAX_RETRIES,
+            gitClone,
+            git_C().withArgs("config", "--replace-all", "remote.origin.fetch", "+" + expandRefSpec()),
+            git_C().withArgs("fetch", "--prune", "--recurse-submodules=no"),
+            git_C().withArgs("checkout", "-B", localBranch(), remoteBranch())
         );
     }
 
     public List<Modification> latestModification() {
-        return gitLog("-1", "--date=iso", "--no-decorate", "--pretty=medium", "--no-color", remoteBranch());
+        return gitLog("-1", "--date=iso-strict", "--no-decorate", "--pretty=medium", "--no-color", remoteBranch());
 
     }
 
     public List<Modification> modificationsSince(Revision revision) {
-        return gitLog("--date=iso", "--pretty=medium", "--no-decorate", "--no-color", format("%s..%s", revision.getRevision(), remoteBranch()));
+        return gitLog("--date=iso-strict", "--no-decorate", "--pretty=medium", "--no-color", format("%s..%s", revision.getRevision(), remoteBranch()));
     }
 
     public void resetWorkingDir(ConsoleOutputStreamConsumer outputStreamConsumer, Revision revision, boolean shallow) {
-        log(outputStreamConsumer, "Reset working directory %s", workingDir);
+        log(outputStreamConsumer, "Reset working directory {}", workingDir);
         cleanAllUnversionedFiles(outputStreamConsumer);
         removeSubmoduleSectionsFromGitConfig(outputStreamConsumer);
         resetHard(outputStreamConsumer, revision);
@@ -175,7 +179,7 @@ public class GitCommand extends SCMCommand {
     }
 
     public void resetHard(ConsoleOutputStreamConsumer outputStreamConsumer, Revision revision) {
-        log(outputStreamConsumer, "Updating working copy to revision " + revision.getRevision());
+        log(outputStreamConsumer, "Updating working copy to revision {}", revision.getRevision());
         String[] args = new String[]{"reset", "--hard", revision.getRevision()};
         CommandLine gitCmd = gitWd().withArgs(args);
         int result = run(gitCmd, outputStreamConsumer);
@@ -216,7 +220,7 @@ public class GitCommand extends SCMCommand {
         String[] args = new String[]{"config", "remote.origin.url"};
         CommandLine gitConfig = gitWd().withArgs(args);
 
-        return new UrlArgument(runOrBomb(gitConfig).outputForDisplay().get(0));
+        return new UrlArgument(runOrBomb(gitConfig).outputForDisplay().getFirst());
     }
 
     public void checkConnection(UrlArgument repoUrl) {
@@ -251,10 +255,8 @@ public class GitCommand extends SCMCommand {
     }
 
     @TestOnly
-    public void commitOnDate(String message, Date commitDate) {
-        Map<String, String> env = new HashMap<>();
-        env.put("GIT_AUTHOR_DATE", formatRFC822(commitDate));
-        CommandLine gitCmd = gitWd().withArgs("commit", "-m", message).withEnv(env);
+    public void commitOnDate(String message, Instant commitDate) {
+        CommandLine gitCmd = gitWd().withArgs("commit", "--date", Dates.formatIso8601SystemCompactOffsetNoMillis(commitDate), "-m", message);
         runOrBomb(gitCmd);
     }
 
@@ -279,10 +281,10 @@ public class GitCommand extends SCMCommand {
     // Special depth 2147483647 (Integer.MAX_VALUE) are treated as infinite -- fully unshallow
     // https://git-scm.com/docs/git-fetch-pack
     public void unshallow(ConsoleOutputStreamConsumer outputStreamConsumer, Integer depth) {
-        log(outputStreamConsumer, "Unshallowing repository with depth %d", depth);
+        log(outputStreamConsumer, "Unshallowing repository with depth {}", depth);
         CommandLine gitFetch = gitWd()
-                .withArgs("fetch", "origin")
-                .withArg(format("--depth=%d", depth));
+            .withArgs("fetch", "origin")
+            .withArg(format("--depth=%d", depth));
 
         int result = runWithRetries(gitFetch, outputStreamConsumer, MAX_RETRIES);
         if (result != 0) {
@@ -353,7 +355,7 @@ public class GitCommand extends SCMCommand {
         CommandLine syncCmd = gitWd().withArgs(syncArgs);
         runOrBomb(syncCmd);
 
-        List<String> foreachArgs = submoduleForEachRecursive(List.of("git", "submodule", "sync"));
+        List<String> foreachArgs = submoduleForEachRecursive("git", "submodule", "sync");
         CommandLine foreachCmd = gitWd().withArgs(foreachArgs);
         runOrBomb(foreachCmd);
     }
@@ -367,7 +369,7 @@ public class GitCommand extends SCMCommand {
         CommandLine gitCommand = gitWd().withArgs(args);
         try {
             ConsoleResult consoleResult = runOrBomb(gitCommand);
-            return (consoleResult.outputAsString()).contains(remoteBranch());
+            return consoleResult.outputAsString().contains(remoteBranch());
         } catch (CommandLineException e) {
             return false;
         }
@@ -383,9 +385,15 @@ public class GitCommand extends SCMCommand {
         for (String submoduleLine : submoduleList) {
             Matcher m = GIT_SUBMODULE_URL_PATTERN.matcher(submoduleLine);
             if (!m.find()) {
-                bomb("Unable to parse git-config output line: " + result.replaceSecretInfo(submoduleLine) + "\n"
-                        + "From output:\n"
-                        + result.replaceSecretInfo(StringUtils.join(submoduleList, "\n")));
+                bomb("""
+                    Unable to parse git-config output line: %s
+                    From output:
+                    %s"""
+                    .formatted(
+                        result.redactFrom(submoduleLine),
+                        result.redactFrom(join("\n", submoduleList))
+                    )
+                );
             }
             submoduleUrls.put(m.group(1), m.group(2));
         }
@@ -431,9 +439,15 @@ public class GitCommand extends SCMCommand {
 
             Matcher m = matchResultLine(resultLine);
             if (!m.find()) {
-                bomb("Unable to parse git-diff-tree output line: " + consoleResult.replaceSecretInfo(resultLine) + "\n"
-                        + "From output:\n"
-                        + consoleResult.outputForDisplayAsString());
+                bomb("""
+                    Unable to parse git-diff-tree output line: %s
+                    From output:
+                    %s"""
+                    .formatted(
+                        consoleResult.redactFrom(resultLine),
+                        consoleResult.outputForDisplayAsString()
+                    )
+                );
             }
             mod.createModifiedFile(m.group(2), null, parseGitAction(m.group(1).charAt(0)));
         }
@@ -450,7 +464,7 @@ public class GitCommand extends SCMCommand {
 
     private void checkoutAllModifiedFilesInSubmodules(ConsoleOutputStreamConsumer outputStreamConsumer) {
         log(outputStreamConsumer, "Removing modified files in submodules");
-        List<String> submoduleForEachRecursive = submoduleForEachRecursive(List.of("git", "checkout", "."));
+        List<String> submoduleForEachRecursive = submoduleForEachRecursive("git", "checkout", ".");
         runOrBomb(gitWd().withArgs(submoduleForEachRecursive));
     }
 
@@ -541,7 +555,7 @@ public class GitCommand extends SCMCommand {
     }
 
     private void cleanUnversionedFilesInAllSubmodules() {
-        List<String> args = submoduleForEachRecursive(List.of("git", "clean", gitCleanArgs()));
+        List<String> args = submoduleForEachRecursive("git", "clean", gitCleanArgs());
         runOrBomb(gitWd().withArgs(args));
     }
 
@@ -574,9 +588,12 @@ public class GitCommand extends SCMCommand {
         for (String submoduleLine : submoduleLines) {
             Matcher m = GIT_SUBMODULE_STATUS_PATTERN.matcher(submoduleLine);
             if (!m.find()) {
-                bomb("Unable to parse git-submodule output line: " + submoduleLine + "\n"
-                        + "From output:\n"
-                        + StringUtils.join(submoduleLines, "\n"));
+                bomb("""
+                    Unable to parse git-submodule output line: %s
+                    From output:
+                    %s"""
+                    .formatted(submoduleLine, join("\n", submoduleLines))
+                );
             }
             submoduleFolders.add(m.group(1));
         }
@@ -584,17 +601,16 @@ public class GitCommand extends SCMCommand {
     }
 
     private void log(ConsoleOutputStreamConsumer outputStreamConsumer, String message, Object... args) {
-        LOG.debug(format(message, args));
-        outputStreamConsumer.stdOutput(format("[GIT] " + message, args));
+        if (LOG.isDebugEnabled()) {
+            LOG.debug(message, args);
+        }
+        outputStreamConsumer.stdOutput(MessageFormatter.basicArrayFormat("[GIT] " + message, args));
     }
 
-    private List<String> submoduleForEachRecursive(List<String> args) {
-        List<String> forEachArgs = new ArrayList<>(List.of("submodule", "foreach", "--recursive"));
-        if (version().requiresSubmoduleCommandFix()) {
-            forEachArgs.add(StringUtils.join(args, " "));
-        } else {
-            forEachArgs.addAll(args);
-        }
-        return forEachArgs;
+    private List<String> submoduleForEachRecursive(String... args) {
+        return Stream.concat(
+            Stream.of("submodule", "foreach", "--recursive"),
+            version().requiresSubmoduleCommandFix() ? Stream.of(join(" ", args)) : Arrays.stream(args)
+        ).toList();
     }
 }

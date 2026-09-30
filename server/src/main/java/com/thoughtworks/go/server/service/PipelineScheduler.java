@@ -29,7 +29,6 @@ import com.thoughtworks.go.server.service.result.ServerHealthServiceUpdatingOper
 import com.thoughtworks.go.serverhealth.HealthStateScope;
 import com.thoughtworks.go.serverhealth.HealthStateType;
 import com.thoughtworks.go.serverhealth.ServerHealthService;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +39,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static org.apache.commons.lang3.StringUtils.isEmpty;
 
 @Service
 public class PipelineScheduler implements ConfigChangedListener, GoMessageListener<ScheduleCheckCompletedMessage> {
@@ -133,8 +135,10 @@ public class PipelineScheduler implements ConfigChangedListener, GoMessageListen
                     scheduleCheckQueue.post(new ScheduleCheckMessage(entry.getKey(), trackingId));
                     pipelines.put(entry.getKey(), ScheduleCheckState.BUSY);
 
-                    LOGGER.trace("try to schedule pipeline {}, current pipeline state: {}", entry.getKey(), pipelines);
-                } else {
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("try to schedule pipeline {}, current pipeline state: {}", entry.getKey(), pipelines);
+                    }
+                } else if (LOGGER.isTraceEnabled()) {
                     LOGGER.trace("skipping scheduling pipeline {} because it's busy scheduling, current pipelines state: {}", entry.getKey(), pipelines);
                 }
             }
@@ -157,7 +161,7 @@ public class PipelineScheduler implements ConfigChangedListener, GoMessageListen
         }
 
         LOGGER.info("[Pipeline Schedule] [Accepted] Manual trigger of pipeline '{}' accepted for user {}", pipelineName, CaseInsensitiveString.str(username.getUsername()));
-        buildCauseProducerService.manualSchedulePipeline(username, new CaseInsensitiveString(pipelineName), scheduleOptions, result);
+        buildCauseProducerService.manualSchedulePipeline(username, cis(pipelineName), scheduleOptions, result);
         LOGGER.info("[Pipeline Schedule] [Processed] Manual trigger of pipeline '{}' processed with result '{}'", pipelineName, result.getServerHealthState());
     }
 
@@ -174,7 +178,7 @@ public class PipelineScheduler implements ConfigChangedListener, GoMessageListen
 
     private boolean revisionInvalid(Map<String, String> revisions, OperationResult result) {
         for (Map.Entry<String, String> entry : revisions.entrySet()) {
-            if (StringUtils.isEmpty(entry.getValue())) {
+            if (isEmpty(entry.getValue())) {
                 String message = String.format("material with fingerprint [%s] has empty revision", entry.getKey());
                 result.notAcceptable(message, HealthStateType.general(HealthStateScope.GLOBAL));
                 return true;
@@ -185,7 +189,7 @@ public class PipelineScheduler implements ConfigChangedListener, GoMessageListen
 
     private boolean materialNotFound(String pipelineName, Map<String, String> revisions, OperationResult result) {
         for (String pipelineFingerprint : revisions.keySet()) {
-            if (goConfigService.findMaterial(new CaseInsensitiveString(pipelineName), pipelineFingerprint) == null) {
+            if (goConfigService.findMaterial(cis(pipelineName), pipelineFingerprint) == null) {
                 String message = String.format("material with fingerprint [%s] not found in pipeline [%s]", pipelineFingerprint, pipelineName);
                 result.notFound(message, message, HealthStateType.general(HealthStateScope.forPipeline(pipelineName)));
                 return true;
@@ -195,7 +199,7 @@ public class PipelineScheduler implements ConfigChangedListener, GoMessageListen
     }
 
     private boolean pipelineNotFound(String pipelineName, OperationResult result) {
-        if (!goConfigService.hasPipelineNamed(new CaseInsensitiveString(pipelineName))) {
+        if (!goConfigService.hasPipelineNamed(cis(pipelineName))) {
             result.notFound(String.format("Pipeline '%s' not found", pipelineName),
                     String.format("Pipeline '%s' not found", pipelineName),
                     HealthStateType.general(HealthStateScope.forPipeline(pipelineName)));
@@ -211,7 +215,7 @@ public class PipelineScheduler implements ConfigChangedListener, GoMessageListen
 
             List<String> deletedPipeline = new ArrayList<>();
             for (String pipelineName : pipelines.keySet()) {
-                if (!newCruiseConfig.hasPipelineNamed(new CaseInsensitiveString(pipelineName))) {
+                if (!newCruiseConfig.hasPipelineNamed(cis(pipelineName))) {
                     deletedPipeline.add(pipelineName);
                 }
             }
@@ -223,10 +227,7 @@ public class PipelineScheduler implements ConfigChangedListener, GoMessageListen
     }
 
     private void addPipelineIfNotPresent(PipelineConfig pipelineConfig, Map<String, ScheduleCheckState> pipelines) {
-        if (!pipelines.containsKey(CaseInsensitiveString.str(pipelineConfig.name()))) {
-            pipelines.put(CaseInsensitiveString.str(pipelineConfig.name()), ScheduleCheckState.IDLE);
-            LOGGER.debug("[Configuration Changed] Marking new pipeline {} as IDLE", pipelineConfig.name());
-        }
+        pipelines.putIfAbsent(CaseInsensitiveString.str(pipelineConfig.name()), ScheduleCheckState.IDLE);
     }
 
     @Override
@@ -235,7 +236,9 @@ public class PipelineScheduler implements ConfigChangedListener, GoMessageListen
             pipelines.put(message.getPipelineName(), ScheduleCheckState.IDLE);
 
             schedulingPerformanceLogger.completionMessageForScheduleCheckReceived(message.trackingId(), message.getPipelineName());
-            LOGGER.trace("marked pipeline {} as IDLE, current pipelines state: {}", message.getPipelineName(), pipelines);
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("marked pipeline {} as IDLE, current pipelines state: {}", message.getPipelineName(), pipelines);
+            }
         }
     }
 }

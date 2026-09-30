@@ -21,35 +21,31 @@ import com.thoughtworks.go.domain.*;
 import com.thoughtworks.go.domain.exception.IllegalArtifactLocationException;
 import com.thoughtworks.go.server.presentation.html.HtmlRenderer;
 import com.thoughtworks.go.server.service.ArtifactsService;
-import com.thoughtworks.go.util.TimeConverter;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.NameFileFilter;
 import org.apache.commons.io.filefilter.TrueFileFilter;
-import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
 import static com.thoughtworks.go.config.TestArtifactConfig.TEST_OUTPUT_FOLDER;
 import static com.thoughtworks.go.server.web.JsonRenderer.render;
-import static com.thoughtworks.go.util.ArtifactLogUtil.*;
+import static com.thoughtworks.go.util.ArtifactUtil.*;
+import static org.apache.commons.lang3.StringUtils.isNotEmpty;
 
 public class JobDetailPresentationModel {
     private static final String BASE_FILE_URL = "files/";
 
-    protected final JobInstance job;
-    protected TimeConverter converter;
-    protected JobInstances recent25;
     private final TrackingTool trackingTool;
     private final ArtifactsService artifactsService;
     private final JobIdentifier jobIdentifier;
     private final Pipeline pipeline;
     private final Tabs customizedTabs;
-    private final StageIdentifier stageIdentifier;
     private final Stage stage;
+    private final JobInstance job;
+    private final JobInstances recent25;
 
     public JobDetailPresentationModel(JobInstance job, JobInstances recent25,
                                       Pipeline pipeline, Tabs customizedTabs,
@@ -62,12 +58,10 @@ public class JobDetailPresentationModel {
         this.trackingTool = trackingTool;
         this.artifactsService = artifactsService;
         this.stage = stage;
-        this.converter = new TimeConverter();
-        jobIdentifier = this.job.getIdentifier();
-        stageIdentifier = jobIdentifier.getStageIdentifier();
+        this.jobIdentifier = this.job.getIdentifier();
     }
 
-    public String getConsoleoutLocator() {
+    public String getConsoleOutLocator() {
         return jobIdentifier.artifactLocator("cruise-output/console.log");
     }
 
@@ -80,10 +74,10 @@ public class JobDetailPresentationModel {
     }
 
     public String getStageLocator() {
-        return stageIdentifier.stageLocator();
+        return jobIdentifier.getStageIdentifier().stageLocator();
     }
 
-    public Integer getPipelineCounter() {
+    public int getPipelineCounter() {
         return jobIdentifier.getPipelineCounter();
     }
 
@@ -120,9 +114,8 @@ public class JobDetailPresentationModel {
     public DirectoryEntries getArtifactFiles(final DirectoryReader directoryReader) throws IllegalArtifactLocationException {
         return new DirectoryEntries() {{
             if (!job.isCompleted()) {
-                addFolder(CRUISE_OUTPUT_FOLDER).addFile(CONSOLE_LOG_FILE_NAME,
-                        artifactsService.findArtifactUrl(jobIdentifier,
-                                getConsoleOutputFolderAndFileName()));
+                addFolder(CRUISE_OUTPUT_FOLDER)
+                    .addFile(CONSOLE_LOG_FILE_NAME, artifactsService.findArtifactUrl(jobIdentifier, CONSOLE_LOG_FILE_RELATIVE_PATH));
             }
             addAll(directoryReader.listEntries(artifactsService.findArtifact(jobIdentifier, ""), ""));
             setIsArtifactsDeleted(stage.isArtifactsDeleted());
@@ -136,16 +129,11 @@ public class JobDetailPresentationModel {
     }
 
     public List<JobStatusJsonPresentationModel> getRecent25() {
-        List<JobStatusJsonPresentationModel> recent25StatusJson =
-                new ArrayList<>();
-        for (JobInstance jobInstance : this.recent25) {
-            recent25StatusJson.add(new JobStatusJsonPresentationModel(jobInstance));
-        }
-        return recent25StatusJson;
+        return this.recent25.stream().map(JobStatusJsonPresentationModel::new).toList();
     }
 
     public boolean hasTests() {
-        return StringUtils.isNotEmpty(getIndexPageURL());
+        return isNotEmpty(getIndexPageURL());
     }
 
     public String getRestfulUrl(String path) {

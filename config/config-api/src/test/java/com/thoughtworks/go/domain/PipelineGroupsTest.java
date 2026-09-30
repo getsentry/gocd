@@ -36,9 +36,11 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.PipelineConfigMother.createGroup;
 import static com.thoughtworks.go.helper.PipelineConfigMother.createPipelineConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -90,8 +92,8 @@ public class PipelineGroupsTest {
         PipelineConfigs dup = createGroup("first", "pipeline");
         PipelineGroups groups = new PipelineGroups(first, dup);
         groups.validate(null);
-        assertThat(first.errors().on(BasicPipelineConfigs.GROUP)).isEqualTo("Group with name 'first' already exists");
-        assertThat(dup.errors().on(BasicPipelineConfigs.GROUP)).isEqualTo("Group with name 'first' already exists");
+        assertThat(first.errors().firstErrorOn(BasicPipelineConfigs.GROUP)).isEqualTo("Group with name 'first' already exists");
+        assertThat(dup.errors().firstErrorOn(BasicPipelineConfigs.GROUP)).isEqualTo("Group with name 'first' already exists");
     }
 
     @Test
@@ -133,7 +135,7 @@ public class PipelineGroupsTest {
 
     private void assertDuplicateNameErrorOnPipeline(PipelineConfig pipeline, List<String> expectedSources, int sourceCount) {
         assertThat(pipeline.errors().isEmpty()).isFalse();
-        String errorMessage = pipeline.errors().on(PipelineConfig.NAME);
+        String errorMessage = pipeline.errors().firstErrorOn(PipelineConfig.NAME);
         assertThat(errorMessage).contains("You have defined multiple pipelines named 'pipeline1'. Pipeline names must be unique. Source(s):");
         Matcher matcher = Pattern.compile("^.*\\[(.*),\\s(.*),\\s(.*)\\].*$").matcher(errorMessage);
         assertThat(matcher.matches()).isTrue();
@@ -142,7 +144,7 @@ public class PipelineGroupsTest {
         for (int i = 1; i <= matcher.groupCount(); i++) {
             actualSources.add(matcher.group(i));
         }
-        assertThat(actualSources.containsAll(expectedSources)).isTrue();
+        assertThat(actualSources).containsOnlyOnceElementsOf(expectedSources);
     }
 
     @Test
@@ -155,9 +157,9 @@ public class PipelineGroupsTest {
         pipelineGroups.validate(null);
 
         assertThat(pipeline1.errors().isEmpty()).isFalse();
-        assertThat(pipeline1.errors().on(PipelineConfig.NAME)).isEqualTo("You have defined multiple pipelines named 'pipeline1'. Pipeline names must be unique. Source(s): [cruise-config.xml]");
+        assertThat(pipeline1.errors().firstErrorOn(PipelineConfig.NAME)).isEqualTo("You have defined multiple pipelines named 'pipeline1'. Pipeline names must be unique. Source(s): [cruise-config.xml]");
         assertThat(pipeline2.errors().isEmpty()).isFalse();
-        assertThat(pipeline2.errors().on(PipelineConfig.NAME)).isEqualTo("You have defined multiple pipelines named 'pipeline1'. Pipeline names must be unique. Source(s): [cruise-config.xml]");
+        assertThat(pipeline2.errors().firstErrorOn(PipelineConfig.NAME)).isEqualTo("You have defined multiple pipelines named 'pipeline1'. Pipeline names must be unique. Source(s): [cruise-config.xml]");
     }
 
     @Test
@@ -182,8 +184,8 @@ public class PipelineGroupsTest {
     public void shouldGetPackageUsageInPipelines() {
         PackageMaterialConfig packageOne = new PackageMaterialConfig("package-id-one");
         PackageMaterialConfig packageTwo = new PackageMaterialConfig("package-id-two");
-        final PipelineConfig p1 = PipelineConfigMother.pipelineConfig("pipeline1", new MaterialConfigs(packageOne, packageTwo), new JobConfigs(new JobConfig(new CaseInsensitiveString("jobName"))));
-        final PipelineConfig p2 = PipelineConfigMother.pipelineConfig("pipeline2", new MaterialConfigs(packageTwo), new JobConfigs(new JobConfig(new CaseInsensitiveString("jobName"))));
+        final PipelineConfig p1 = PipelineConfigMother.pipelineConfig("pipeline1", new MaterialConfigs(packageOne, packageTwo), new JobConfigs(new JobConfig(cis("jobName"))));
+        final PipelineConfig p2 = PipelineConfigMother.pipelineConfig("pipeline2", new MaterialConfigs(packageTwo), new JobConfigs(new JobConfig(cis("jobName"))));
 
         PipelineGroups groups = new PipelineGroups();
         PipelineConfigs groupOne = new BasicPipelineConfigs(p1);
@@ -202,8 +204,8 @@ public class PipelineGroupsTest {
     public void shouldComputePackageUsageInPipelinesOnlyOnce() {
         PackageMaterialConfig packageOne = new PackageMaterialConfig("package-id-one");
         PackageMaterialConfig packageTwo = new PackageMaterialConfig("package-id-two");
-        final PipelineConfig p1 = PipelineConfigMother.pipelineConfig("pipeline1", new MaterialConfigs(packageOne, packageTwo), new JobConfigs(new JobConfig(new CaseInsensitiveString("jobName"))));
-        final PipelineConfig p2 = PipelineConfigMother.pipelineConfig("pipeline2", new MaterialConfigs(packageTwo), new JobConfigs(new JobConfig(new CaseInsensitiveString("jobName"))));
+        final PipelineConfig p1 = PipelineConfigMother.pipelineConfig("pipeline1", new MaterialConfigs(packageOne, packageTwo), new JobConfigs(new JobConfig(cis("jobName"))));
+        final PipelineConfig p2 = PipelineConfigMother.pipelineConfig("pipeline2", new MaterialConfigs(packageTwo), new JobConfigs(new JobConfig(cis("jobName"))));
 
         PipelineGroups groups = new PipelineGroups();
         groups.addAll(List.of(new BasicPipelineConfigs(p1), new BasicPipelineConfigs(p2)));
@@ -217,8 +219,8 @@ public class PipelineGroupsTest {
     public void shouldGetPluggableSCMMaterialUsageInPipelines() {
         PluggableSCMMaterialConfig pluggableSCMMaterialOne = new PluggableSCMMaterialConfig("scm-id-one");
         PluggableSCMMaterialConfig pluggableSCMMaterialTwo = new PluggableSCMMaterialConfig("scm-id-two");
-        final PipelineConfig p1 = PipelineConfigMother.pipelineConfig("pipeline1", new MaterialConfigs(pluggableSCMMaterialOne, pluggableSCMMaterialTwo), new JobConfigs(new JobConfig(new CaseInsensitiveString("jobName"))));
-        final PipelineConfig p2 = PipelineConfigMother.pipelineConfig("pipeline2", new MaterialConfigs(pluggableSCMMaterialTwo), new JobConfigs(new JobConfig(new CaseInsensitiveString("jobName"))));
+        final PipelineConfig p1 = PipelineConfigMother.pipelineConfig("pipeline1", new MaterialConfigs(pluggableSCMMaterialOne, pluggableSCMMaterialTwo), new JobConfigs(new JobConfig(cis("jobName"))));
+        final PipelineConfig p2 = PipelineConfigMother.pipelineConfig("pipeline2", new MaterialConfigs(pluggableSCMMaterialTwo), new JobConfigs(new JobConfig(cis("jobName"))));
 
         PipelineGroups groups = new PipelineGroups();
         PipelineConfigs groupOne = new BasicPipelineConfigs(p1);
@@ -242,7 +244,7 @@ public class PipelineGroupsTest {
         PipelineConfigs defaultGroup = createGroup("defaultGroup", createPipelineConfig("pipeline1", "stage1"));
         PipelineGroups groups = new PipelineGroups(defaultGroup);
         assertThat(groups.getLocal().size()).isEqualTo(1);
-        assertThat(groups.getLocal().get(0)).isEqualTo(defaultGroup);
+        assertThat(groups.getLocal().getFirst()).isEqualTo(defaultGroup);
     }
 
     @Test
@@ -251,7 +253,7 @@ public class PipelineGroupsTest {
         defaultGroup.setOrigins(new FileConfigOrigin());
         PipelineGroups groups = new PipelineGroups(defaultGroup);
         assertThat(groups.getLocal().size()).isEqualTo(1);
-        assertThat(groups.getLocal().get(0)).isEqualTo(defaultGroup);
+        assertThat(groups.getLocal().getFirst()).isEqualTo(defaultGroup);
     }
 
     @Test
@@ -279,7 +281,7 @@ public class PipelineGroupsTest {
     }
 
     @Test
-    public void shouldFindGroupByPipelineName() {
+    public void shouldFindGroupByPipelineOptional() {
         PipelineConfig p1Config = createPipelineConfig("pipeline1", "stage1");
         PipelineConfig p2Config = createPipelineConfig("pipeline2", "stage1");
         PipelineConfig p3Config = createPipelineConfig("pipeline3", "stage1");
@@ -289,9 +291,32 @@ public class PipelineGroupsTest {
 
         PipelineGroups groups = new PipelineGroups(group1, group2);
 
-        assertThat(groups.findGroupByPipeline(new CaseInsensitiveString("pipeline1"))).isEqualTo(group1);
-        assertThat(groups.findGroupByPipeline(new CaseInsensitiveString("pipeline2"))).isEqualTo(group1);
-        assertThat(groups.findGroupByPipeline(new CaseInsensitiveString("pipeline3"))).isEqualTo(group2);
+        assertThat(groups.findGroupByPipelineOptional(cis("pipeline1"))).contains(group1);
+        assertThat(groups.findGroupByPipelineOptional(cis("pipeline2"))).contains(group1);
+        assertThat(groups.findGroupByPipelineOptional(cis("pipeline3"))).contains(group2);
+
+        assertThat(groups.findGroupByPipelineOptional(cis(null))).isEmpty();
+        assertThat(groups.findGroupByPipelineOptional(cis("something-else"))).isEmpty();
+    }
+
+    @Test
+    public void shouldFindGroupByPipeline() {
+        PipelineConfig p1Config = createPipelineConfig("pipeline1", "stage1");
+        PipelineConfig p2Config = createPipelineConfig("pipeline2", "stage1");
+        PipelineConfig p3Config = createPipelineConfig("pipeline3", "stage1");
+
+        PipelineConfigs group1 = createGroup("group1", p1Config, p2Config);
+        PipelineConfigs group2 = createGroup("group2", p3Config);
+
+        PipelineGroups groups = new PipelineGroups(group1, group2);
+
+        assertThat(groups.findGroupByPipeline(cis("pipeline1"))).isEqualTo(group1);
+        assertThat(groups.findGroupByPipeline(cis("pipeline2"))).isEqualTo(group1);
+        assertThat(groups.findGroupByPipeline(cis("pipeline3"))).isEqualTo(group2);
+
+        assertThatThrownBy(() -> groups.findGroupByPipeline(cis(null)))
+            .isExactlyInstanceOf(RecordNotFoundException.class)
+            .hasMessage("Pipeline group (lookup by Pipeline with name 'null') was not found!");
     }
 
     @Test
@@ -307,7 +332,7 @@ public class PipelineGroupsTest {
     @Test
     public void shouldDeleteGroupWithSameNameWhenEmpty() {
         PipelineConfigs group = createGroup("group", new PipelineConfig[]{});
-        group.setAuthorization(new Authorization(new ViewConfig(new AdminUser(new CaseInsensitiveString("user")))));
+        group.setAuthorization(new Authorization(new ViewConfig(new AdminUser(cis("user")))));
 
         PipelineGroups groups = new PipelineGroups(group);
         groups.deleteGroup("group");

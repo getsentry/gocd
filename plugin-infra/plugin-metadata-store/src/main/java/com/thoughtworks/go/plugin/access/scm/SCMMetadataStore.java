@@ -23,8 +23,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-import static org.apache.commons.lang3.StringUtils.isEmpty;
-
 public class SCMMetadataStore extends PluginPreferenceStore<SCMPreference> {
 
     private static final SCMMetadataStore scmMetadataStore = new SCMMetadataStore();
@@ -42,21 +40,14 @@ public class SCMMetadataStore extends PluginPreferenceStore<SCMPreference> {
     }
 
     public SCMConfigurations getConfigurationMetadata(String pluginId) {
-        if (isEmpty(pluginId) || !hasPreferenceFor(pluginId)) {
+        if (pluginId == null || pluginId.isEmpty() || !hasPreferenceFor(pluginId)) {
             return null;
         }
         return preferenceFor(pluginId).getScmConfigurations();
     }
 
-    public SCMView getViewMetadata(String pluginId) {
-        if (isEmpty(pluginId) || !hasPreferenceFor(pluginId)) {
-            return null;
-        }
-        return preferenceFor(pluginId).getScmView();
-    }
-
     public String displayValue(String pluginId) {
-        if (isEmpty(pluginId) || !hasPreferenceFor(pluginId)) {
+        if (pluginId == null || pluginId.isEmpty() || !hasPreferenceFor(pluginId)) {
             return null;
         }
         SCMView scmView = preferenceFor(pluginId).getScmView();
@@ -66,19 +57,8 @@ public class SCMMetadataStore extends PluginPreferenceStore<SCMPreference> {
         return scmView.displayValue();
     }
 
-    public String template(String pluginId) {
-        if (isEmpty(pluginId) || !hasPreferenceFor(pluginId)) {
-            return null;
-        }
-        SCMView scmView = preferenceFor(pluginId).getScmView();
-        if (scmView == null) {
-            return null;
-        }
-        return scmView.template();
-    }
-
     public void removeMetadata(String pluginId) {
-        if (!isEmpty(pluginId)) {
+        if (pluginId != null && !pluginId.isEmpty()) {
             removePreferenceFor(pluginId);
         }
     }

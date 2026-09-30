@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.config.materials.git;
 
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.SecretParam;
 import com.thoughtworks.go.config.materials.Filter;
 import com.thoughtworks.go.config.materials.Materials;
@@ -37,7 +36,6 @@ import com.thoughtworks.go.util.command.CommandLine;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
 import com.thoughtworks.go.util.command.InMemoryStreamConsumer;
 import com.thoughtworks.go.util.command.UrlArgument;
-import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -53,9 +51,11 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileLock;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.domain.materials.git.GitTestRepo.GIT_FOO_BRANCH_BUNDLE;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.git;
 import static com.thoughtworks.go.util.command.ProcessOutputStreamConsumer.inMemoryConsumer;
@@ -170,7 +170,7 @@ public class GitMaterialTest {
             GitMaterial branchedGit = new GitMaterial(branchedTestRepo.projectRepositoryUrl(), BRANCH);
             List<Modification> modifications = branchedGit.latestModification(randomDirectory(), new TestSubprocessExecutionContext());
             assertThat(modifications.size()).isEqualTo(1);
-            assertThat(modifications.get(0).getComment()).isEqualTo("Started foo branch");
+            assertThat(modifications.getFirst().getComment()).isEqualTo("Started foo branch");
         }
 
         @Test
@@ -206,16 +206,16 @@ public class GitMaterialTest {
         @Test
         void shouldRetrieveModifiedFiles() {
             List<Modification> mods = git.modificationsSince(workingDir, GitTestRepo.REVISION_0, new TestSubprocessExecutionContext());
-            List<ModifiedFile> mod1Files = mods.get(0).getModifiedFiles();
+            List<ModifiedFile> mod1Files = mods.getFirst().getModifiedFiles();
             assertThat(mod1Files.size()).isEqualTo(1);
-            assertThat(mod1Files.get(0).getFileName()).isEqualTo("build.xml");
-            assertThat(mod1Files.get(0).getAction()).isEqualTo(ModifiedAction.modified);
+            assertThat(mod1Files.getFirst().getFileName()).isEqualTo("build.xml");
+            assertThat(mod1Files.getFirst().getAction()).isEqualTo(ModifiedAction.modified);
         }
 
         @Test
         void shouldUpdateToSpecificRevision() {
             File newFile = new File(workingDir, "second.txt");
-            assertThat(outputStreamConsumer.getStdError()).isEqualTo("");
+            assertThat(outputStreamConsumer.getStdError()).isEmpty();
 
             InMemoryStreamConsumer output = inMemoryConsumer();
             git.updateTo(output, workingDir, new RevisionContext(GitTestRepo.REVISION_1, GitTestRepo.REVISION_0, 2), new TestSubprocessExecutionContext());
@@ -263,7 +263,7 @@ public class GitMaterialTest {
             git.latestModification(workingDir, new TestSubprocessExecutionContext());
 
             File shouldNotBeRemoved = new File(new File(workingDir, ".git"), "shouldNotBeRemoved");
-            FileUtils.writeStringToFile(shouldNotBeRemoved, "gundi", UTF_8);
+            Files.writeString(shouldNotBeRemoved.toPath(), "gundi", UTF_8);
             assertThat(shouldNotBeRemoved).exists();
 
             git = new GitMaterial(repositoryUrl);
@@ -276,7 +276,7 @@ public class GitMaterialTest {
             git.latestModification(workingDir, new TestSubprocessExecutionContext());
 
             File shouldNotBeRemoved = new File(new File(workingDir, ".git"), "shouldNotBeRemoved");
-            FileUtils.writeStringToFile(shouldNotBeRemoved, "gundi", UTF_8);
+            Files.writeString(shouldNotBeRemoved.toPath(), "gundi", UTF_8);
             assertThat(shouldNotBeRemoved).exists();
 
             git = new GitMaterial(repositoryUrl.replace("file://", ""));
@@ -290,7 +290,7 @@ public class GitMaterialTest {
             git.latestModification(workingDir, new TestSubprocessExecutionContext());
 
             File shouldNotBeRemoved = new File(new File(workingDir, ".git"), "shouldNotBeRemoved");
-            FileUtils.writeStringToFile(shouldNotBeRemoved, "Text file", UTF_8);
+            Files.writeString(shouldNotBeRemoved.toPath(), "Text file", UTF_8);
 
             git = new GitMaterial(repositoryUrl, " ");
             git.latestModification(workingDir, new TestSubprocessExecutionContext());
@@ -299,6 +299,7 @@ public class GitMaterialTest {
 
         @Test
         @EnabledOnOs({OS.WINDOWS})
+        @SuppressWarnings("try")
         void shouldThrowExceptionWhenWorkingDirectoryIsNotGitRepoAndItsUnableToDeleteIt() throws IOException {
             File fileToBeLocked = new File(workingDir, "file");
             try (RandomAccessFile lockedFile = new RandomAccessFile(fileToBeLocked, "rw");
@@ -386,8 +387,8 @@ public class GitMaterialTest {
 
     @Test
     void shouldBeEqualWhenUrlSameForHgMaterial() {
-        Material material = MaterialsMother.gitMaterials("url1").get(0);
-        Material anotherMaterial = MaterialsMother.gitMaterials("url1").get(0);
+        Material material = MaterialsMother.gitMaterials("url1").getFirst();
+        Material anotherMaterial = MaterialsMother.gitMaterials("url1").getFirst();
         assertThat(material.equals(anotherMaterial)).isTrue();
         assertThat(anotherMaterial.equals(material)).isTrue();
         assertThat(anotherMaterial.hashCode() == material.hashCode()).isTrue();
@@ -395,16 +396,16 @@ public class GitMaterialTest {
 
     @Test
     void shouldNotBeEqualWhenUrlDifferent() {
-        Material material1 = MaterialsMother.gitMaterials("url1").get(0);
-        Material material2 = MaterialsMother.gitMaterials("url2").get(0);
+        Material material1 = MaterialsMother.gitMaterials("url1").getFirst();
+        Material material2 = MaterialsMother.gitMaterials("url2").getFirst();
         assertThat(material1.equals(material2)).isFalse();
         assertThat(material2.equals(material1)).isFalse();
     }
 
     @Test
     void shouldNotBeEqualWhenTypeDifferent() {
-        Material material = MaterialsMother.gitMaterials("url1").get(0);
-        final Material hgMaterial = MaterialsMother.hgMaterials("url1", "hgdir").get(0);
+        Material material = MaterialsMother.gitMaterials("url1").getFirst();
+        final Material hgMaterial = MaterialsMother.hgMaterials("url1", "hgdir").getFirst();
         assertThat(material.equals(hgMaterial)).isFalse();
         assertThat(hgMaterial.equals(material)).isFalse();
     }
@@ -480,10 +481,10 @@ public class GitMaterialTest {
         MaterialRevision materialRevision = materialRevisions.getMaterialRevision(0);
         materialRevision.updateTo(agentWorkingDir, inMemoryConsumer(), new TestSubprocessExecutionContext());
 
-        File localFile = submoduleRepos.files(GitRepoContainingSubmodule.NAME).get(0);
+        File localFile = submoduleRepos.files(GitRepoContainingSubmodule.NAME).getFirst();
         assertThat(new File(agentWorkingDir, localFile.getName())).exists();
 
-        File file = submoduleRepos.files(SUBMODULE).get(0);
+        File file = submoduleRepos.files(SUBMODULE).getFirst();
         File workingSubmoduleFolder = new File(agentWorkingDir, "sub1");
         assertThat(new File(workingSubmoduleFolder, file.getName())).exists();
     }
@@ -503,7 +504,7 @@ public class GitMaterialTest {
         List<Modification> afterAdd = gitMaterial.modificationsSince(serverWorkingDir, new Modifications(beforeAdd).latestRevision(gitMaterial), new TestSubprocessExecutionContext());
 
         assertThat(afterAdd.size()).isEqualTo(1);
-        assertThat(afterAdd.get(0).getComment()).isEqualTo("Added submodule new-submodule");
+        assertThat(afterAdd.getFirst().getComment()).isEqualTo("Added submodule new-submodule");
     }
 
     @Test
@@ -521,7 +522,7 @@ public class GitMaterialTest {
         List<Modification> after = gitMaterial.modificationsSince(serverWorkingDir, new Modifications(beforeAdd).latestRevision(gitMaterial), new TestSubprocessExecutionContext());
 
         assertThat(after.size()).isEqualTo(1);
-        assertThat(after.get(0).getComment()).isEqualTo("Removed submodule sub1");
+        assertThat(after.getFirst().getComment()).isEqualTo("Removed submodule sub1");
     }
 
     @Test
@@ -609,7 +610,7 @@ public class GitMaterialTest {
         void shouldBuildFromConfigObject() {
             final GitMaterialConfig materialConfig = git(new UrlArgument("http://example.com"), "bob", "pass", "master", "sub_module_folder",
                 true, Filter.create("igrnored"), false, "destination",
-                new CaseInsensitiveString("example"), false);
+                cis("example"), false);
 
             final GitMaterial gitMaterial = new GitMaterial(materialConfig);
 
@@ -635,7 +636,7 @@ public class GitMaterialTest {
             gitMaterial.setUserName("bob");
             gitMaterial.setPassword("pass");
             gitMaterial.setAutoUpdate(true);
-            gitMaterial.setName(new CaseInsensitiveString("example"));
+            gitMaterial.setName(cis("example"));
             gitMaterial.setInvertFilter(true);
             gitMaterial.setFolder("destination");
             gitMaterial.setFilter(Filter.create("allow"));
@@ -706,7 +707,7 @@ public class GitMaterialTest {
             String password = "{{SECRET:[test][id]}}";
             gitMaterial.setPassword(password);
 
-            SecretParam secretParam = gitMaterial.getSecretParams().get(0);
+            SecretParam secretParam = gitMaterial.getSecretParams().getFirst();
             secretParam.setValue("p@ssw:rd");
 
             assertThat(gitMaterial.urlForCommandLine()).isEqualTo("http://bob%40example.com:p%40ssw:rd@exampele.com");

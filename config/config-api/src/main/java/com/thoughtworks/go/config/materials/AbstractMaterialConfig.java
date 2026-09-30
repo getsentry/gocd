@@ -20,10 +20,17 @@ import com.thoughtworks.go.config.preprocessor.SkipParameterResolution;
 import com.thoughtworks.go.config.validation.NameTypeValidator;
 import com.thoughtworks.go.domain.ConfigErrors;
 import com.thoughtworks.go.domain.materials.MaterialConfig;
-import com.thoughtworks.go.util.CachedDigestUtils;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.lang3.Strings;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static java.util.stream.Collectors.joining;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 /**
  * Understands material configuration
@@ -36,7 +43,6 @@ public abstract class AbstractMaterialConfig implements MaterialConfig, ParamsAt
      */
     public static final String FINGERPRINT_DELIMITER = "<|>";
 
-    private static final int TRUNCATED_NAME_MAX_LENGTH = 20;
     public static final String MATERIAL_TYPE = "materialType";
 
     @SkipParameterResolution
@@ -92,7 +98,7 @@ public abstract class AbstractMaterialConfig implements MaterialConfig, ParamsAt
     @Override
     public String getFingerprint() {
         if (fingerprint == null) {
-            fingerprint = generateFingerprintFromCriteria(getSqlCriteria());
+            fingerprint = fingerprintFrom(getSqlCriteria());
         }
         return fingerprint;
     }
@@ -102,32 +108,17 @@ public abstract class AbstractMaterialConfig implements MaterialConfig, ParamsAt
         if (pipelineUniqueFingerprint == null) {
             Map<String, Object> basicCriteria = new LinkedHashMap<>(getSqlCriteria());
             appendPipelineUniqueCriteria(basicCriteria);
-            pipelineUniqueFingerprint = generateFingerprintFromCriteria(basicCriteria);
+            pipelineUniqueFingerprint = fingerprintFrom(basicCriteria);
         }
         return pipelineUniqueFingerprint;
     }
 
-    private String generateFingerprintFromCriteria(Map<String, Object> sqlCriteria) {
-        List<String> list = new ArrayList<>();
-        for (Map.Entry<String, Object> criteria : sqlCriteria.entrySet()) {
-            list.add(new StringBuilder().append(criteria.getKey()).append("=").append(criteria.getValue()).toString());
-        }
-        String fingerprint = StringUtils.join(list, FINGERPRINT_DELIMITER);
+    private String fingerprintFrom(Map<String, Object> map) {
         // CAREFUL! the hash algorithm has to be same as the one used in 47_create_new_materials.sql
-        return CachedDigestUtils.sha256Hex(fingerprint);
-    }
-
-    @Override
-    public String getTruncatedDisplayName() {
-        String displayName = getDisplayName();
-        if (displayName.length() > TRUNCATED_NAME_MAX_LENGTH) {
-            StringBuilder builder = new StringBuilder();
-            builder.append(displayName, 0, TRUNCATED_NAME_MAX_LENGTH / 2);
-            builder.append("...");
-            builder.append(displayName.substring(displayName.length() - TRUNCATED_NAME_MAX_LENGTH / 2));
-            displayName = builder.toString();
-        }
-        return displayName;
+        return DigestUtils.sha256Hex(map.entrySet().stream()
+            .map(criteria -> criteria.getKey() + "=" + criteria.getValue())
+            .collect(joining(FINGERPRINT_DELIMITER))
+        );
     }
 
     protected abstract void appendCriteria(Map<String, Object> parameters);
@@ -141,7 +132,7 @@ public abstract class AbstractMaterialConfig implements MaterialConfig, ParamsAt
 
     @Override
     public void setName(String name) {
-        this.name = new CaseInsensitiveString(name);
+        this.name = cis(name);
     }
 
     @Override
@@ -150,13 +141,8 @@ public abstract class AbstractMaterialConfig implements MaterialConfig, ParamsAt
     }
 
     @Override
-    public String getShortRevision(String revision) {
-        return revision;
-    }
-
-    @Override
     public final void validate(ValidationContext validationContext) {
-        if (name != null && !StringUtils.isBlank(CaseInsensitiveString.str(name)) && !new NameTypeValidator().isNameValid(name)) {
+        if (name != null && !isBlank(CaseInsensitiveString.str(name)) && !new NameTypeValidator().isNameValid(name)) {
             errors().add(MATERIAL_NAME, NameTypeValidator.errorMessage("material", name));
         }
         validateConcreteMaterial(validationContext);
@@ -170,7 +156,7 @@ public abstract class AbstractMaterialConfig implements MaterialConfig, ParamsAt
         return errors().isEmpty();
     }
 
-    protected void validateExtras(ValidationContext validationContext){
+    protected void validateExtras(ValidationContext validationContext) {
     }
 
     protected abstract void validateConcreteMaterial(ValidationContext validationContext);
@@ -187,7 +173,7 @@ public abstract class AbstractMaterialConfig implements MaterialConfig, ParamsAt
 
     @Override
     public void validateNameUniqueness(Map<CaseInsensitiveString, AbstractMaterialConfig> map) {
-        if (CaseInsensitiveString.isBlank(getName())) {
+        if (CaseInsensitiveString.isEmpty(getName())) {
             return;
         }
         CaseInsensitiveString currentMaterialName = getName();
@@ -207,10 +193,10 @@ public abstract class AbstractMaterialConfig implements MaterialConfig, ParamsAt
 
     private void addNameConflictError() {
         errors.add("materialName", String.format(
-                "You have defined multiple materials called '%s'. "
-                        + "Material names are case-insensitive and must be unique. "
-                        + "Note that for dependency materials the default materialName is the name of the upstream pipeline. You can override this by setting the materialName explicitly for the upstream pipeline.",
-                getDisplayName()));
+            "You have defined multiple materials called '%s'. "
+                + "Material names are case-insensitive and must be unique. "
+                + "Note that for dependency materials the default materialName is the name of the upstream pipeline. You can override this by setting the materialName explicitly for the upstream pipeline.",
+            getDisplayName()));
     }
 
     @Override
@@ -224,14 +210,8 @@ public abstract class AbstractMaterialConfig implements MaterialConfig, ParamsAt
 
         AbstractMaterialConfig that = (AbstractMaterialConfig) o;
 
-        if (name != null ? !name.equals(that.name) : that.name != null) {
-            return false;
-        }
-        if (type != null ? !type.equals(that.type) : that.type != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(name, that.name) &&
+            Objects.equals(type, that.type);
     }
 
     @Override
@@ -253,14 +233,14 @@ public abstract class AbstractMaterialConfig implements MaterialConfig, ParamsAt
         Map<String, String> map = (Map<String, String>) attributes;
         if (map.containsKey(MATERIAL_NAME)) {
             String name = map.get(MATERIAL_NAME);
-            this.name = StringUtils.isBlank(name) ? null : new CaseInsensitiveString(name);
+            this.name = isBlank(name) ? null : cis(name);
         }
     }
 
     @Override
     public boolean isUsedInLabelTemplate(PipelineConfig pipelineConfig) {
         CaseInsensitiveString materialName = getName();
-        return materialName != null && pipelineConfig.getLabelTemplate().toLowerCase().contains(String.format("${%s}", materialName.toLower()));
+        return materialName != null && Strings.CI.contains(pipelineConfig.getLabelTemplate(), String.format("${%s}", materialName));
     }
 
     protected void resetCachedIdentityAttributes() {

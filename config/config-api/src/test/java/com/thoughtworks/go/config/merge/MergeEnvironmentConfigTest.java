@@ -26,9 +26,9 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.util.command.EnvironmentVariableContext.GO_ENVIRONMENT_NAME;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -43,12 +43,12 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
     @BeforeEach
     void setUp() {
-        localUatEnv1 = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+        localUatEnv1 = new BasicEnvironmentConfig(cis("UAT"));
         localUatEnv1.setOrigins(new FileConfigOrigin());
 
-        uatLocalPart2 = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+        uatLocalPart2 = new BasicEnvironmentConfig(cis("UAT"));
         uatLocalPart2.setOrigins(new FileConfigOrigin());
-        uatRemotePart = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+        uatRemotePart = new BasicEnvironmentConfig(cis("UAT"));
         uatRemotePart.setOrigins(new RepoConfigOrigin());
         pairEnvironmentConfig = new MergeEnvironmentConfig(uatLocalPart2, uatRemotePart);
         singleEnvironmentConfig = new MergeEnvironmentConfig(localUatEnv1);
@@ -60,18 +60,18 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
     class MergeEnvironmentPartsWithSameName {
         @Test
         void shouldNotAllowPartsWithDifferentNames() {
-            BasicEnvironmentConfig part1 = new BasicEnvironmentConfig(new CaseInsensitiveString("PROD"));
-            BasicEnvironmentConfig part2 = new BasicEnvironmentConfig(new CaseInsensitiveString("PROD"));
-            BasicEnvironmentConfig part3 = new BasicEnvironmentConfig(new CaseInsensitiveString("STAGE"));
+            BasicEnvironmentConfig part1 = new BasicEnvironmentConfig(cis("PROD"));
+            BasicEnvironmentConfig part2 = new BasicEnvironmentConfig(cis("PROD"));
+            BasicEnvironmentConfig part3 = new BasicEnvironmentConfig(cis("STAGE"));
 
             assertThrows(IllegalArgumentException.class, () -> new MergeEnvironmentConfig(part1, part2, part3));
         }
 
         @Test
         void ShouldContainSameNameAsOfPartialEnvironments() {
-            BasicEnvironmentConfig part1 = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
-            BasicEnvironmentConfig part2 = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
-            BasicEnvironmentConfig part3 = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+            BasicEnvironmentConfig part1 = new BasicEnvironmentConfig(cis("UAT"));
+            BasicEnvironmentConfig part2 = new BasicEnvironmentConfig(cis("UAT"));
+            BasicEnvironmentConfig part3 = new BasicEnvironmentConfig(cis("UAT"));
 
             MergeEnvironmentConfig mergeEnv = new MergeEnvironmentConfig(part1, part2, part3);
             assertThat(mergeEnv.name()).isEqualTo(part1.name());
@@ -82,9 +82,9 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
     class MergeEnvironmentFirstEditablePart {
         @Test
         void shouldReturnFirstEditablePart() {
-            BasicEnvironmentConfig part1 = new BasicEnvironmentConfig(new CaseInsensitiveString("PROD"));
-            BasicEnvironmentConfig part2 = new BasicEnvironmentConfig(new CaseInsensitiveString("PROD"));
-            BasicEnvironmentConfig part3 = new BasicEnvironmentConfig(new CaseInsensitiveString("PROD"));
+            BasicEnvironmentConfig part1 = new BasicEnvironmentConfig(cis("PROD"));
+            BasicEnvironmentConfig part2 = new BasicEnvironmentConfig(cis("PROD"));
+            BasicEnvironmentConfig part3 = new BasicEnvironmentConfig(cis("PROD"));
 
             MergeEnvironmentConfig merged = new MergeEnvironmentConfig(part1, part2, part3);
             assertThat(merged.getFirstEditablePartOrNull()).isEqualTo(part1);
@@ -92,9 +92,9 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
         @Test
         void shouldReturnFirstEditablePartAsNullWhenThereAreNoPartsWithEditableOrigin() {
-            BasicEnvironmentConfig part1 = new BasicEnvironmentConfig(new CaseInsensitiveString("PROD"));
-            BasicEnvironmentConfig part2 = new BasicEnvironmentConfig(new CaseInsensitiveString("PROD"));
-            BasicEnvironmentConfig part3 = new BasicEnvironmentConfig(new CaseInsensitiveString("PROD"));
+            BasicEnvironmentConfig part1 = new BasicEnvironmentConfig(cis("PROD"));
+            BasicEnvironmentConfig part2 = new BasicEnvironmentConfig(cis("PROD"));
+            BasicEnvironmentConfig part3 = new BasicEnvironmentConfig(cis("PROD"));
 
             part1.setOrigins(new RepoConfigOrigin());
             part2.setOrigins(new RepoConfigOrigin());
@@ -109,13 +109,13 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
     class GetRemotePipelines {
         @Test
         void shouldReturnEmptyWhenOnlyLocalPartHasPipelines() {
-            uatLocalPart2.addPipeline(new CaseInsensitiveString("pipe"));
+            uatLocalPart2.addPipeline(cis("pipe"));
             assertThat(pairEnvironmentConfig.getRemotePipelines().isEmpty()).isTrue();
         }
 
         @Test
         void shouldReturnPipelinesFromRemotePartWhenRemoteHasPipesAssigned() {
-            uatRemotePart.addPipeline(new CaseInsensitiveString("pipe"));
+            uatRemotePart.addPipeline(cis("pipe"));
             assertThat(environmentConfig.getRemotePipelines().isEmpty()).isFalse();
         }
     }
@@ -124,35 +124,35 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
     class getPipelineNames {
         @Test
         void shouldReturnPipelineNamesFrom2Parts() {
-            pairEnvironmentConfig.get(0).addPipeline(new CaseInsensitiveString("deployment"));
-            pairEnvironmentConfig.get(1).addPipeline(new CaseInsensitiveString("testing"));
+            pairEnvironmentConfig.getFirst().addPipeline(cis("deployment"));
+            pairEnvironmentConfig.getLast().addPipeline(cis("testing"));
 
             List<CaseInsensitiveString> pipelineNames = pairEnvironmentConfig.getPipelineNames();
 
             assertThat(pipelineNames).hasSize(2)
-                .contains(new CaseInsensitiveString("deployment"),
-                    new CaseInsensitiveString("testing"));
+                .contains(cis("deployment"),
+                    cis("testing"));
         }
 
         @Test
         void shouldNotRepeatPipelineNamesFrom2Parts() {
-            pairEnvironmentConfig.get(0).addPipeline(new CaseInsensitiveString("deployment"));
-            pairEnvironmentConfig.get(1).addPipeline(new CaseInsensitiveString("deployment"));
+            pairEnvironmentConfig.getFirst().addPipeline(cis("deployment"));
+            pairEnvironmentConfig.getLast().addPipeline(cis("deployment"));
 
             List<CaseInsensitiveString> pipelineNames = pairEnvironmentConfig.getPipelineNames();
 
-            assertThat(pipelineNames).contains(new CaseInsensitiveString("deployment"));
+            assertThat(pipelineNames).contains(cis("deployment"));
         }
 
         @Test
         void shouldDeduplicateRepeatedPipelinesFrom2Parts() {
-            pairEnvironmentConfig.get(0).addPipeline(new CaseInsensitiveString("deployment"));
-            pairEnvironmentConfig.get(1).addPipeline(new CaseInsensitiveString("deployment"));
+            pairEnvironmentConfig.getFirst().addPipeline(cis("deployment"));
+            pairEnvironmentConfig.getLast().addPipeline(cis("deployment"));
 
             List<CaseInsensitiveString> pipelineNames = pairEnvironmentConfig.getPipelineNames();
 
             assertThat(pipelineNames).hasSize(1);
-            assertThat(pairEnvironmentConfig.containsPipeline(new CaseInsensitiveString("deployment"))).isTrue();
+            assertThat(pairEnvironmentConfig.containsPipeline(cis("deployment"))).isTrue();
         }
     }
 
@@ -160,8 +160,8 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
     class getAgents {
         @Test
         void shouldHaveAgentsFrom2Parts() {
-            pairEnvironmentConfig.get(0).addAgent("123");
-            pairEnvironmentConfig.get(1).addAgent("345");
+            pairEnvironmentConfig.getFirst().addAgent("123");
+            pairEnvironmentConfig.getLast().addAgent("345");
 
             assertThat(pairEnvironmentConfig.hasAgent("123")).isTrue();
             assertThat(pairEnvironmentConfig.hasAgent("345")).isTrue();
@@ -171,8 +171,8 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
         @Test
         void shouldReturnAgentsUuidsFrom2Parts() {
-            pairEnvironmentConfig.get(0).addAgent("123");
-            pairEnvironmentConfig.get(1).addAgent("345");
+            pairEnvironmentConfig.getFirst().addAgent("123");
+            pairEnvironmentConfig.getLast().addAgent("345");
 
             EnvironmentAgentsConfig agents = pairEnvironmentConfig.getAgents();
 
@@ -182,8 +182,8 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
         @Test
         void shouldDeduplicateRepeatedAgentsFrom2Parts() {
-            pairEnvironmentConfig.get(0).addAgent("123");
-            pairEnvironmentConfig.get(1).addAgent("123");
+            pairEnvironmentConfig.getFirst().addAgent("123");
+            pairEnvironmentConfig.getLast().addAgent("123");
             EnvironmentAgentsConfig agents = pairEnvironmentConfig.getAgents();
             assertThat(agents).hasSize(1);
             assertThat(agents.getUuids()).contains("123");
@@ -194,13 +194,13 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
     class validate {
         @Test
         void shouldValidateDuplicatePipelines() {
-            pairEnvironmentConfig.get(0).addPipeline(new CaseInsensitiveString("up40"));
-            pairEnvironmentConfig.get(0).addPipeline(new CaseInsensitiveString("up41"));
-            pairEnvironmentConfig.get(0).addPipeline(new CaseInsensitiveString("up42"));
+            pairEnvironmentConfig.getFirst().addPipeline(cis("up40"));
+            pairEnvironmentConfig.getFirst().addPipeline(cis("up41"));
+            pairEnvironmentConfig.getFirst().addPipeline(cis("up42"));
 
-            pairEnvironmentConfig.get(1).addPipeline(new CaseInsensitiveString("up43"));
-            pairEnvironmentConfig.get(1).addPipeline(new CaseInsensitiveString("up44"));
-            pairEnvironmentConfig.get(1).addPipeline(new CaseInsensitiveString("up40"));
+            pairEnvironmentConfig.getLast().addPipeline(cis("up43"));
+            pairEnvironmentConfig.getLast().addPipeline(cis("up44"));
+            pairEnvironmentConfig.getLast().addPipeline(cis("up40"));
 
             pairEnvironmentConfig.validate(null);
 
@@ -210,11 +210,11 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
         @Test
         void shouldValidateDuplicateEnvironmentVariables() {
-            pairEnvironmentConfig.get(0).addEnvironmentVariable("var1", "value1");
-            pairEnvironmentConfig.get(0).addEnvironmentVariable("var1", "value1");
+            pairEnvironmentConfig.getFirst().addEnvironmentVariable("var1", "value1");
+            pairEnvironmentConfig.getFirst().addEnvironmentVariable("var1", "value1");
 
-            pairEnvironmentConfig.get(1).addEnvironmentVariable("var3", "value3");
-            pairEnvironmentConfig.get(1).addEnvironmentVariable("var1", "value4");
+            pairEnvironmentConfig.getLast().addEnvironmentVariable("var3", "value3");
+            pairEnvironmentConfig.getLast().addEnvironmentVariable("var1", "value4");
 
             pairEnvironmentConfig.validate(null);
 
@@ -225,13 +225,13 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
         @Test
         void shouldValidateDuplicateAgents() {
-            pairEnvironmentConfig.get(0).addAgent("uuid1");
-            pairEnvironmentConfig.get(0).addAgent("uuid2");
-            pairEnvironmentConfig.get(0).addAgent("uuid3");
+            pairEnvironmentConfig.getFirst().addAgent("uuid1");
+            pairEnvironmentConfig.getFirst().addAgent("uuid2");
+            pairEnvironmentConfig.getFirst().addAgent("uuid3");
 
-            pairEnvironmentConfig.get(1).addAgent("uuid11");
-            pairEnvironmentConfig.get(1).addAgent("uuid1");
-            pairEnvironmentConfig.get(1).addAgent("uuid13");
+            pairEnvironmentConfig.getLast().addAgent("uuid11");
+            pairEnvironmentConfig.getLast().addAgent("uuid1");
+            pairEnvironmentConfig.getLast().addAgent("uuid13");
 
             pairEnvironmentConfig.validate(null);
 
@@ -285,7 +285,7 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
         @Test
         void shouldReturnNullAsFirstEditablePart() {
-            BasicEnvironmentConfig basicEnvironmentConfig = new BasicEnvironmentConfig(new CaseInsensitiveString("repo"));
+            BasicEnvironmentConfig basicEnvironmentConfig = new BasicEnvironmentConfig(cis("repo"));
             basicEnvironmentConfig.setOrigins(new RepoConfigOrigin());
 
             assertNull(new MergeEnvironmentConfig(basicEnvironmentConfig).getFirstEditablePartOrNull());
@@ -293,7 +293,7 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
         @Test
         void shouldThrowExceptionIfNoEditablePartExists() {
-            BasicEnvironmentConfig basicEnvironmentConfig = new BasicEnvironmentConfig(new CaseInsensitiveString("repo"));
+            BasicEnvironmentConfig basicEnvironmentConfig = new BasicEnvironmentConfig(cis("repo"));
             basicEnvironmentConfig.setOrigins(new RepoConfigOrigin());
 
             MergeEnvironmentConfig mergeEnvironmentConfig = new MergeEnvironmentConfig(basicEnvironmentConfig);
@@ -309,7 +309,7 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
         @Test
         void shouldNotThrowExceptionIfNoEditablePartExistsAndShouldReturnNull() {
-            BasicEnvironmentConfig basicEnvironmentConfig = new BasicEnvironmentConfig(new CaseInsensitiveString("repo"));
+            BasicEnvironmentConfig basicEnvironmentConfig = new BasicEnvironmentConfig(cis("repo"));
             basicEnvironmentConfig.setOrigins(new RepoConfigOrigin());
 
             MergeEnvironmentConfig mergeEnvironmentConfig = new MergeEnvironmentConfig(basicEnvironmentConfig);
@@ -322,9 +322,9 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
     @Test
     void ShouldThrowExceptionAllPartialEnvsDoesNotContainSameName() {
-        BasicEnvironmentConfig local1 = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
-        BasicEnvironmentConfig local2 = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
-        BasicEnvironmentConfig remote = new BasicEnvironmentConfig(new CaseInsensitiveString("PROD"));
+        BasicEnvironmentConfig local1 = new BasicEnvironmentConfig(cis("UAT"));
+        BasicEnvironmentConfig local2 = new BasicEnvironmentConfig(cis("UAT"));
+        BasicEnvironmentConfig remote = new BasicEnvironmentConfig(cis("PROD"));
 
         assertThrows(IllegalArgumentException.class, () -> new MergeEnvironmentConfig(local1, local2, remote));
     }
@@ -341,8 +341,8 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
     @Test
     void shouldHaveVariablesFrom2Parts() {
-        pairEnvironmentConfig.get(0).addEnvironmentVariable("variable-name1", "variable-value1");
-        pairEnvironmentConfig.get(1).addEnvironmentVariable("variable-name2", "variable-value2");
+        pairEnvironmentConfig.getFirst().addEnvironmentVariable("variable-name1", "variable-value1");
+        pairEnvironmentConfig.getLast().addEnvironmentVariable("variable-name2", "variable-value2");
 
         assertThat(pairEnvironmentConfig.hasVariable("variable-name1")).isTrue();
         assertThat(pairEnvironmentConfig.hasVariable("variable-name2")).isTrue();
@@ -350,8 +350,8 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
     @Test
     void shouldAddEnvironmentVariablesToEnvironmentVariableContextFrom2Parts() {
-        pairEnvironmentConfig.get(0).addEnvironmentVariable("variable-name1", "variable-value1");
-        pairEnvironmentConfig.get(1).addEnvironmentVariable("variable-name2", "variable-value2");
+        pairEnvironmentConfig.getFirst().addEnvironmentVariable("variable-name1", "variable-value1");
+        pairEnvironmentConfig.getLast().addEnvironmentVariable("variable-name2", "variable-value2");
 
         EnvironmentVariableContext context = pairEnvironmentConfig.createEnvironmentContext();
         assertThat(context.getProperty("variable-name1")).isEqualTo("variable-value1");
@@ -360,8 +360,8 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
     @Test
     void shouldAddDeduplicatedEnvironmentVariablesToEnvironmentVariableContextFrom2Parts() {
-        pairEnvironmentConfig.get(0).addEnvironmentVariable("variable-name1", "variable-value1");
-        pairEnvironmentConfig.get(1).addEnvironmentVariable("variable-name1", "variable-value1");
+        pairEnvironmentConfig.getFirst().addEnvironmentVariable("variable-name1", "variable-value1");
+        pairEnvironmentConfig.getLast().addEnvironmentVariable("variable-name1", "variable-value1");
 
         assertThat(pairEnvironmentConfig.getVariables().size()).isEqualTo(1);
 
@@ -371,11 +371,11 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
     @Test
     void shouldCreateErrorsForInconsistentEnvironmentVariables() {
-        pairEnvironmentConfig.get(0).addEnvironmentVariable("variable-name1", "variable-value1");
-        pairEnvironmentConfig.get(1).addEnvironmentVariable("variable-name1", "variable-value2");
+        pairEnvironmentConfig.getFirst().addEnvironmentVariable("variable-name1", "variable-value1");
+        pairEnvironmentConfig.getLast().addEnvironmentVariable("variable-name1", "variable-value2");
         pairEnvironmentConfig.validate(ConfigSaveValidationContext.forChain(pairEnvironmentConfig));
         assertThat(pairEnvironmentConfig.errors().isEmpty()).isFalse();
-        assertThat(pairEnvironmentConfig.errors().on(MergeEnvironmentConfig.CONSISTENT_KV)).isEqualTo("Environment variable 'variable-name1' is defined more than once with different values");
+        assertThat(pairEnvironmentConfig.errors().firstErrorOn(MergeEnvironmentConfig.CONSISTENT_KV)).isEqualTo("Environment variable 'variable-name1' is defined more than once with different values");
     }
 
     @Test
@@ -403,12 +403,12 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
         pairEnvironmentConfig.addError("field-name", "some error message.");
 
         assertThat(pairEnvironmentConfig.errors().size()).isEqualTo(1);
-        assertThat(pairEnvironmentConfig.errors().on("field-name")).isEqualTo("some error message.");
+        assertThat(pairEnvironmentConfig.errors().firstErrorOn("field-name")).isEqualTo("some error message.");
     }
 
     @Test
     void shouldReturnTrueWhenOnlyPartIsLocal() {
-        BasicEnvironmentConfig uatLocalPart = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+        BasicEnvironmentConfig uatLocalPart = new BasicEnvironmentConfig(cis("UAT"));
         uatLocalPart.setOrigins(new FileConfigOrigin());
         environmentConfig = new MergeEnvironmentConfig(uatLocalPart);
         assertThat(environmentConfig.isLocal()).isTrue();
@@ -416,9 +416,9 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
     @Test
     void shouldReturnFalseWhenPartIsRemote() {
-        BasicEnvironmentConfig uatLocalPart = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+        BasicEnvironmentConfig uatLocalPart = new BasicEnvironmentConfig(cis("UAT"));
         uatLocalPart.setOrigins(new FileConfigOrigin());
-        BasicEnvironmentConfig uatRemotePart = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+        BasicEnvironmentConfig uatRemotePart = new BasicEnvironmentConfig(cis("UAT"));
         uatRemotePart.setOrigins(new RepoConfigOrigin());
         environmentConfig = new MergeEnvironmentConfig(uatLocalPart, uatRemotePart);
         assertThat(environmentConfig.isLocal()).isFalse();
@@ -426,9 +426,9 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
     @Test
     void shouldUpdateEnvironmentVariablesWhenSourceIsEditable() {
-        BasicEnvironmentConfig uatLocalPart = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+        BasicEnvironmentConfig uatLocalPart = new BasicEnvironmentConfig(cis("UAT"));
         uatLocalPart.setOrigins(new FileConfigOrigin());
-        BasicEnvironmentConfig uatRemotePart = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+        BasicEnvironmentConfig uatRemotePart = new BasicEnvironmentConfig(cis("UAT"));
         uatRemotePart.setOrigins(new RepoConfigOrigin());
 
         uatLocalPart.addEnvironmentVariable("hello", "world");
@@ -449,39 +449,39 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
     @Test
     void shouldReturnCorrectOriginOfDefinedPipeline() {
-        BasicEnvironmentConfig uatLocalPart = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+        BasicEnvironmentConfig uatLocalPart = new BasicEnvironmentConfig(cis("UAT"));
         uatLocalPart.setOrigins(new FileConfigOrigin());
         String localPipeline = "local-pipeline";
-        uatLocalPart.addPipeline(new CaseInsensitiveString(localPipeline));
-        BasicEnvironmentConfig uatRemotePart = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+        uatLocalPart.addPipeline(cis(localPipeline));
+        BasicEnvironmentConfig uatRemotePart = new BasicEnvironmentConfig(cis("UAT"));
         uatRemotePart.setOrigins(new RepoConfigOrigin());
         String remotePipeline = "remote-pipeline";
-        uatRemotePart.addPipeline(new CaseInsensitiveString(remotePipeline));
+        uatRemotePart.addPipeline(cis(remotePipeline));
         MergeEnvironmentConfig environmentConfig = new MergeEnvironmentConfig(uatLocalPart, uatRemotePart);
 
-        assertThat(environmentConfig.getOriginForPipeline(new CaseInsensitiveString(localPipeline))).isEqualTo(new FileConfigOrigin());
-        assertThat(environmentConfig.getOriginForPipeline(new CaseInsensitiveString(remotePipeline))).isEqualTo(new RepoConfigOrigin());
+        assertThat(environmentConfig.getOriginForPipeline(cis(localPipeline))).isEqualTo(new FileConfigOrigin());
+        assertThat(environmentConfig.getOriginForPipeline(cis(remotePipeline))).isEqualTo(new RepoConfigOrigin());
     }
 
     @Test
     void shouldReturnCorrectOriginOfDefinedAgent() {
-        BasicEnvironmentConfig uatLocalPart = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+        BasicEnvironmentConfig uatLocalPart = new BasicEnvironmentConfig(cis("UAT"));
         uatLocalPart.setOrigins(new FileConfigOrigin());
         String localAgent = "local-agent";
         uatLocalPart.addAgent(localAgent);
-        BasicEnvironmentConfig uatRemotePart = new BasicEnvironmentConfig(new CaseInsensitiveString("UAT"));
+        BasicEnvironmentConfig uatRemotePart = new BasicEnvironmentConfig(cis("UAT"));
         uatRemotePart.setOrigins(new RepoConfigOrigin());
         String remoteAgent = "remote-agent";
         uatRemotePart.addAgent(remoteAgent);
         MergeEnvironmentConfig environmentConfig = new MergeEnvironmentConfig(uatLocalPart, uatRemotePart);
 
-        assertThat(environmentConfig.originForAgent(localAgent)).isEqualTo(Optional.of(new FileConfigOrigin()));
-        assertThat(environmentConfig.originForAgent(remoteAgent)).isEqualTo(Optional.of(new RepoConfigOrigin()));
+        assertThat(environmentConfig.originForAgent(localAgent)).contains(new FileConfigOrigin());
+        assertThat(environmentConfig.originForAgent(remoteAgent)).contains(new RepoConfigOrigin());
     }
 
     @Test
     void shouldReturnMatchersWithTheProperties() {
-        singleEnvironmentConfig.addPipeline(new CaseInsensitiveString("pipeline-1"));
+        singleEnvironmentConfig.addPipeline(cis("pipeline-1"));
         singleEnvironmentConfig.addAgent("agent-1");
 
         EnvironmentPipelineMatcher matcher = singleEnvironmentConfig.createMatcher();
@@ -496,8 +496,8 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
     @Test
     void shouldNotThrowExceptionIfAllThePipelinesArePresent() {
-        CaseInsensitiveString p1 = new CaseInsensitiveString("pipeline-1");
-        CaseInsensitiveString p2 = new CaseInsensitiveString("pipeline-2");
+        CaseInsensitiveString p1 = cis("pipeline-1");
+        CaseInsensitiveString p2 = cis("pipeline-2");
 
         singleEnvironmentConfig.addPipeline(p1);
         singleEnvironmentConfig.addPipeline(p2);
@@ -508,9 +508,9 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
     @Test
     void shouldThrowExceptionIfOneOfThePipelinesAreNotPassed() {
-        CaseInsensitiveString p1 = new CaseInsensitiveString("pipeline-1");
-        CaseInsensitiveString p2 = new CaseInsensitiveString("pipeline-2");
-        CaseInsensitiveString p3 = new CaseInsensitiveString("pipeline-3");
+        CaseInsensitiveString p1 = cis("pipeline-1");
+        CaseInsensitiveString p2 = cis("pipeline-2");
+        CaseInsensitiveString p3 = cis("pipeline-3");
 
         singleEnvironmentConfig.addPipeline(p1);
         singleEnvironmentConfig.addPipeline(p2);
@@ -527,7 +527,7 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
     @Test
     void shouldReturnFalseIfNotEmpty() {
-        singleEnvironmentConfig.addPipeline(new CaseInsensitiveString("pipeline1"));
+        singleEnvironmentConfig.addPipeline(cis("pipeline1"));
         assertFalse(singleEnvironmentConfig.isEnvironmentEmpty());
     }
 
@@ -543,8 +543,8 @@ class MergeEnvironmentConfigTest extends EnvironmentConfigTestBase {
 
     @Test
     void shouldAddAgentIfNewAndIfAnyPartIsEditable() {
-        BasicEnvironmentConfig part1 = new BasicEnvironmentConfig(new CaseInsensitiveString("env1"));
-        BasicEnvironmentConfig part2 = new BasicEnvironmentConfig(new CaseInsensitiveString("env1"));
+        BasicEnvironmentConfig part1 = new BasicEnvironmentConfig(cis("env1"));
+        BasicEnvironmentConfig part2 = new BasicEnvironmentConfig(cis("env1"));
 
         part1.setOrigins(new RepoConfigOrigin());
         part2.setOrigins(new RepoConfigOrigin());

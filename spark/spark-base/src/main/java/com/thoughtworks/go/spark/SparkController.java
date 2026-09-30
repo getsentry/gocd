@@ -19,22 +19,24 @@ import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.policy.SupportedAction;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.newsecurity.utils.SessionUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.http.client.utils.URLEncodedUtils;
-import org.apache.http.message.BasicNameValuePair;
+import com.thoughtworks.go.util.UriEncodingUtil;
 import spark.Request;
+import spark.route.HttpMethod;
 
-import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+
+import static org.apache.commons.lang3.StringUtils.join;
 
 public interface SparkController {
+    default String getMimeType() {
+        throw new UnsupportedOperationException("Mime type must be implemented by this controller to use with this function");
+    }
+
     default String controllerPath(Object... paths) {
         if (paths == null || paths.length == 0) {
             return controllerBasePath();
         } else {
-            return (controllerBasePath() + "/" + StringUtils.join(paths, '/')).replaceAll("//", "/");
+            return (controllerBasePath() + "/" + join(paths, '/')).replace("//", "/");
         }
     }
 
@@ -44,36 +46,35 @@ public interface SparkController {
         if (params == null || params.isEmpty()) {
             return path;
         } else {
-            List<BasicNameValuePair> queryParams = params.entrySet().stream().map(entry -> new BasicNameValuePair(entry.getKey(), entry.getValue())).collect(Collectors.toList());
-            return path + '?' + URLEncodedUtils.format(queryParams, StandardCharsets.UTF_8);
+            return path + '?' + UriEncodingUtil.encodeQueryParams(params);
         }
     }
 
     String controllerBasePath();
 
-    void setupRoutes();
+    void setupRoutes(GlobalExceptionMapper exceptionMapper);
 
     default Username currentUsername() {
         return SessionUtils.currentUsername();
     }
 
     default SupportedAction getAction(Request request) {
-        return switch (request.requestMethod()) {
-            case "GET", "HEAD" -> SupportedAction.VIEW;
-            case "POST", "DELETE", "PATCH", "PUT" -> SupportedAction.ADMINISTER;
+        return switch (HttpMethod.get(request.requestMethod().toLowerCase())) {
+            case get, head -> SupportedAction.VIEW;
+            case post, delete, patch, put -> SupportedAction.ADMINISTER;
             default -> SupportedAction.UNKNOWN;
         };
     }
 
     default String currentUsernameString() {
-        return currentUserLoginName().toString();
+        return currentUsernameCis().toString();
+    }
+
+    default CaseInsensitiveString currentUsernameCis() {
+        return currentUsername().getUsername();
     }
 
     default Long currentUserId(Request request) {
         return SessionUtils.getUserId(request.raw());
-    }
-
-    default CaseInsensitiveString currentUserLoginName() {
-        return currentUsername().getUsername();
     }
 }

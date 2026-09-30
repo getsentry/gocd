@@ -15,18 +15,18 @@
  */
 package com.thoughtworks.go.agent.common.util;
 
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.FilenameUtils;
+import com.thoughtworks.go.util.FileUtil;
+import com.thoughtworks.go.util.UrlUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
@@ -63,7 +63,7 @@ public class JarUtil {
     private static File extractJarEntry(JarFile jarFile, JarEntry jarEntry, File targetFile) {
         LOG.debug("Extracting {}!/{} -> {}", jarFile, jarEntry, targetFile);
         try (InputStream inputStream = jarFile.getInputStream(jarEntry)) {
-            FileUtils.forceMkdirParent(targetFile);
+            FileUtil.mkdirsParentQuietly(targetFile);
             Files.copy(inputStream, targetFile.toPath());
             return targetFile;
         } catch (IOException e) {
@@ -77,11 +77,11 @@ public class JarUtil {
 
             List<File> extractedJars = jarFile.stream()
                     .filter(extractFilter)
-                    .map(jarEntry -> {
-                        String jarFileBaseName = FilenameUtils.getName(jarEntry.getName());
-                        File targetFile = new File(outputTmpDir, jarFileBaseName);
-                        return extractJarEntry(jarFile, jarEntry, targetFile);
-                    })
+                    .map(jarEntry -> extractJarEntry(
+                        jarFile,
+                        jarEntry,
+                        outputTmpDir.toPath().resolve(Path.of(jarEntry.getName()).getFileName()).toFile())
+                    )
                     .toList();
 
             // add deps in dir specified by `libDirManifestKey`
@@ -93,13 +93,7 @@ public class JarUtil {
     }
 
     public static URL[] toURLs(List<File> files) {
-        return files.stream().map(file -> {
-            try {
-                return file.toURI().toURL();
-            } catch (MalformedURLException e) {
-                throw new RuntimeException(e);
-            }
-        }).toArray(URL[]::new);
+        return files.stream().map(UrlUtil::fromFile).toArray(URL[]::new);
     }
 
     public static URLClassLoader getClassLoaderFromJar(File aJarFile, Predicate<JarEntry> extractFilter, File outputTmpDir, ClassLoader parentClassLoader, Class<?>... allowedClasses) {

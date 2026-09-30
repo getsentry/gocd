@@ -24,14 +24,12 @@ import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.domain.materials.MaterialConfig;
 import com.thoughtworks.go.domain.materials.Modification;
 import com.thoughtworks.go.domain.materials.Modifications;
-import com.thoughtworks.go.domain.materials.dependency.DependencyMaterialRevision;
 import com.thoughtworks.go.server.dao.PipelineSqlMapDao;
 import com.thoughtworks.go.server.domain.PipelineConfigDependencyGraph;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.persistence.MaterialRepository;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
 import com.thoughtworks.go.server.ui.ModificationForPipeline;
-import com.thoughtworks.go.server.web.PipelineRevisionRange;
 import com.thoughtworks.go.serverhealth.HealthStateScope;
 import com.thoughtworks.go.serverhealth.HealthStateType;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,15 +37,16 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.serverhealth.HealthStateScope.forPipeline;
 import static com.thoughtworks.go.serverhealth.HealthStateType.general;
 
 @Service
 public class ChangesetService {
-    private PipelineSqlMapDao pipelineDao;
-    private MaterialRepository materialRepository;
+    private final PipelineSqlMapDao pipelineDao;
+    private final MaterialRepository materialRepository;
     private final GoConfigService goConfigService;
-    private SecurityService securityService;
+    private final SecurityService securityService;
 
     @Autowired
     public ChangesetService(SecurityService securityService, PipelineSqlMapDao pipelineDao, MaterialRepository materialRepository, GoConfigService goConfigService) {
@@ -57,29 +56,19 @@ public class ChangesetService {
         this.goConfigService = goConfigService;
     }
 
-    public List<MaterialRevision> revisionsBetween(List<PipelineRevisionRange> pipelineRevisionRanges, Username username, HttpLocalizedOperationResult result) {
-        List<MaterialRevision> revisions = new ArrayList<>();
-        for (PipelineRevisionRange pipelineRevisionRange : pipelineRevisionRanges) {
-            DependencyMaterialRevision fromDmr = DependencyMaterialRevision.create(pipelineRevisionRange.getFromRevision(), null);
-            DependencyMaterialRevision toDmr = DependencyMaterialRevision.create(pipelineRevisionRange.getToRevision(), null);
-            revisions.addAll(revisionsBetween(pipelineRevisionRange.getPipelineName(), fromDmr.getPipelineCounter(), toDmr.getPipelineCounter(), username, result, false));
-        }
-        return deduplicateMaterialRevisionsForCommonMaterials(revisions);
-    }
-
-    public List<MaterialRevision> revisionsBetween(String pipelineName, Integer fromCounter, Integer toCounter, Username username, HttpLocalizedOperationResult result,
+    public List<MaterialRevision> revisionsBetween(String pipelineName, int fromCounter, int toCounter, Username username, HttpLocalizedOperationResult result,
                                                    boolean showBisect) {
         if (!securityService.hasViewPermissionForPipeline(username, pipelineName)) {
             result.forbidden(EntityType.Pipeline.forbiddenToView(pipelineName, username.getUsername()), HealthStateType.general(HealthStateScope.forPipeline(pipelineName)));
             return new ArrayList<>();
         }
 
-        if (!goConfigService.hasPipelineNamed(new CaseInsensitiveString(pipelineName))) {
+        if (!goConfigService.hasPipelineNamed(cis(pipelineName))) {
             result.notFound(EntityType.Pipeline.notFoundMessage(pipelineName), general(forPipeline(pipelineName)));
             return new ArrayList<>();
         }
 
-        if (fromCounter.equals(toCounter)) {
+        if (fromCounter == toCounter) {
             fromCounter -= 1;
         }
 
@@ -153,22 +142,9 @@ public class ChangesetService {
         return securityService.hasViewPermissionForPipeline(username, CaseInsensitiveString.str(pipeline.name()));
     }
 
-    private List<MaterialRevision> modificationsPerMaterialBetween(String pipelineName, Integer fromCounter, Integer toCounter) {
+    private List<MaterialRevision> modificationsPerMaterialBetween(String pipelineName, int fromCounter, int toCounter) {
         List<Modification> modifications = materialRepository.getModificationsForPipelineRange(pipelineName, fromCounter, toCounter);
         return deduplicateRevisionsForMaterial(modifications);
-    }
-
-    private List<MaterialRevision> deduplicateMaterialRevisionsForCommonMaterials(List<MaterialRevision> materialRevisions) {
-        List<Modification> modificationsWithDuplicates = new ArrayList<>();
-        for (MaterialRevision revision : materialRevisions) {
-            for (Modification modification : revision.getModifications()) {
-                if (!modificationsWithDuplicates.contains(modification)) {//change this with a better data-structure so lookup is not O(n)
-                    modificationsWithDuplicates.add(modification);
-                }
-            }
-
-        }
-        return deduplicateRevisionsForMaterial(modificationsWithDuplicates);
     }
 
     private List<MaterialRevision> deduplicateRevisionsForMaterial(Collection<Modification> modifications) {

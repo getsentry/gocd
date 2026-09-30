@@ -17,27 +17,22 @@ package com.thoughtworks.go.server.service;
 
 import com.thoughtworks.go.server.domain.xml.XmlRepresentable;
 import com.thoughtworks.go.server.domain.xml.XmlWriterContext;
-import com.thoughtworks.go.util.SystemEnvironment;
+import org.apache.commons.lang3.Strings;
 import org.dom4j.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import static org.apache.commons.lang3.StringUtils.endsWithAny;
+import static com.thoughtworks.go.util.SystemEnvironment.WEBAPP_CONTEXT_PATH;
 
 @Service
 public class XmlApiService {
-
     private final ArtifactsService artifactsService;
     private final JobInstanceService jobInstanceService;
-    private final SystemEnvironment systemEnvironment;
 
     @Autowired
-    public XmlApiService(ArtifactsService artifactsService,
-                         JobInstanceService jobInstanceService,
-                         SystemEnvironment systemEnvironment) {
+    public XmlApiService(ArtifactsService artifactsService, JobInstanceService jobInstanceService) {
         this.artifactsService = artifactsService;
         this.jobInstanceService = jobInstanceService;
-        this.systemEnvironment = systemEnvironment;
     }
 
     private XmlWriterContext ctxFor(String baseUrl) {
@@ -50,9 +45,8 @@ public class XmlApiService {
     }
 
     private void checkBaseUrl(String baseUrl) {
-        String expectedContextPath = systemEnvironment.getWebappContextPath();
-        if (!endsWithAny(baseUrl.toLowerCase(), expectedContextPath, expectedContextPath + "/")) {
-            throw new IllegalArgumentException("The baseUrl must end with " + expectedContextPath);
+        if (!Strings.CS.endsWithAny(baseUrl.toLowerCase(), WEBAPP_CONTEXT_PATH, WEBAPP_CONTEXT_PATH + "/")) {
+            throw new IllegalArgumentException("The baseUrl must end with " + WEBAPP_CONTEXT_PATH);
         }
     }
 }

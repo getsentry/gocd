@@ -18,6 +18,7 @@ package com.thoughtworks.go.api.util;
 import com.google.gson.JsonObject;
 import com.thoughtworks.go.api.base.OutputWriter;
 import com.thoughtworks.go.config.CaseInsensitiveString;
+import com.thoughtworks.go.domain.materials.ValidationBean;
 import org.springframework.http.HttpStatus;
 import spark.HaltException;
 
@@ -43,6 +44,14 @@ public abstract class HaltApiResponses {
 
     public static HaltException haltBecauseEntityAlreadyExists(Consumer<OutputWriter> jsonInRequestBody, String entityType, Object existingName) {
         return halt(HttpStatus.UNPROCESSABLE_ENTITY.value(), MessageJson.create(entityAlreadyExistsMessage(entityType, existingName), jsonInRequestBody));
+    }
+
+    public static HaltException haltBecauseEntityFailedValidation(ValidationBean validationBean) {
+        return halt(HttpStatus.UNPROCESSABLE_ENTITY.value(), MessageJson.create(validationBean.getError()));
+    }
+
+    public static HaltException haltBecauseEntityFailedValidation(String message, Consumer<OutputWriter> jsonForResponse) {
+        return halt(HttpStatus.UNPROCESSABLE_ENTITY.value(), MessageJson.create(message, jsonForResponse));
     }
 
     public static HaltException haltBecauseRenameOfEntityIsNotSupported(String entityType) {
@@ -79,10 +88,6 @@ public abstract class HaltApiResponses {
 
     public static HaltException haltBecauseConfirmHeaderMissing() {
         return halt(HttpStatus.BAD_REQUEST.value(), MessageJson.create(confirmHeaderMissing()));
-    }
-
-    public static HaltException haltBecauseDeprecatedConfirmHeaderMissing() {
-        return halt(HttpStatus.BAD_REQUEST.value(), MessageJson.create(deprecatedConfirmHeaderMissing()));
     }
 
     public static HaltException haltBecausePropertyIsNotAJsonString(String property, JsonObject jsonObject) {

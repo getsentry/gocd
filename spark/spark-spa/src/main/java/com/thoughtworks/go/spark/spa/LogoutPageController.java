@@ -15,8 +15,8 @@
  */
 package com.thoughtworks.go.spark.spa;
 
-import com.google.common.collect.ImmutableMap;
 import com.thoughtworks.go.server.newsecurity.utils.SessionUtils;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.SparkController;
 import spark.ModelAndView;
@@ -43,19 +43,17 @@ public class LogoutPageController implements SparkController {
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         get(controllerBasePath(), this::show, engine);
     }
 
     public ModelAndView show(Request request, Response response) {
         SessionUtils.recreateSessionWithoutCopyingOverSessionState(request.raw());
 
-        Map<String, Object> meta = loginLogoutHelper.buildMeta(request);
-
-        Map<String, Object> object = ImmutableMap.<String, Object>builder()
-                .put("viewTitle", "Logout")
-                .put("meta", meta)
-                .build();
+        Map<String, Object> object = Map.of(
+                "viewTitle", "Logout",
+                "meta", loginLogoutHelper.buildMeta(request)
+        );
 
         return new ModelAndView(object, null);
     }

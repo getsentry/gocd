@@ -29,7 +29,7 @@ import com.thoughtworks.go.plugin.access.elastic.ElasticAgentPluginRegistry;
 import com.thoughtworks.go.remote.AgentIdentifier;
 import com.thoughtworks.go.remote.work.BuildWork;
 import com.thoughtworks.go.remote.work.Work;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.dao.JobInstanceDao;
 import com.thoughtworks.go.server.dao.PipelineDao;
@@ -68,20 +68,24 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static com.thoughtworks.go.config.CaseInsensitiveString.str;
 import static com.thoughtworks.go.helper.ModificationsMother.forceBuild;
 import static com.thoughtworks.go.helper.ModificationsMother.modifySomeFiles;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(locations = {
-        "classpath:/applicationContext-global.xml",
-        "classpath:/applicationContext-dataLocalAccess.xml",
-        "classpath:/testPropertyConfigurer.xml",
-        "classpath:/spring-all-servlet.xml",
+    "classpath:/applicationContext-global.xml",
+    "classpath:/applicationContext-dataLocalAccess.xml",
+    "classpath:/testPropertyConfigurer.xml",
+    "classpath:/spring-all-servlet.xml",
 })
 public class ScheduleServiceIntegrationTest {
     @Autowired
@@ -176,9 +180,9 @@ public class ScheduleServiceIntegrationTest {
     public void shouldNotSchedulePausedPipeline() {
         Pipeline pipeline = PipelineMother.schedule(mingleConfig, modifySomeFiles(mingleConfig));
         pipeline = dbHelper.savePipelineWithStagesAndMaterials(pipeline);
-        pipelinePauseService.pause(pipeline.getName(), "", null);
-        dbHelper.passStage(pipeline.getStages().first());
-        Pipeline newPipeline = manualSchedule(CaseInsensitiveString.str(mingleConfig.name()));
+        pipelinePauseService.pause(pipeline.getName(), "", Username.valueOf("anyone"));
+        dbHelper.passStage(pipeline.getStages().getFirst());
+        Pipeline newPipeline = manualSchedule(str(mingleConfig.name()));
         assertThat(newPipeline.getId()).isEqualTo(pipeline.getId());
     }
 
@@ -189,16 +193,17 @@ public class ScheduleServiceIntegrationTest {
         PipelineConfig cruisePlan = configHelper.addPipeline("cruise", "test", repository);
         assertThat(goConfigService.stageConfigNamed("mingle", "dev")).isNotNull();
 
-        String dir = goConfigDao.load().server().artifactsDir();
+        String dir = goConfigDao.currentConfig().server().artifactsDir();
         new File(dir).mkdirs();
         goConfigService.forceNotifyListeners();
 
-        Stage cruise = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(cruisePlan.name()), cruisePlan.findBy(new CaseInsensitiveString("test")));
-        assertEquals(NullStage.class, cruise.getClass());
+        assertThatThrownBy(() -> stageDao.mostRecentJobsForStage("cruise", "test"))
+            .isInstanceOf(NullPointerException.class)
+            .hasMessageContaining("Most recent ID not found for pipeline cruise and stage test");
 
         autoSchedulePipelines("cruise");
-        cruise = stageDao.mostRecentWithBuilds(CaseInsensitiveString.str(cruisePlan.name()), cruisePlan.findBy(new CaseInsensitiveString("test")));
-        for (JobInstance instance : cruise.getJobInstances()) {
+        List<JobInstance> cruiseInstances = stageDao.mostRecentJobsForStage("cruise", "test");
+        for (JobInstance instance : cruiseInstances) {
             assertThat(instance.getState()).isEqualTo(JobState.Scheduled);
         }
     }
@@ -220,9 +225,9 @@ public class ScheduleServiceIntegrationTest {
         });
         pipelineService.save(pipeline);
         assertThat(pipelineLockService.isLocked(pipelineName)).isTrue();
-        scheduleService.unlockIfNecessary(pipeline, pipeline.getStages().first());
+        scheduleService.unlockIfNecessary(pipeline, pipeline.getStages().getFirst());
         assertThat(pipelineLockService.isLocked(pipelineName)).isTrue();
-        scheduleService.unlockIfNecessary(pipeline, pipeline.getStages().last());
+        scheduleService.unlockIfNecessary(pipeline, pipeline.getStages().getLast());
         assertThat(pipelineLockService.isLocked(pipelineName)).isFalse();
     }
 
@@ -244,7 +249,7 @@ public class ScheduleServiceIntegrationTest {
 
         pipelineService.save(pipeline);
         assertThat(pipelineLockService.isLocked(pipelineName)).isTrue();
-        scheduleService.automaticallyTriggerRelevantStagesFollowingCompletionOf(pipeline.getStages().last());
+        scheduleService.automaticallyTriggerRelevantStagesFollowingCompletionOf(pipeline.getStages().getLast());
         assertThat(pipelineLockService.isLocked(pipelineName)).isFalse();
     }
 
@@ -451,7 +456,7 @@ public class ScheduleServiceIntegrationTest {
         scheduleService.jobCompleting(jobIdentifier, JobResult.Passed, job.getAgentUuid());
 
         scheduleService.updateJobStatus(jobIdentifier, JobState.Completed);
-        assertThat(stageService.findLatestStage(pipelineName, secondStage)).isNotNull();
+        assertThat(stageDao.mostRecentStage(new StageConfigIdentifier(pipelineName, secondStage))).isNotNull();
     }
 
     // This could happen during race condition between rescheduleHungJobs and rescheduleAbandonedBuildIfNecessary.
@@ -489,7 +494,6 @@ public class ScheduleServiceIntegrationTest {
         elasticAgentPluginService.setCreateAgentQueue(createAgentQueueHandler);
 
         //add a cluster profile and elastic agent profile to the config.
-        GoConfigDao goConfigDao = configHelper.getGoConfigDao();
         goConfigDao.loadForEditing().getElasticConfig().getClusterProfiles().add(clusterProfile);
         goConfigDao.loadForEditing().getElasticConfig().getProfiles().add(elasticAgentProfile);
 
@@ -505,7 +509,7 @@ public class ScheduleServiceIntegrationTest {
 
         //define a job in the config requiring elastic agent
         PipelineConfig pipelineToBeAdded = PipelineConfigMother.createPipelineConfigWithStages(UUID.randomUUID().toString(), "s1");
-        pipelineToBeAdded.first().getJobs().first().setElasticProfileId("elastic_agent_profile");
+        pipelineToBeAdded.getFirst().getJobs().getFirst().setElasticProfileId("elastic_agent_profile");
         PipelineConfig pipelineConfig = configHelper.addPipeline(pipelineToBeAdded);
 
         //trigger the pipeline
@@ -612,7 +616,7 @@ public class ScheduleServiceIntegrationTest {
         final Map<String, String> revisions = new HashMap<>();
         final Map<String, String> environmentVariables = new HashMap<>();
         final Map<String, String> secureEnvironmentVariables = new HashMap<>();
-        buildCauseProducer.manualProduceBuildCauseAndSave(pipelineName, new Username(new CaseInsensitiveString("some user name")), new ScheduleOptions(revisions, environmentVariables, secureEnvironmentVariables), new ServerHealthStateOperationResult());
+        buildCauseProducer.manualProduceBuildCauseAndSave(pipelineName, new Username(cis("some user name")), new ScheduleOptions(revisions, environmentVariables, secureEnvironmentVariables), new ServerHealthStateOperationResult());
         scheduleService.autoSchedulePipelinesFromRequestBuffer();
         return pipelineService.mostRecentFullPipelineByName(pipelineName);
     }

@@ -16,9 +16,11 @@
 package com.thoughtworks.go.server.database.migration;
 
 import com.google.gson.Gson;
-import org.apache.commons.lang3.StringUtils;
 
 import java.sql.*;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.commons.lang3.StringUtils.split;
 
 class M001 {
     private static final String ID = "id";
@@ -28,8 +30,10 @@ class M001 {
     private static final Gson GSON = new Gson();
 
     static Migration convertPipelineSelectionsToFilters() {
-        return (cxn) -> {
-            if (!required(cxn)) return;
+        return cxn -> {
+            if (!required(cxn)) {
+                return;
+            }
 
             try (Statement s = cxn.createStatement()) {
                 final ResultSet rs = s.executeQuery("SELECT id, selections, isblacklist FROM pipelineselections WHERE version = 0");
@@ -77,7 +81,7 @@ class M001 {
 
         public Filter(String selections, boolean isToBeExcluded) {
             name = "Default";
-            pipelines = StringUtils.isBlank(selections) ? new String[]{} : StringUtils.split(selections, ",");
+            pipelines = isBlank(selections) ? new String[0] : split(selections, ',');
             type = isToBeExcluded ? "blacklist" : "whitelist";
         }
     }

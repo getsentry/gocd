@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.config;
 
-import com.google.gson.Gson;
 import com.thoughtworks.go.config.preprocessor.SkipParameterResolution;
 import com.thoughtworks.go.config.validation.NameTypeValidator;
 import com.thoughtworks.go.domain.ArtifactType;
@@ -24,13 +23,11 @@ import com.thoughtworks.go.domain.config.Configuration;
 import com.thoughtworks.go.domain.config.ConfigurationProperty;
 import com.thoughtworks.go.plugin.access.artifact.ArtifactMetadataStore;
 import com.thoughtworks.go.plugin.domain.artifact.ArtifactPluginInfo;
-import org.apache.commons.lang3.StringUtils;
+import com.thoughtworks.go.util.json.JsonHelper;
 
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
+import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 @AttributeAwareConfigTag(value = "artifact", attribute = "type", attributeValue = "external")
@@ -127,11 +124,11 @@ public class PluggableArtifactConfig implements ArtifactTypeConfig {
     }
 
     private void validateMandatoryAttributes() {
-        if (StringUtils.isBlank(this.id)) {
+        if (isBlank(this.id)) {
             errors.add("id", "\"Id\" is required for PluggableArtifact");
         }
 
-        if (StringUtils.isBlank(this.storeId)) {
+        if (isBlank(this.storeId)) {
             errors.add("storeId", "\"Store id\" is required for PluggableArtifact");
         }
     }
@@ -170,7 +167,7 @@ public class PluggableArtifactConfig implements ArtifactTypeConfig {
         artifactStoreAsHashMap.put("id", getId());
         artifactStoreAsHashMap.put("storeId", getStoreId());
         artifactStoreAsHashMap.put("configuration", this.getConfiguration().getConfigurationAsMap(true));
-        return new Gson().toJson(artifactStoreAsHashMap);
+        return JsonHelper.toJson(artifactStoreAsHashMap);
     }
 
     @Override
@@ -203,14 +200,17 @@ public class PluggableArtifactConfig implements ArtifactTypeConfig {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         PluggableArtifactConfig that = (PluggableArtifactConfig) o;
-
-        if (!id.equals(that.id)) return false;
-        if (!storeId.equals(that.storeId)) return false;
-        return configuration != null ? configuration.equals(that.configuration) : that.configuration == null;
+        return id.equals(that.id) &&
+            storeId.equals(that.storeId) &&
+            Objects.equals(configuration, that.configuration);
     }
 
     @Override

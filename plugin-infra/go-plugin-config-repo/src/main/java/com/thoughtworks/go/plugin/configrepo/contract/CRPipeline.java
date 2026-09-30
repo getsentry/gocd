@@ -23,13 +23,14 @@ import com.thoughtworks.go.plugin.configrepo.contract.material.SourceCodeMateria
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
 
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @Getter
 @Setter
@@ -90,11 +91,13 @@ public class CRPipeline extends CRBase {
     }
 
     public CRMaterial getMaterialByName(String name) {
-        if (this.materials == null)
+        if (this.materials == null) {
             return null;
+        }
         for (CRMaterial m : this.materials) {
-            if (m.getName().equals(name))
+            if (m.getName().equals(name)) {
                 return m;
+            }
         }
         return null;
     }
@@ -123,8 +126,8 @@ public class CRPipeline extends CRBase {
 
     @Override
     public String getLocation(String parent) {
-        return StringUtils.isBlank(location) ?
-                StringUtils.isBlank(name) ? String.format("Pipeline in %s", parent) :
+        return isBlank(location) ?
+                isBlank(name) ? String.format("Pipeline in %s", parent) :
                         String.format("Pipeline %s", name) : String.format("%s; Pipeline %s", location, name);
     }
 
@@ -172,8 +175,9 @@ public class CRPipeline extends CRBase {
         HashSet<String> keys = new HashSet<>();
         for (CREnvironmentVariable var : environmentVariables) {
             String error = var.validateNameUniqueness(keys);
-            if (error != null)
+            if (error != null) {
                 errors.addError(location, error);
+            }
         }
     }
 
@@ -181,8 +185,9 @@ public class CRPipeline extends CRBase {
         HashSet<String> keys = new HashSet<>();
         for (CRParameter param : parameters) {
             String error = param.validateNameUniqueness(keys);
-            if (error != null)
+            if (error != null) {
                 errors.addError(location, error);
+            }
         }
     }
 
@@ -191,7 +196,7 @@ public class CRPipeline extends CRBase {
         if (allSCMMaterials.size() > 1) {
             for (SourceCodeMaterial material : allSCMMaterials) {
                 String directory = material.getDestination();
-                if (StringUtils.isBlank(directory)) {
+                if (isBlank(directory)) {
                     String location = material.getLocation(pipelineLocation);
                     errors.addError(location, "Material must have destination directory when there are many SCM materials");
                 }
@@ -202,8 +207,8 @@ public class CRPipeline extends CRBase {
     private List<SourceCodeMaterial> filterScmMaterials() {
         List<SourceCodeMaterial> scmMaterials = new ArrayList<>();
         for (CRMaterial material : this.materials) {
-            if (material instanceof SourceCodeMaterial) {
-                scmMaterials.add((SourceCodeMaterial) material);
+            if (material instanceof SourceCodeMaterial sourceCodeMaterial) {
+                scmMaterials.add(sourceCodeMaterial);
             }
         }
         return scmMaterials;
@@ -213,8 +218,9 @@ public class CRPipeline extends CRBase {
         HashSet<String> keys = new HashSet<>();
         for (CRStage stage : stages) {
             String error = stage.validateNameUniqueness(keys);
-            if (error != null)
+            if (error != null) {
                 errors.addError(location, error);
+            }
         }
     }
 
@@ -222,14 +228,16 @@ public class CRPipeline extends CRBase {
         HashSet<String> keys = new HashSet<>();
         for (CRMaterial material1 : materials) {
             String error = material1.validateNameUniqueness(keys);
-            if (error != null)
+            if (error != null) {
                 errors.addError(location, error);
+            }
         }
     }
 
     private void validateAtLeastOneStage(ErrorCollection errors, String location) {
-        if (!hasStages())
+        if (!hasStages()) {
             errors.addError(location, "Pipeline has no stages.");
+        }
     }
 
     private boolean hasStages() {
@@ -245,12 +253,13 @@ public class CRPipeline extends CRBase {
     }
 
     private void validateAtLeastOneMaterial(ErrorCollection errors, String location) {
-        if (this.materials == null || this.materials.isEmpty())
+        if (this.materials == null || this.materials.isEmpty()) {
             errors.addError(location, "Pipeline has no materials.");
+        }
     }
 
     public boolean hasTemplate() {
-        return template != null && !StringUtils.isBlank(template);
+        return template != null && !isBlank(template);
     }
 
 }

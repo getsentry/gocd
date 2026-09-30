@@ -15,15 +15,13 @@
  */
 package com.thoughtworks.go.plugin.access.authorization.v2;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
 import com.thoughtworks.go.plugin.domain.authorization.Capabilities;
 import com.thoughtworks.go.plugin.domain.authorization.SupportedAuthType;
+import com.thoughtworks.go.util.json.JsonHelper;
 
 class CapabilitiesDTO {
-    private static final Gson GSON = new GsonBuilder().excludeFieldsWithoutExposeAnnotation().create();
 
     @Expose
     @SerializedName("supported_auth_type")
@@ -57,11 +55,11 @@ class CapabilitiesDTO {
     }
 
     public String toJSON() {
-        return GSON.toJson(this);
+        return JsonHelper.toJsonExposeOnly(this);
     }
 
     public static CapabilitiesDTO fromJSON(String json) {
-        return GSON.fromJson(json, CapabilitiesDTO.class);
+        return JsonHelper.fromJsonExposeOnly(json, CapabilitiesDTO.class);
     }
 
     public boolean canAuthorize() {
@@ -79,14 +77,24 @@ class CapabilitiesDTO {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         CapabilitiesDTO that = (CapabilitiesDTO) o;
 
-        if (canSearch != that.canSearch) return false;
-        if (canAuthorize != that.canAuthorize) return false;
-        if (canGetUserRoles != that.canGetUserRoles) return false;
+        if (canSearch != that.canSearch) {
+            return false;
+        }
+        if (canAuthorize != that.canAuthorize) {
+            return false;
+        }
+        if (canGetUserRoles != that.canGetUserRoles) {
+            return false;
+        }
         return supportedAuthType == that.supportedAuthType;
     }
 

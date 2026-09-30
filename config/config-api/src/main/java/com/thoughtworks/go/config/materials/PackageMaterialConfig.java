@@ -18,9 +18,13 @@ package com.thoughtworks.go.config.materials;
 import com.thoughtworks.go.config.*;
 import com.thoughtworks.go.domain.packagerepository.PackageDefinition;
 import com.thoughtworks.go.domain.packagerepository.PackageRepository;
-import org.apache.commons.lang3.StringUtils;
 
 import java.util.Map;
+import java.util.Objects;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.commons.lang3.StringUtils.isEmpty;
 
 @ConfigTag(value = "package")
 public class PackageMaterialConfig extends AbstractMaterialConfig {
@@ -91,14 +95,14 @@ public class PackageMaterialConfig extends AbstractMaterialConfig {
 
     @Override
     protected void validateConcreteMaterial(ValidationContext validationContext) {
-        if (StringUtils.isBlank(packageId)) {
+        if (isBlank(packageId)) {
             addError(PACKAGE_ID, "Please select a repository and package");
         }
     }
 
     @Override
     protected void validateExtras(ValidationContext validationContext) {
-        if (!StringUtils.isBlank(packageId)) {
+        if (!isBlank(packageId)) {
             PackageRepository packageRepository = validationContext.findPackageById(packageId);
             if (packageRepository == null) {
                 addError(PACKAGE_ID, String.format("Could not find repository for given package id:[%s]", packageId));
@@ -136,8 +140,8 @@ public class PackageMaterialConfig extends AbstractMaterialConfig {
 
     @Override
     public CaseInsensitiveString getName() {
-        if (((name == null) || StringUtils.isEmpty(name.toString())) && packageDefinition != null) {
-            return new CaseInsensitiveString(getPackageDefinition().getRepository().getName() + "_" + packageDefinition.getName());
+        if ((name == null || isEmpty(name.toString())) && packageDefinition != null) {
+            return cis(getPackageDefinition().getRepository().getName() + "_" + packageDefinition.getName());
         } else {
             return name;
         }
@@ -155,7 +159,7 @@ public class PackageMaterialConfig extends AbstractMaterialConfig {
 
     @Override
     public String getDisplayName() {
-        return ((name == null || name.isBlank()) && getPackageDefinition().getRepository().getName() == null) ? getUriForDisplay() : getName().toString();
+        return (name == null || name.isEmpty()) && getPackageDefinition().getRepository().getName() == null ? getUriForDisplay() : getName().toString();
     }
 
     @Override
@@ -171,11 +175,6 @@ public class PackageMaterialConfig extends AbstractMaterialConfig {
     @Override
     public void setAutoUpdate(boolean autoUpdate) {
         packageDefinition.setAutoUpdate(autoUpdate);
-    }
-
-    @Override
-    public Boolean isUsedInFetchArtifact(PipelineConfig pipelineConfig) {
-        return Boolean.FALSE;
     }
 
     @Override
@@ -203,10 +202,8 @@ public class PackageMaterialConfig extends AbstractMaterialConfig {
 
         PackageMaterialConfig that = (PackageMaterialConfig) o;
 
-        if (packageDefinition != null ? !packageDefinition.equals(that.packageDefinition) : that.packageDefinition != null) {
-            return false;
-        }
-        return super.equals(that);
+        return Objects.equals(packageDefinition, that.packageDefinition) &&
+            super.equals(that);
     }
 
     @Override
@@ -229,15 +226,15 @@ public class PackageMaterialConfig extends AbstractMaterialConfig {
 
     @Override
     public void validateNameUniqueness(Map<CaseInsensitiveString, AbstractMaterialConfig> map) {
-        if (StringUtils.isBlank(packageId)) {
+        if (isBlank(packageId)) {
             return;
         }
-        if (map.containsKey(new CaseInsensitiveString(packageId))) {
-            AbstractMaterialConfig material = map.get(new CaseInsensitiveString(packageId));
+        if (map.containsKey(cis(packageId))) {
+            AbstractMaterialConfig material = map.get(cis(packageId));
             material.addError(PACKAGE_ID, "Duplicate package material detected!");
             addError(PACKAGE_ID, "Duplicate package material detected!");
         } else {
-            map.put(new CaseInsensitiveString(packageId), this);
+            map.put(cis(packageId), this);
         }
     }
 }

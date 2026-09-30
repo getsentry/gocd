@@ -20,7 +20,7 @@ import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.CrudController;
 import com.thoughtworks.go.api.base.OutputWriter;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.apiv2.notificationfilter.representers.NotificationFilterRepresenter;
 import com.thoughtworks.go.apiv2.notificationfilter.representers.NotificationFiltersRepresenter;
@@ -34,6 +34,7 @@ import com.thoughtworks.go.domain.exception.UncheckedValidationException;
 import com.thoughtworks.go.server.service.EntityHashingService;
 import com.thoughtworks.go.server.service.GoConfigService;
 import com.thoughtworks.go.server.service.UserService;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +42,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import spark.Request;
 import spark.Response;
+import spark.route.HttpMethod;
 
 import java.io.IOException;
 import java.util.List;
@@ -51,18 +53,18 @@ import static spark.Spark.*;
 @Component
 public class NotificationFilterControllerV2 extends ApiController implements SparkSpringController, CrudController<NotificationFilter> {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final UserService userService;
     private final GoConfigService goConfigService;
     private final EntityHashingService entityHashingService;
 
     @Autowired
-    public NotificationFilterControllerV2(ApiAuthenticationHelper apiAuthenticationHelper,
+    public NotificationFilterControllerV2(ApiAuthorizationHelper apiAuthorizationHelper,
                                           UserService userService,
                                           GoConfigService goConfigService,
                                           EntityHashingService entityHashingService) {
         super(ApiVersion.v2);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.userService = userService;
         this.goConfigService = goConfigService;
         this.entityHashingService = entityHashingService;
@@ -74,17 +76,17 @@ public class NotificationFilterControllerV2 extends ApiController implements Spa
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
-            before("", mimeType, this.apiAuthenticationHelper::checkUserAnd403);
-            before("", mimeType, onlyOn(this::canConfigureNotificationFilters, "POST"));
+            before("", mimeType, this.apiAuthorizationHelper::checkUserAnd403);
+            before("", mimeType, onlyOn(this::canConfigureNotificationFilters, HttpMethod.post));
 
             before("/*", mimeType, this::verifyContentType);
             before("/*", mimeType, this::setContentType);
-            before("/*", mimeType, this.apiAuthenticationHelper::checkUserAnd403);
-            before("/*", mimeType, onlyOn(this::canConfigureNotificationFilters, "PATCH"));
+            before("/*", mimeType, this.apiAuthorizationHelper::checkUserAnd403);
+            before("/*", mimeType, onlyOn(this::canConfigureNotificationFilters, HttpMethod.patch));
 
             get("", mimeType, this::index);
             get(Routes.NotificationFilterAPI.ID, mimeType, this::show);

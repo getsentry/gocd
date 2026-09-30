@@ -15,8 +15,11 @@
  */
 package com.thoughtworks.go.apiv2.compare.representers
 
+import com.thoughtworks.go.helper.StageInstanceModelMother
 import com.thoughtworks.go.helper.StageMother
 import org.junit.jupiter.api.Test
+
+import java.time.Instant
 
 import static com.thoughtworks.go.api.base.JsonUtils.toObjectString
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson
@@ -24,9 +27,9 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson
 class StageInstanceModelRepresenterTest {
   @Test
   void 'should deserialize into json'() {
-    def date = new Date()
+    def date = Instant.now()
     def stage = StageMother.passedStageInstance("pipelineName", "stageName", 4, "buildName", date)
-    def stageInstanceModel = StageMother.toStageInstanceModel(stage)
+    def stageInstanceModel = StageInstanceModelMother.fromStage(stage)
 
     def actualJson = toObjectString({ StageInstanceModelRepresenter.toJSON(it, stageInstanceModel) })
 
@@ -47,9 +50,9 @@ class StageInstanceModelRepresenterTest {
 
   @Test
   void 'should not add result if null'() {
-    def date = new Date()
+    def date = Instant.now()
     def stage = StageMother.passedStageInstance("pipelineName", "stageName", 4, "buildName", date)
-    def stageInstanceModel = StageMother.toStageInstanceModel(stage)
+    def stageInstanceModel = StageInstanceModelMother.fromStage(stage)
     stageInstanceModel.result = null
 
     def actualJson = toObjectString({ StageInstanceModelRepresenter.toJSON(it, stageInstanceModel) })
@@ -70,9 +73,9 @@ class StageInstanceModelRepresenterTest {
 
   @Test
   void 'should add rerun_of_counter if not null'() {
-    def date = new Date()
+    def date = Instant.now()
     def stage = StageMother.passedStageInstance("pipelineName", "stageName", 4, "buildName", date)
-    def stageInstanceModel = StageMother.toStageInstanceModel(stage)
+    def stageInstanceModel = StageInstanceModelMother.fromStage(stage)
     stageInstanceModel.setRerunOfCounter(3)
 
     def actualJson = toObjectString({ StageInstanceModelRepresenter.toJSON(it, stageInstanceModel) })

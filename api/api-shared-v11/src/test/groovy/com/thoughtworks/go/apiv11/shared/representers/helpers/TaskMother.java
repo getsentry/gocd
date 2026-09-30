@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.apiv11.shared.representers.helpers;
 
-
 import com.thoughtworks.go.plugin.api.response.validation.ValidationResult;
 import com.thoughtworks.go.plugin.api.task.Task;
 import com.thoughtworks.go.plugin.api.task.TaskConfig;
@@ -26,9 +25,9 @@ public class TaskMother {
     private TaskMother() {
     }
 
-    public class StubTask implements Task {
+    public static class StubTask implements Task {
 
-        private TaskConfig taskConfig;
+        private final TaskConfig taskConfig;
 
         public StubTask() {
             this.taskConfig = new TaskConfig();

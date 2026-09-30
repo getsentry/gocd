@@ -20,11 +20,12 @@ import com.thoughtworks.go.domain.ConfigErrors;
 import com.thoughtworks.go.domain.config.Configuration;
 import com.thoughtworks.go.domain.config.ConfigurationValue;
 import com.thoughtworks.go.domain.config.EncryptedConfigurationValue;
-import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @ConfigTag("artifacts")
 @ConfigCollection(ArtifactTypeConfig.class)
@@ -121,7 +122,7 @@ public class ArtifactTypeConfigs extends BaseCollection<ArtifactTypeConfig> impl
                     return;
                 }
 
-                if (StringUtils.isBlank(pluginId)) {
+                if (isBlank(pluginId)) {
                     Configuration configuration = pluggableArtifactConfig.getConfiguration();
 
                     for (String key : userSpecifiedConfiguration.keySet()) {
@@ -150,8 +151,8 @@ public class ArtifactTypeConfigs extends BaseCollection<ArtifactTypeConfig> impl
     public List<BuiltinArtifactConfig> getBuiltInArtifactConfigs() {
         final List<BuiltinArtifactConfig> artifactConfigs = new ArrayList<>();
         for (ArtifactTypeConfig artifactTypeConfig : this) {
-            if (artifactTypeConfig instanceof BuiltinArtifactConfig) {
-                artifactConfigs.add((BuiltinArtifactConfig) artifactTypeConfig);
+            if (artifactTypeConfig instanceof BuiltinArtifactConfig builtinArtifactConfig) {
+                artifactConfigs.add(builtinArtifactConfig);
             }
         }
         return artifactConfigs;
@@ -160,8 +161,8 @@ public class ArtifactTypeConfigs extends BaseCollection<ArtifactTypeConfig> impl
     public List<PluggableArtifactConfig> getPluggableArtifactConfigs() {
         final List<PluggableArtifactConfig> artifactConfigs = new ArrayList<>();
         for (ArtifactTypeConfig artifactTypeConfig : this) {
-            if (artifactTypeConfig instanceof PluggableArtifactConfig) {
-                artifactConfigs.add((PluggableArtifactConfig) artifactTypeConfig);
+            if (artifactTypeConfig instanceof PluggableArtifactConfig pluggableArtifactConfig) {
+                artifactConfigs.add(pluggableArtifactConfig);
             }
         }
         return artifactConfigs;

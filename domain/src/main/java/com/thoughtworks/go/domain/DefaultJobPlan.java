@@ -21,12 +21,13 @@ import com.thoughtworks.go.config.elastic.ElasticProfile;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 public class DefaultJobPlan implements JobPlan {
 
     private long jobId;
-    private long pipelineId;
+    private long pipelineId; // FIXME - this seems like a bug causing environment variables to not load properly?
     private JobIdentifier identifier;
 
     private Resources resources;
@@ -125,28 +126,18 @@ public class DefaultJobPlan implements JobPlan {
 
         DefaultJobPlan plan = (DefaultJobPlan) o;
 
-        if (jobId != plan.jobId) {
-            return false;
-        }
-        if (identifier != null ? !identifier.equals(plan.identifier) : plan.identifier != null) {
-            return false;
-        }
-        if (artifactPlans != null ? !artifactPlans.equals(plan.artifactPlans) : plan.artifactPlans != null) {
-            return false;
-        }
-        if (resources != null ? !resources.equals(plan.resources) : plan.resources != null) {
-            return false;
-        }
-
-        return true;
+        return jobId == plan.jobId &&
+            Objects.equals(identifier, plan.identifier) &&
+            Objects.equals(artifactPlans, plan.artifactPlans) &&
+            Objects.equals(resources, plan.resources);
     }
 
     @Override
     public int hashCode() {
         int result;
-        result = (resources != null ? resources.hashCode() : 0);
+        result = resources != null ? resources.hashCode() : 0;
         result = 31 * result + (artifactPlans != null ? artifactPlans.hashCode() : 0);
-        result = 31 * result + (int) (jobId ^ (jobId >>> 32));
+        result = 31 * result + Long.hashCode(jobId);
         result = 31 * result + (identifier != null ? identifier.hashCode() : 0);
         return result;
     }

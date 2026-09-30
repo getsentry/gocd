@@ -24,33 +24,31 @@ import com.thoughtworks.go.server.dao.StageDao;
 import com.thoughtworks.go.server.view.artifacts.ArtifactDirectoryChooser;
 import com.thoughtworks.go.server.view.artifacts.BuildIdArtifactLocator;
 import com.thoughtworks.go.server.view.artifacts.PathBasedArtifactsLocator;
-import com.thoughtworks.go.util.*;
+import com.thoughtworks.go.util.ArtifactUtil;
+import com.thoughtworks.go.util.FileUtil;
+import com.thoughtworks.go.util.IllegalPathException;
+import com.thoughtworks.go.util.ZipUtil;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.util.zip.ZipInputStream;
 
-import static com.thoughtworks.go.util.SystemEnvironment.ARTIFACT_COPY_BUFFER_SIZE;
 import static java.lang.String.format;
 
 @Service
 public class ArtifactsService implements ArtifactUrlReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(ArtifactsService.class);
-    public static final String LOG_XML_NAME = "log.xml";
+    static final int PUBLISH_MAX_RETRIES = 3;
+
     private final ArtifactsDirHolder artifactsDirHolder;
     private final ZipUtil zipUtil;
     private final JobResolverService jobResolverService;
     private final StageDao stageDao;
     private final ArtifactDirectoryChooser chooser;
-    private final int bufferSize = new SystemEnvironment().get(ARTIFACT_COPY_BUFFER_SIZE);
 
     @Autowired
     public ArtifactsService(JobResolverService jobResolverService, StageDao stageDao,
@@ -85,17 +83,17 @@ public class ArtifactsService implements ArtifactUrlReader {
 
             LOGGER.trace("Saving file [{}]", destPath);
             if (shouldUnzip) {
-                zipUtil.unzip(new ZipInputStream(IOUtils.buffer(stream, bufferSize)), dest);
+                zipUtil.unzip(new ZipInputStream(new BufferedInputStream(stream)), dest);
             } else {
                 try (FileOutputStream out = FileUtils.openOutputStream(dest, true)) {
-                    IOUtils.copy(stream, out, bufferSize);
+                    stream.transferTo(out);
                 }
             }
             LOGGER.trace("File [{}] saved.", destPath);
             return true;
         } catch (IOException e) {
             final String message = format("Failed to save the file to: [%s]", destPath);
-            if (attempt < GoConstants.PUBLISH_MAX_RETRIES) {
+            if (attempt < PUBLISH_MAX_RETRIES) {
                 LOGGER.warn(message, e);
             } else {
                 LOGGER.error(message, e);
@@ -118,7 +116,7 @@ public class ArtifactsService implements ArtifactUrlReader {
 
             LOGGER.trace("Appending file [{}]", destPath);
             try (FileOutputStream out = FileUtils.openOutputStream(dest, true)) {
-                IOUtils.copy(stream, out, bufferSize);
+                stream.transferTo(out);
             }
             LOGGER.trace("File [{}] appended.", destPath);
             return true;
@@ -177,27 +175,27 @@ public class ArtifactsService implements ArtifactUrlReader {
         StageIdentifier stageIdentifier = stage.getIdentifier();
         try {
             File stageRoot = chooser.findArtifact(stageIdentifier, "");
-            File cachedStageRoot = chooser.findCachedArtifact(stageIdentifier);
-            deleteFile(cachedStageRoot);
-            boolean didDelete = deleteArtifactsExceptCruiseOutputAndPluggableArtifactMetadata(stageRoot);
+            FileUtils.deleteQuietly(chooser.findCachedArtifact(stageIdentifier));
 
-            if (!didDelete) {
-                LOGGER.error("Artifacts for stage '{}' at path '{}' was not deleted", stageIdentifier.entityLocator(), stageRoot.getAbsolutePath());
+            if (!deleteNonSystemManagedArtifacts(stageRoot)) {
+                LOGGER.error("Some artifacts for stage '{}' at path '{}' was not successfully deleted", stageIdentifier.entityLocator(), stageRoot.getAbsolutePath());
             }
         } catch (Exception e) {
             LOGGER.error("Error occurred while clearing artifacts for '{}'. Error: '{}'", stageIdentifier.entityLocator(), e.getMessage(), e);
         }
         stageDao.markArtifactsDeletedFor(stage);
-        LOGGER.debug("Marked stage '{}' as artifacts deleted.", stageIdentifier.entityLocator());
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Marked stage '{}' as artifacts deleted.", stageIdentifier.entityLocator());
+        }
     }
 
-    private boolean deleteArtifactsExceptCruiseOutputAndPluggableArtifactMetadata(File stageRoot) throws IOException {
+    private boolean deleteNonSystemManagedArtifacts(File stageRoot) throws IOException {
         File[] jobs = stageRoot.listFiles();
         if (jobs == null) {  // null if security restricted
             throw new IOException("Failed to list contents of " + stageRoot);
         }
 
-        boolean didDelete = true;
+        boolean deletePartiallyFailed = false;
 
         for (File jobRoot : jobs) {
             File[] artifacts = jobRoot.listFiles();
@@ -205,17 +203,16 @@ public class ArtifactsService implements ArtifactUrlReader {
                 throw new IOException("Failed to list contents of " + stageRoot);
             }
             for (File artifact : artifacts) {
-                if (artifact.isDirectory() && (artifact.getName().equals(ArtifactLogUtil.CRUISE_OUTPUT_FOLDER) || artifact.getName().equals(ArtifactLogUtil.PLUGGABLE_ARTIFACT_METADATA_FOLDER))) {
-                    continue;
+                if (shouldDeleteArtifact(artifact) && !FileUtils.deleteQuietly(artifact)) {
+                    deletePartiallyFailed = true;
                 }
-                didDelete &= deleteFile(artifact);
             }
         }
-        return didDelete;
+        return !deletePartiallyFailed;
     }
 
-    private boolean deleteFile(File file) {
-        return FileUtils.deleteQuietly(file);
+    private static boolean shouldDeleteArtifact(File artifact) {
+        return !artifact.isDirectory() || !ArtifactUtil.artifactDirectoryIsSystemManaged(artifact.getName());
     }
 
 }

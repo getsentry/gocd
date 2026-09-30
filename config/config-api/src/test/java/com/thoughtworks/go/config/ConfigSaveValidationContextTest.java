@@ -15,10 +15,11 @@
  */
 package com.thoughtworks.go.config;
 
+import com.thoughtworks.go.config.ValidationContext.PolicyValidationContext;
+import com.thoughtworks.go.config.ValidationContext.RulesValidationContext;
 import com.thoughtworks.go.config.elastic.*;
 import com.thoughtworks.go.config.materials.MaterialConfigs;
 import com.thoughtworks.go.config.materials.mercurial.HgMaterialConfig;
-import com.thoughtworks.go.config.rules.RulesValidationContext;
 import com.thoughtworks.go.domain.PipelineGroups;
 import com.thoughtworks.go.domain.packagerepository.PackageDefinitionMother;
 import com.thoughtworks.go.domain.packagerepository.PackageRepositories;
@@ -33,6 +34,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.hg;
 import static com.thoughtworks.go.helper.PipelineConfigMother.pipelineConfig;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -80,8 +82,8 @@ public class ConfigSaveValidationContextTest {
     void shouldGetPipelineConfigByName() {
         BasicCruiseConfig cruiseConfig = GoConfigMother.configWithPipelines("p1");
         ValidationContext context = ConfigSaveValidationContext.forChain(cruiseConfig);
-        assertThat(context.getPipelineConfigByName(new CaseInsensitiveString("p1"))).isEqualTo(cruiseConfig.allPipelines().get(0));
-        assertThat(context.getPipelineConfigByName(new CaseInsensitiveString("does_not_exist"))).isNull();
+        assertThat(context.getPipelineConfigByName(cis("p1"))).isEqualTo(cruiseConfig.allPipelines().getFirst());
+        assertThat(context.getPipelineConfigByName(cis("does_not_exist"))).isNull();
     }
 
     @Test
@@ -107,16 +109,6 @@ public class ConfigSaveValidationContextTest {
     }
 
     @Test
-    void shouldCheckForExistenceOfTemplate() {
-        BasicCruiseConfig cruiseConfig = new BasicCruiseConfig();
-        cruiseConfig.addTemplate(new PipelineTemplateConfig(new CaseInsensitiveString("t1")));
-        ValidationContext context = ConfigSaveValidationContext.forChain(cruiseConfig);
-
-        assertThat(context.doesTemplateExist(new CaseInsensitiveString("t1"))).isTrue();
-        assertThat(context.doesTemplateExist(new CaseInsensitiveString("t2"))).isFalse();
-    }
-
-    @Test
     void shouldCheckForExistenceOfSCMS() {
         BasicCruiseConfig cruiseConfig = new BasicCruiseConfig();
         cruiseConfig.setSCMs(new SCMs(SCMMother.create("scm-id")));
@@ -129,7 +121,7 @@ public class ConfigSaveValidationContextTest {
     void shouldCheckForExistenceOfPackage() {
         BasicCruiseConfig cruiseConfig = new BasicCruiseConfig();
         cruiseConfig.setPackageRepositories(new PackageRepositories(PackageRepositoryMother.create("repo-id")));
-        cruiseConfig.getPackageRepositories().find("repo-id").setPackages(new Packages(PackageDefinitionMother.create("package-id")));
+        cruiseConfig.getPackageRepositories().findByRepoId("repo-id").setPackages(new Packages(PackageDefinitionMother.create("package-id")));
         ValidationContext context = ConfigSaveValidationContext.forChain(cruiseConfig);
 
         assertThat(context.findPackageById("package-id").getId()).isEqualTo("repo-id");
@@ -178,7 +170,7 @@ public class ConfigSaveValidationContextTest {
     }
 
     @Nested
-    class rulesValidationContext {
+    class Rules {
         @Test
         void shouldBuildRulesValidationContext() {
             SecretConfig secretConfig = new SecretConfig();
@@ -186,22 +178,22 @@ public class ConfigSaveValidationContextTest {
 
             RulesValidationContext rulesValidationContext = configSaveValidationContext.getRulesValidationContext();
 
-            assertThat(rulesValidationContext.getAllowedActions()).isEqualTo(secretConfig.allowedActions());
-            assertThat(rulesValidationContext.getAllowedTypes()).isEqualTo(secretConfig.allowedTypes());
+            assertThat(rulesValidationContext.allowedActions()).isEqualTo(secretConfig.allowedActions());
+            assertThat(rulesValidationContext.allowedTypes()).isEqualTo(secretConfig.allowedTypes());
         }
     }
 
     @Nested
-    class PolicyValidationContext {
+    class Policy {
         @Test
-        void shouldBuilPolicyValidationContext() {
+        void shouldBuildPolicyValidationContext() {
             RoleConfig roleConfig = new RoleConfig("role");
             ConfigSaveValidationContext configSaveValidationContext = ConfigSaveValidationContext.forChain(roleConfig);
 
-            com.thoughtworks.go.config.policy.PolicyValidationContext policyValidationContext = configSaveValidationContext.getPolicyValidationContext();
+            PolicyValidationContext policyValidationContext = configSaveValidationContext.getPolicyValidationContext();
 
-            assertThat(policyValidationContext.getAllowedActions()).isEqualTo(roleConfig.allowedActions());
-            assertThat(policyValidationContext.getAllowedTypes()).isEqualTo(roleConfig.allowedTypes());
+            assertThat(policyValidationContext.allowedActions()).isEqualTo(roleConfig.allowedActions());
+            assertThat(policyValidationContext.allowedTypes()).isEqualTo(roleConfig.allowedTypes());
 
         }
     }
@@ -219,6 +211,6 @@ public class ConfigSaveValidationContextTest {
 
         Map<CaseInsensitiveString, Boolean> pipelinesWithMaterial = context.getPipelineToMaterialAutoUpdateMapByFingerprint(hg.getFingerprint());
         assertThat(pipelinesWithMaterial.size()).isEqualTo(5);
-        assertThat(pipelinesWithMaterial.keySet()).doesNotContain(new CaseInsensitiveString("another-pipeline"));
+        assertThat(pipelinesWithMaterial.keySet()).doesNotContain(cis("another-pipeline"));
     }
 }

@@ -15,24 +15,26 @@
  */
 package com.thoughtworks.go.agent.launcher;
 
-import com.thoughtworks.go.agent.common.ssl.GoAgentServerHttpClientBuilder;
+import com.thoughtworks.go.agent.common.GoAgentServerHttpClientBuilder;
 import com.thoughtworks.go.agent.common.util.Downloader;
 import com.thoughtworks.go.agent.testhelper.FakeGoServer;
 import com.thoughtworks.go.agent.testhelper.FakeGoServerExtension;
 import com.thoughtworks.go.agent.testhelper.GoTestResource;
-import com.thoughtworks.go.mothers.ServerUrlGeneratorMother;
+import com.thoughtworks.go.agent.testhelper.ServerUrlGeneratorMother;
 import com.thoughtworks.go.util.SslVerificationMode;
-import org.apache.commons.io.FileUtils;
 import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.assertj.core.util.Hexadecimals;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.net.UnknownHostException;
+import java.nio.file.Files;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.util.HashMap;
@@ -51,23 +53,21 @@ public class ServerBinaryDownloaderTest {
     public FakeGoServer server;
 
     @AfterEach
-    public void tearDown() {
-        FileUtils.deleteQuietly(new File(Downloader.AGENT_BINARY));
-        FileUtils.deleteQuietly(DownloadableFile.AGENT.getLocalFile());
+    public void tearDown() throws IOException {
+        Files.deleteIfExists(new File(Downloader.AGENT_BINARY).toPath());
+        Files.deleteIfExists(DownloadableFile.AGENT.getLocalFile().toPath());
     }
 
     @Test
     public void shouldSetMd5AndSSLPortHeaders() throws Exception {
-        ServerBinaryDownloader downloader = new ServerBinaryDownloader(new GoAgentServerHttpClientBuilder(null, SslVerificationMode.NONE, null, null, null), ServerUrlGeneratorMother.generatorFor("localhost", server.getPort()));
+        ServerBinaryDownloader downloader = new ServerBinaryDownloader(new GoAgentServerHttpClientBuilder(null, SslVerificationMode.NONE.name(), null, null, null), ServerUrlGeneratorMother.generatorFor("localhost", server.getPort()));
         downloader.downloadIfNecessary(DownloadableFile.AGENT);
 
         MessageDigest digester = MessageDigest.getInstance("MD5");
-        try (BufferedInputStream stream = new BufferedInputStream(new FileInputStream(DownloadableFile.AGENT.getLocalFile()))) {
-            try (DigestInputStream digest = new DigestInputStream(stream, digester)) {
-                digest.transferTo(OutputStream.nullOutputStream());
-            }
-            assertThat(downloader.getMd5()).isEqualTo(Hexadecimals.toHexString(digester.digest()).toLowerCase());
+        try (DigestInputStream digest = new DigestInputStream(new FileInputStream(DownloadableFile.AGENT.getLocalFile()), digester)) {
+            digest.transferTo(OutputStream.nullOutputStream());
         }
+        assertThat(downloader.getMd5()).isEqualTo(Hexadecimals.toHexString(digester.digest()).toLowerCase());
     }
 
     @Test
@@ -140,7 +140,7 @@ public class ServerBinaryDownloaderTest {
         CloseableHttpClient closeableHttpClient = mock(CloseableHttpClient.class);
         when(builder.build()).thenReturn(closeableHttpClient);
         CloseableHttpResponse httpResponse = mock(CloseableHttpResponse.class);
-        when(closeableHttpClient.execute(any(HttpRequestBase.class))).thenReturn(httpResponse);
+        when(closeableHttpClient.execute(any())).thenReturn(httpResponse);
         ServerBinaryDownloader downloader = new ServerBinaryDownloader(builder, ServerUrlGeneratorMother.generatorFor("localhost", server.getPort()));
         assertThat(downloader.download(DownloadableFile.AGENT)).isEqualTo(false);
     }

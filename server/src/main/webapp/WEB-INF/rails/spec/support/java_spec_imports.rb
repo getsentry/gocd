@@ -16,6 +16,9 @@
 
 module JavaSpecImports
   java_import java.util.ArrayList unless defined? ArrayList
+  java_import java.time.Instant unless defined? Instant
+  java_import java.time.ZonedDateTime unless defined? ZonedDateTime
+  java_import java.time.ZoneOffset unless defined? ZoneOffset
   java_import com.thoughtworks.go.helper.GoConfigMother unless defined? GoConfigMother
   java_import com.thoughtworks.go.helper.JobInstanceMother unless defined? JobInstanceMother
   java_import com.thoughtworks.go.helper.MaterialsMother unless defined? MaterialsMother
@@ -30,7 +33,7 @@ module JavaSpecImports
   java_import com.thoughtworks.go.domain.valuestreammap.UnrunPipelineRevision unless defined? UnrunPipelineRevision
   java_import com.thoughtworks.go.domain.valuestreammap.PipelineDependencyNode unless defined? PipelineDependencyNode
   java_import com.thoughtworks.go.domain.valuestreammap.SCMDependencyNode unless defined? SCMDependencyNode
-  java_import com.thoughtworks.go.server.cache.GoCache unless defined? GoCache
+  java_import com.thoughtworks.go.server.caching.GoCache unless defined? GoCache
   java_import com.thoughtworks.go.domain.buildcause.BuildCause unless defined? BuildCause
   java_import com.thoughtworks.go.domain.ConfigErrors unless defined? ConfigErrors
   java_import com.thoughtworks.go.config.BasicCruiseConfig unless defined? BasicCruiseConfig
@@ -70,8 +73,7 @@ module JavaSpecImports
   java_import com.thoughtworks.go.server.ui.StageSummaryModel unless defined? StageSummaryModel
   java_import com.thoughtworks.go.server.ui.StageSummaryModels unless defined? StageSummaryModels
   java_import com.thoughtworks.go.server.util.Pagination unless defined? Pagination
-  java_import org.joda.time.Duration unless defined? Duration
-  java_import com.thoughtworks.go.domain.GoConfigRevision unless defined? GoConfigRevision
+  java_import com.thoughtworks.go.config.GoConfigRevision unless defined? GoConfigRevision
   java_import com.thoughtworks.go.util.TimeProvider unless defined? TimeProvider
   java_import com.thoughtworks.go.plugin.infra.plugininfo.GoPluginDescriptor unless defined? GoPluginDescriptor
   java_import com.thoughtworks.go.plugin.domain.analytics.SupportedAnalytics unless defined? SupportedAnalytics

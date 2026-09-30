@@ -65,6 +65,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
@@ -104,8 +105,6 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
     @Autowired
     private MaterialConfigConverter materialConfigConverter;
     @Autowired
-    private ConfigCache configCache;
-    @Autowired
     private CachedGoConfig cachedGoConfig;
     @Autowired
     private PipelineScheduleQueue pipelineScheduleQueue;
@@ -123,7 +122,7 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
 
     private GoDiskSpaceMonitor goDiskSpaceMonitor;
 
-    private static final GoConfigFileHelper configHelper = new GoConfigFileHelper();
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
 
     private MagicalGoConfigXmlWriter xmlWriter;
 
@@ -164,7 +163,7 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
                 stageService, configDbStateRepository);
         goDiskSpaceMonitor.initialize();
 
-        xmlWriter = new MagicalGoConfigXmlWriter(configCache, ConfigElementImplementationRegistryMother.withNoPlugins());
+        xmlWriter = new MagicalGoConfigXmlWriter(ConfigElementImplementationRegistryMother.withNoPlugins());
         configTestRepo = new ConfigTestRepo(hgRepo, xmlWriter);
         this.material = (HgMaterial) materialConfigConverter.toMaterial(materialConfig);
 
@@ -221,8 +220,8 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
                 new ScheduleOptions(revisions, environmentVariables, new HashMap<>()), new ServerHealthStateOperationResult());
 
         Map<CaseInsensitiveString, BuildCause> afterLoad = scheduleHelper.waitForAnyScheduled(5);
-        assertThat(afterLoad.keySet()).contains(new CaseInsensitiveString(PIPELINE_NAME));
-        BuildCause cause = afterLoad.get(new CaseInsensitiveString(PIPELINE_NAME));
+        assertThat(afterLoad.keySet()).contains(cis(PIPELINE_NAME));
+        BuildCause cause = afterLoad.get(cis(PIPELINE_NAME));
         assertThat(cause.getBuildCauseMessage()).contains("Forced by anonymous");
     }
 
@@ -233,7 +232,7 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
         waitForMaterialNotInProgress();
 
         buildCauseProducerService.autoSchedulePipeline(PIPELINE_NAME, new ServerHealthStateOperationResult(), 123);
-        assertThat(scheduleHelper.waitForAnyScheduled(5).keySet()).contains(new CaseInsensitiveString(PIPELINE_NAME));
+        assertThat(scheduleHelper.waitForAnyScheduled(5).keySet()).contains(cis(PIPELINE_NAME));
     }
 
     @Test
@@ -262,8 +261,8 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
                 new ScheduleOptions(revisions, environmentVariables, new HashMap<>()), new ServerHealthStateOperationResult());
 
         Map<CaseInsensitiveString, BuildCause> afterLoad = scheduleHelper.waitForAnyScheduled(5);
-        assertThat(afterLoad.keySet()).contains(new CaseInsensitiveString(PIPELINE_NAME));
-        BuildCause cause = afterLoad.get(new CaseInsensitiveString(PIPELINE_NAME));
+        assertThat(afterLoad.keySet()).contains(cis(PIPELINE_NAME));
+        BuildCause cause = afterLoad.get(cis(PIPELINE_NAME));
         assertThat(cause.getBuildCauseMessage()).contains("Forced by anonymous");
 
         PipelineConfig pipelineConfigAfterSchedule = goConfigService.pipelineConfigNamed(pipelineConfig.name());
@@ -271,7 +270,7 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
 
         String lastValidPushedRevision = this.firstRevisions.latestRevision();
         assertThat(configOriginAfterSchedule.getRevision()).isEqualTo(lastValidPushedRevision);
-        assertThat(cause.getMaterialRevisions().latestRevision()).isEqualTo(lastPush.get(0).getRevision());
+        assertThat(cause.getMaterialRevisions().latestRevision()).isEqualTo(lastPush.getFirst().getRevision());
     }
 
     @Test
@@ -281,7 +280,7 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
         List<Modification> mod = configTestRepo.addCodeToRepositoryAndPush("a.java", "added code file", "some java code");
         byPassWorker.onMessage(new MaterialUpdateMessage(material, 123));
         //now db should have been updated, but config is still old
-        RepoConfigOrigin configOrigin = (RepoConfigOrigin) goConfigService.pipelineConfigNamed(new CaseInsensitiveString(PIPELINE_NAME)).getOrigin();
+        RepoConfigOrigin configOrigin = (RepoConfigOrigin) goConfigService.pipelineConfigNamed(cis(PIPELINE_NAME)).getOrigin();
         assertThat(configOrigin.getRevision()).isEqualTo(firstRevisions.latestRevision());
 
         buildCauseProducerService.autoSchedulePipeline(PIPELINE_NAME, new ServerHealthStateOperationResult(), 123);
@@ -293,9 +292,9 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
         BuildCause buildCause = BuildCause.createWithModifications(firstRevisions, "Rick Sanchez");
         Pipeline x = PipelineMother.schedule(pipelineConfig, buildCause);
         x = pipelineDao.saveWithStages(x);
-        dbHelper.passStage(x.getStages().first());
+        dbHelper.passStage(x.getStages().getFirst());
 
-        DependencyMaterialConfig upstreamMaterialConfig = new DependencyMaterialConfig(new CaseInsensitiveString(PIPELINE_NAME), new CaseInsensitiveString(x.getStages().first().getName()));
+        DependencyMaterialConfig upstreamMaterialConfig = new DependencyMaterialConfig(cis(PIPELINE_NAME), cis(x.getStages().getFirst().getName()));
         String downstreamPipelineName = "pipe2";
         PipelineConfig downstreamConfig = PipelineConfigMother.createPipelineConfigWithStages(downstreamPipelineName, "build", "blah");
         downstreamConfig.materialConfigs().clear();
@@ -312,8 +311,8 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
 
         configTestRepo.addCodeToRepositoryAndPush("a.java", "added code file", "some java code");
 
-        RepoConfigOrigin configOrigin = (RepoConfigOrigin) goConfigService.pipelineConfigNamed(new CaseInsensitiveString(PIPELINE_NAME)).getOrigin();
-        RepoConfigOrigin upstreamOrigin = (RepoConfigOrigin) goConfigService.pipelineConfigNamed(new CaseInsensitiveString(downstreamPipelineName)).getOrigin();
+        RepoConfigOrigin configOrigin = (RepoConfigOrigin) goConfigService.pipelineConfigNamed(cis(PIPELINE_NAME)).getOrigin();
+        RepoConfigOrigin upstreamOrigin = (RepoConfigOrigin) goConfigService.pipelineConfigNamed(cis(downstreamPipelineName)).getOrigin();
         assertThat(configOrigin).isEqualTo(upstreamOrigin);
 
         scheduleHelper.autoSchedulePipelinesWithRealMaterials(downstreamPipelineName);
@@ -321,8 +320,8 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
 
         downstreamConfig = goConfigService.pipelineConfigNamed(downstreamConfig.name());
 
-        assertThat(pipelineScheduleQueue.toBeScheduled().keySet()).contains(new CaseInsensitiveString(downstreamPipelineName));
-        BuildCause downstreamBuildCause = pipelineScheduleQueue.toBeScheduled().get(new CaseInsensitiveString(downstreamPipelineName));
+        assertThat(pipelineScheduleQueue.toBeScheduled().keySet()).contains(cis(downstreamPipelineName));
+        BuildCause downstreamBuildCause = pipelineScheduleQueue.toBeScheduled().get(cis(downstreamPipelineName));
         assertThat(downstreamBuildCause.getMaterialRevisions().getRevisions().size()).isEqualTo(2);
         assertThat(buildCause.pipelineConfigAndMaterialRevisionMatch(downstreamConfig)).isFalse();
     }
@@ -336,7 +335,7 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
         List<Modification> lastPush = configTestRepo.addCodeToRepositoryAndPush("a.java", "added code file", "some java code");
         byPassWorker.onMessage(new MaterialUpdateMessage(material, 123));
         //now db should have been updated, but config is still old
-        RepoConfigOrigin configOrigin = (RepoConfigOrigin) goConfigService.pipelineConfigNamed(new CaseInsensitiveString(PIPELINE_NAME)).getOrigin();
+        RepoConfigOrigin configOrigin = (RepoConfigOrigin) goConfigService.pipelineConfigNamed(cis(PIPELINE_NAME)).getOrigin();
         assertThat(configOrigin.getRevision()).isEqualTo(firstRevisions.latestRevision());
 
         final Map<String, String> revisions = new HashMap<>();
@@ -345,11 +344,11 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
                 new ScheduleOptions(revisions, environmentVariables, new HashMap<>()), new ServerHealthStateOperationResult());
 
         Map<CaseInsensitiveString, BuildCause> afterLoad = scheduleHelper.waitForAnyScheduled(5);
-        assertThat(afterLoad.keySet()).contains(new CaseInsensitiveString(PIPELINE_NAME));
-        BuildCause cause = afterLoad.get(new CaseInsensitiveString(PIPELINE_NAME));
+        assertThat(afterLoad.keySet()).contains(cis(PIPELINE_NAME));
+        BuildCause cause = afterLoad.get(cis(PIPELINE_NAME));
         assertThat(cause.getBuildCauseMessage()).contains("Forced by anonymous");
 
-        assertThat(cause.getMaterialRevisions().latestRevision()).isEqualTo(lastPush.get(0).getRevision());
+        assertThat(cause.getMaterialRevisions().latestRevision()).isEqualTo(lastPush.getFirst().getRevision());
     }
 
 
@@ -368,14 +367,14 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
                 new ScheduleOptions(revisions, environmentVariables, new HashMap<>()), new ServerHealthStateOperationResult());
 
         Map<CaseInsensitiveString, BuildCause> afterLoad = scheduleHelper.waitForAnyScheduled(5);
-        assertThat(afterLoad.keySet()).contains(new CaseInsensitiveString(PIPELINE_NAME));
-        BuildCause cause = afterLoad.get(new CaseInsensitiveString(PIPELINE_NAME));
+        assertThat(afterLoad.keySet()).contains(cis(PIPELINE_NAME));
+        BuildCause cause = afterLoad.get(cis(PIPELINE_NAME));
         assertThat(cause.getBuildCauseMessage()).contains("Forced by anonymous");
 
         PipelineConfig pipelineConfigAfterSchedule = goConfigService.pipelineConfigNamed(pipelineConfig.name());
         RepoConfigOrigin configOriginAfterSchedule = (RepoConfigOrigin) pipelineConfigAfterSchedule.getOrigin();
 
-        String lastPushedRevision = mod.get(0).getRevision();
+        String lastPushedRevision = mod.getFirst().getRevision();
         assertThat(configOriginAfterSchedule.getRevision()).isEqualTo(lastPushedRevision);
         assertThat(cause.getMaterialRevisions().latestRevision()).isEqualTo(lastPushedRevision);
     }
@@ -386,7 +385,8 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
                 """
                         <?xml version="1.0" encoding="utf-8"?>
                         <cruise xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="cruise-config.xsd" schemaVersion="38">
-                        </cruise>""");
+                        </cruise>
+                        """);
 
         final Map<String, String> revisions = new HashMap<>();
         final Map<String, String> environmentVariables = new HashMap<>();
@@ -395,7 +395,7 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
         waitForMaterialNotInProgress();
         // config is correct
         cachedGoConfig.throwExceptionIfExists();
-        assertThat(pipelineScheduleQueue.toBeScheduled().keySet()).doesNotContain(new CaseInsensitiveString(PIPELINE_NAME));
+        assertThat(pipelineScheduleQueue.toBeScheduled().keySet()).doesNotContain(cis(PIPELINE_NAME));
         assertThat(goConfigService.hasPipelineNamed(pipelineConfig.name())).isFalse();
     }
 
@@ -425,21 +425,21 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
         cachedGoConfig.throwExceptionIfExists();
 
         Map<CaseInsensitiveString, BuildCause> afterLoad = scheduleHelper.waitForAnyScheduled(20);
-        assertThat(afterLoad.keySet()).contains(new CaseInsensitiveString(PIPELINE_NAME));
-        BuildCause cause = afterLoad.get(new CaseInsensitiveString(PIPELINE_NAME));
+        assertThat(afterLoad.keySet()).contains(cis(PIPELINE_NAME));
+        BuildCause cause = afterLoad.get(cis(PIPELINE_NAME));
         assertThat(cause.getBuildCauseMessage()).contains("Forced by anonymous");
 
         PipelineConfig pipelineConfigAfterSchedule = goConfigService.pipelineConfigNamed(pipelineConfig.name());
         RepoConfigOrigin configOriginAfterSchedule = (RepoConfigOrigin) pipelineConfigAfterSchedule.getOrigin();
 
-        String lastPushedRevision = mod.get(0).getRevision();
+        String lastPushedRevision = mod.getFirst().getRevision();
         assertThat(configOriginAfterSchedule.getRevision()).isEqualTo(lastPushedRevision);
         assertThat(pipelineConfig.materialConfigs()).contains(otherMaterialConfig);
         assertThat(cause.getMaterialRevisions().latestRevision()).isEqualTo(lastPushedRevision);
 
         // update of committed material happened during manual trigger
         MaterialRevisions modificationsInDb = materialRepository.findLatestModification(gitMaterial);
-        assertThat(modificationsInDb.latestRevision()).isEqualTo(otherGitRepo.latestModification().get(0).getRevision());
+        assertThat(modificationsInDb.latestRevision()).isEqualTo(otherGitRepo.latestModification().getFirst().getRevision());
     }
 
 
@@ -457,8 +457,8 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
         cachedGoConfig.throwExceptionIfExists();
 
         Map<CaseInsensitiveString, BuildCause> afterLoad = scheduleHelper.waitForAnyScheduled(5);
-        assertThat(afterLoad.keySet()).contains(new CaseInsensitiveString(PIPELINE_NAME));
-        BuildCause cause = afterLoad.get(new CaseInsensitiveString(PIPELINE_NAME));
+        assertThat(afterLoad.keySet()).contains(cis(PIPELINE_NAME));
+        BuildCause cause = afterLoad.get(cis(PIPELINE_NAME));
         assertThat(cause.getBuildCauseMessage()).contains("Forced by anonymous");
 
         List<Modification> secondBuildModifications = configTestRepo.addCodeToRepositoryAndPush("a.java", "added second code file", "some java code");
@@ -469,21 +469,21 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
 
         // revision will be older by 1 commit -
         // formally this is scm-config-consistency violation but we let this schedule because of manual trigger
-        String explicitRevision = firstBuildModifications.get(0).getRevision();
+        String explicitRevision = firstBuildModifications.getFirst().getRevision();
         revisions.put(materialConfig.getPipelineUniqueFingerprint(), explicitRevision);
-        buildCauseProducer.manualProduceBuildCauseAndSave(PIPELINE_NAME, new Username(new CaseInsensitiveString("Admin")),
+        buildCauseProducer.manualProduceBuildCauseAndSave(PIPELINE_NAME, new Username(cis("Admin")),
                 new ScheduleOptions(revisions, environmentVariables, new HashMap<>()), new ServerHealthStateOperationResult());
         cachedGoConfig.throwExceptionIfExists();
 
         afterLoad = scheduleHelper.waitForAnyScheduled(5);
-        assertThat(afterLoad.keySet()).contains(new CaseInsensitiveString(PIPELINE_NAME));
-        cause = afterLoad.get(new CaseInsensitiveString(PIPELINE_NAME));
+        assertThat(afterLoad.keySet()).contains(cis(PIPELINE_NAME));
+        cause = afterLoad.get(cis(PIPELINE_NAME));
         assertThat(cause.getBuildCauseMessage()).contains("Forced by Admin");
 
         PipelineConfig pipelineConfigAfterSchedule = goConfigService.pipelineConfigNamed(pipelineConfig.name());
         RepoConfigOrigin configOriginAfterSchedule = (RepoConfigOrigin) pipelineConfigAfterSchedule.getOrigin();
 
-        String lastPushedRevision = secondBuildModifications.get(0).getRevision();
+        String lastPushedRevision = secondBuildModifications.getFirst().getRevision();
         assertThat(configOriginAfterSchedule.getRevision()).isEqualTo(lastPushedRevision);
         assertThat(cause.getMaterialRevisions().latestRevision()).isEqualTo(explicitRevision);
     }
@@ -513,8 +513,8 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
         cachedGoConfig.throwExceptionIfExists();
 
         Map<CaseInsensitiveString, BuildCause> afterLoad = scheduleHelper.waitForAnyScheduled(5);
-        assertThat(afterLoad.keySet()).contains(new CaseInsensitiveString(PIPELINE_NAME));
-        BuildCause cause = afterLoad.get(new CaseInsensitiveString(PIPELINE_NAME));
+        assertThat(afterLoad.keySet()).contains(cis(PIPELINE_NAME));
+        BuildCause cause = afterLoad.get(cis(PIPELINE_NAME));
         assertThat(cause.getBuildCauseMessage()).contains("Forced by anonymous");
 
         List<Modification> secondBuildModifications = configTestRepo.addCodeToRepositoryAndPush("a.java", "added code file", "some java code");
@@ -524,21 +524,21 @@ public class BuildCauseProducerServiceConfigRepoIntegrationTest {
         pipelineScheduleQueue.clear();
 
         // revision in dest 1 will be older by 1 commit - this is kind of scm-config-consistency violation
-        String explicitRevision = firstBuildModifications.get(0).getRevision();
+        String explicitRevision = firstBuildModifications.getFirst().getRevision();
         revisions.put(materialConfig.getPipelineUniqueFingerprint(), explicitRevision);
-        buildCauseProducer.manualProduceBuildCauseAndSave(PIPELINE_NAME, new Username(new CaseInsensitiveString("Admin")),
+        buildCauseProducer.manualProduceBuildCauseAndSave(PIPELINE_NAME, new Username(cis("Admin")),
                 new ScheduleOptions(revisions, environmentVariables, new HashMap<>()), new ServerHealthStateOperationResult());
         cachedGoConfig.throwExceptionIfExists();
 
         afterLoad = scheduleHelper.waitForAnyScheduled(5);
-        assertThat(afterLoad.keySet()).contains(new CaseInsensitiveString(PIPELINE_NAME));
-        cause = afterLoad.get(new CaseInsensitiveString(PIPELINE_NAME));
+        assertThat(afterLoad.keySet()).contains(cis(PIPELINE_NAME));
+        cause = afterLoad.get(cis(PIPELINE_NAME));
         assertThat(cause.getBuildCauseMessage()).contains("Forced by Admin");
 
         PipelineConfig pipelineConfigAfterSchedule = goConfigService.pipelineConfigNamed(pipelineConfig.name());
         RepoConfigOrigin configOriginAfterSchedule = (RepoConfigOrigin) pipelineConfigAfterSchedule.getOrigin();
 
-        String lastPushedRevision = secondBuildModifications.get(0).getRevision();
+        String lastPushedRevision = secondBuildModifications.getFirst().getRevision();
         assertThat(configOriginAfterSchedule.getRevision()).isEqualTo(lastPushedRevision);
         assertThat(pipelineConfigAfterSchedule.materialConfigs()).contains(otherMaterialConfig);
         assertThat(cause.getMaterialRevisions().latestRevision()).isEqualTo(explicitRevision);

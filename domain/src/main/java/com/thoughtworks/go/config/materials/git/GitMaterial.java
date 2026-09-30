@@ -26,7 +26,6 @@ import com.thoughtworks.go.domain.materials.git.GitMaterialInstance;
 import com.thoughtworks.go.domain.materials.git.GitVersion;
 import com.thoughtworks.go.domain.materials.svn.MaterialUrl;
 import com.thoughtworks.go.server.transaction.TransactionSynchronizationManager;
-import com.thoughtworks.go.util.GoConstants;
 import com.thoughtworks.go.util.command.*;
 import org.apache.commons.io.FileUtils;
 import org.apache.http.client.utils.URIBuilder;
@@ -36,15 +35,16 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationAdapter;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.URISyntaxException;
 import java.util.*;
 
 import static com.thoughtworks.go.config.materials.git.RefSpecHelper.localBranch;
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
-import static com.thoughtworks.go.util.ExceptionUtils.bombIfFailedToRunCommandLine;
-import static com.thoughtworks.go.util.FileUtil.createParentFolderIfNotExist;
-import static com.thoughtworks.go.util.FileUtil.deleteDirectoryNoisily;
+import static com.thoughtworks.go.util.ExceptionUtils.bombUnless;
+import static com.thoughtworks.go.util.FileUtil.mkdirsParentQuietly;
 import static com.thoughtworks.go.util.command.ProcessOutputStreamConsumer.inMemoryConsumer;
+import static com.thoughtworks.go.work.GoPublisher.PRODUCT_NAME;
 import static java.lang.String.format;
 import static org.apache.commons.lang3.StringUtils.isAllBlank;
 import static org.apache.commons.lang3.StringUtils.isBlank;
@@ -145,18 +145,19 @@ public class GitMaterial extends ScmMaterial implements PasswordAwareMaterial {
     public void updateTo(ConsoleOutputStreamConsumer outputStreamConsumer, File baseDir, RevisionContext revisionContext, final SubprocessExecutionContext execCtx) {
         Revision revision = revisionContext.getLatestRevision();
         try {
-            outputStreamConsumer.stdOutput(format("[%s] Start updating %s at revision %s from %s", GoConstants.PRODUCT_NAME, updatingTarget(), revision.getRevision(), getUriForDisplay()));
+            outputStreamConsumer.stdOutput(format("[%s] Start updating %s at revision %s from %s", PRODUCT_NAME, updatingTarget(), revision.getRevision(), getUriForDisplay()));
             File workingDir = execCtx.isServer() ? baseDir : workingdir(baseDir);
             GitCommand git = git(outputStreamConsumer, workingDir, revisionContext.numberOfModifications() + 1, execCtx);
             git.fetch(outputStreamConsumer);
             unshallowIfNeeded(git, outputStreamConsumer, revisionContext.getOldestRevision());
             git.resetWorkingDir(outputStreamConsumer, revision, shallowClone);
-            outputStreamConsumer.stdOutput(format("[%s] Done.\n", GoConstants.PRODUCT_NAME));
+            outputStreamConsumer.stdOutput(format("[%s] Done.\n", PRODUCT_NAME));
         } catch (Exception e) {
             bomb(e);
         }
     }
 
+    @Override
     public ValidationBean checkConnection(final SubprocessExecutionContext execCtx) {
         GitCommand gitCommand = new GitCommand(null, null, refSpecOrBranch, false, secrets());
         try {
@@ -217,9 +218,15 @@ public class GitMaterial extends ScmMaterial implements PasswordAwareMaterial {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        if (!super.equals(o)) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        if (!super.equals(o)) {
+            return false;
+        }
         GitMaterial that = (GitMaterial) o;
         return Objects.equals(url, that.url) &&
                 Objects.equals(refSpecOrBranch, that.refSpecOrBranch) &&
@@ -259,8 +266,12 @@ public class GitMaterial extends ScmMaterial implements PasswordAwareMaterial {
 
     @Override
     public String getShortRevision(String revision) {
-        if (revision == null) return null;
-        if (revision.length() < 7) return revision;
+        if (revision == null) {
+            return null;
+        }
+        if (revision.length() < 7) {
+            return revision;
+        }
         return revision.substring(0, 7);
     }
 
@@ -347,17 +358,23 @@ public class GitMaterial extends ScmMaterial implements PasswordAwareMaterial {
         }
     }
 
-    private GitCommand git(ConsoleOutputStreamConsumer outputStreamConsumer, final File workingFolder, int preferredCloneDepth, SubprocessExecutionContext executionContext) throws Exception {
+    private GitCommand git(ConsoleOutputStreamConsumer outputStreamConsumer, final File workingFolder, int preferredCloneDepth, SubprocessExecutionContext executionContext) {
         if (isSubmoduleFolder()) {
             return new GitCommand(getFingerprint(), new File(workingFolder.getPath()), GitMaterialConfig.DEFAULT_BRANCH, true, secrets());
         }
 
         GitCommand gitCommand = new GitCommand(getFingerprint(), workingFolder, refSpecOrBranch, false, secrets());
         if (!isGitRepository(workingFolder) || isRepositoryChanged(gitCommand, workingFolder)) {
-            LOG.debug("Invalid git working copy or repository changed. Delete folder: {}", workingFolder);
-            deleteDirectoryNoisily(workingFolder);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Invalid git working copy or repository changed. Delete folder: {}", workingFolder);
+            }
+            try {
+                FileUtils.deleteDirectory(workingFolder);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to delete directory: " + workingFolder.getAbsolutePath(), e);
+            }
         }
-        createParentFolderIfNotExist(workingFolder);
+        mkdirsParentQuietly(workingFolder);
         if (!workingFolder.exists()) {
             TransactionSynchronizationManager txManager = new TransactionSynchronizationManager();
             if (txManager.isActualTransactionActive()) {
@@ -377,14 +394,13 @@ public class GitMaterial extends ScmMaterial implements PasswordAwareMaterial {
             } else {
                 returnValue = gitCommand.clone(outputStreamConsumer, urlForCommandLine(), cloneDepth);
             }
-            bombIfFailedToRunCommandLine(returnValue, "Failed to run git clone command");
+            bombUnless(returnValue == 0, "Failed to run git clone command");
         }
         return gitCommand;
     }
 
-    private List<SecretString> secrets() {
-        SecretString secretSubstitution = line -> line.replace(urlForCommandLine(), getUriForDisplay());
-        return List.of(secretSubstitution);
+    private List<SecretRedactor> secrets() {
+        return List.of(redactable -> redactable.next(redactable.value().replace(urlForCommandLine(), getUriForDisplay())));
     }
 
     // Unshallow local repo to include a revision operating on via two step process:

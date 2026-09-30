@@ -19,16 +19,49 @@ plugins {
 }
 
 dependencies {
-  api project(path: ':config:config-server', configuration: 'runtimeElements')
-  api project(path: ':spark:spark-base', configuration: 'runtimeElements')
-  implementation project.deps.guava
+  api project(':config:config-api')
+  api project(':spark:spark-base')
+  api project(':server')
+  implementation(rootProject.deps.apacheHttpComponents) {
+    exclude(module: 'commons-codec')
+  }
+  if (rootProject.deps.apacheHttpComponents) {
+    runtimeOnly rootProject.deps.slf4jJcl // Allow commons-logging replacement
+  }
+
+  api rootProject.deps.gson
+  api rootProject.deps.springContext
+  implementation rootProject.deps.commonsCodec
+  implementation rootProject.deps.springWeb
+
   testImplementation localGroovy()
-  testImplementation project(path: ':common', configuration: 'testOutput')
-  testImplementation project(path: ':domain', configuration: 'testOutput')
-  testImplementation project(path: ':config:config-api', configuration: 'testOutput')
-  testImplementation project(path: ':test:http-mocks', configuration: 'runtimeElements')
-  testImplementation project(path: ':spark:spark-base', configuration: 'testOutput')
-  testImplementation project.deps.junit5Api
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.junit5Api
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
+
+  testFixturesApi localGroovy()
+  testFixturesApi(testFixtures(project(':spark:spark-base')))
+  testFixturesApi(testFixtures(project(':config:config-api')))
+  testFixturesApi(testFixtures(project(':common')))
+  testFixturesApi(testFixtures(project(':domain')))
+
+  testFixturesApi rootProject.deps.jsonUnit
+  testFixturesApi rootProject.deps.mockitoCore
+  testFixturesApi rootProject.deps.mockitoJunit5
+  testFixturesApi rootProject.deps.springTest
+}
+
+dependencyAnalysis {
+  issues {
+    // We ignore these for now because api-base is essentially used to propagate dependencies to the dozemns
+    // of individual API projects where it doesn't add value to declare them directly.
+    onIncorrectConfiguration {
+      exclude(rootProject.deps.mockitoJunit5 as String)
+    }
+    onUnusedDependencies {
+      exclude(dependencies.project(path: ':spark:spark-base', configuration: 'testFixtures') as ProjectDependency)
+      exclude(dependencies.project(path: ':common', configuration: 'testFixtures') as ProjectDependency)
+      exclude(dependencies.project(path: ':domain', configuration: 'testFixtures') as ProjectDependency)
+    }
+  }
 }

@@ -23,7 +23,7 @@ public class RakeTaskTest {
     @Test
     public void shouldReturnEmptyStringForDefault() {
         RakeTask rakeTask = new RakeTask();
-        assertThat(rakeTask.arguments()).isEqualTo("");
+        assertThat(rakeTask.arguments()).isEmpty();
     }
 
     @Test
@@ -67,7 +67,7 @@ public class RakeTaskTest {
     }
 
     @Test
-    public void shouldGiveArgumentsForRakeTask(){
+    public void shouldGiveArgumentsForRakeTask() {
         RakeTask rakeTask = new RakeTask();
         rakeTask.setBuildFile("myrakefile.rb");
         rakeTask.setTarget("db:migrate VERSION=0");

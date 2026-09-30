@@ -57,14 +57,8 @@ public class PipelineConfigDependencyGraph {
 
         PipelineConfigDependencyGraph that = (PipelineConfigDependencyGraph) o;
 
-        if (current != null ? !current.equals(that.current) : that.current != null) {
-            return false;
-        }
-        if (upstreamDependencies != null ? !upstreamDependencies.equals(that.upstreamDependencies) : that.upstreamDependencies != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(current, that.current) &&
+            Objects.equals(upstreamDependencies, that.upstreamDependencies);
     }
 
     @Override
@@ -76,20 +70,17 @@ public class PipelineConfigDependencyGraph {
 
     public Queue<PipelineConfigQueueEntry> buildQueue() {
         Queue<PipelineConfigQueueEntry> configQueue = new LinkedList<>();
-        Queue<PipelineConfigDependencyEntry> tmp = new LinkedList<>();
-        tmp.add(new PipelineConfigDependencyEntry(this, new ArrayList<>()));
-        while (true) {
-            PipelineConfigDependencyEntry currentHead = tmp.poll();
-            if (currentHead == null) {
-                break;
-            }
+
+        Queue<PipelineConfigDependencyEntry> toProcess = new LinkedList<>();
+        toProcess.add(new PipelineConfigDependencyEntry(this, new ArrayList<>()));
+        for (PipelineConfigDependencyEntry currentHead; (currentHead = toProcess.poll()) != null;) {
             PipelineConfigDependencyGraph current = currentHead.getNode();
             List<PipelineConfig> currentPath = currentHead.getPath();
             currentPath.add(current.getCurrent());
             configQueue.add(new PipelineConfigQueueEntry(current.getCurrent(), new ArrayList<>(currentPath)));
             for (PipelineConfigDependencyGraph upstream : current.getUpstreamDependencies()) {
                 List<PipelineConfig> parentsPath = new ArrayList<>(currentPath);
-                tmp.add(new PipelineConfigDependencyEntry(upstream, parentsPath));
+                toProcess.add(new PipelineConfigDependencyEntry(upstream, parentsPath));
             }
         }
         return removeHead(configQueue);
@@ -219,14 +210,7 @@ public class PipelineConfigDependencyGraph {
 
             PipelineConfigQueueEntry that = (PipelineConfigQueueEntry) o;
 
-            if (node != null ? !node.equals(that.node) : that.node != null) {
-                return false;
-            }
-            if (path != null ? !path.equals(that.path) : that.path != null) {
-                return false;
-            }
-
-            return true;
+            return Objects.equals(node, that.node) && Objects.equals(path, that.path);
         }
 
         @Override
@@ -239,7 +223,7 @@ public class PipelineConfigDependencyGraph {
         public List<PipelineConfig> pathWithoutHead() {
             List<PipelineConfig> copy = new ArrayList<>(path);
             if (!copy.isEmpty()) {
-                copy.remove(0);
+                copy.removeFirst();
             }
             return copy;
         }

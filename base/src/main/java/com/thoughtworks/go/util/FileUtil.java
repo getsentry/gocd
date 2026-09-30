@@ -15,21 +15,13 @@
  */
 package com.thoughtworks.go.util;
 
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.IOException;
-import java.net.URI;
 import java.util.UUID;
 
 public class FileUtil {
     public static final String TMP_PARENT_DIR = "data";
     private static final String CRUISE_TMP_FOLDER = "cruise" + "-" + UUID.randomUUID();
-    private static final Logger LOGGER = LoggerFactory.getLogger(FileUtil.class);
 
     private FileUtil() {}
 
@@ -41,53 +33,21 @@ public class FileUtil {
         return files == null || files.length == 0;
     }
 
-    public static String applyBaseDirIfRelativeAndNormalize(File baseDir, File actualFileToUse) {
-        return FilenameUtils.separatorsToUnix(applyBaseDirIfRelative(baseDir, actualFileToUse).getPath());
+    /**
+     * Makes parent directories, ignoring if it already exists
+     */
+    public static void mkdirsParentQuietly(File file) {
+        File directory = file.getParentFile();
+        mkdirsQuietly(directory);
     }
 
-    public static File applyBaseDirIfRelative(File baseDir, File actualFileToUse) {
-        if (actualFileToUse == null) {
-            return baseDir;
+    /**
+     * Makes directories, ignoring if null or already exists
+     */
+    private static void mkdirsQuietly(File directory) {
+        if (directory != null && !directory.exists()) {
+            directory.mkdirs();
         }
-        if (actualFileToUse.isAbsolute()) {
-            return actualFileToUse;
-        }
-
-        if (StringUtils.isBlank(baseDir.getPath())) {
-            return actualFileToUse;
-        }
-
-        return new File(baseDir, actualFileToUse.getPath());
-
-    }
-
-    public static void validateAndCreateDirectory(File directory) {
-        if (directory.exists()) {
-            return;
-        }
-        try {
-            FileUtils.forceMkdir(directory);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to create folder: " + directory.getAbsolutePath());
-        }
-    }
-
-    @SuppressWarnings("ResultOfMethodCallIgnored")
-    public static void createParentFolderIfNotExist(File file) {
-        File parentFile = file.getParentFile();
-        if (parentFile != null && !parentFile.exists()) {
-            parentFile.mkdirs();
-        }
-    }
-
-    public static String toFileURI(File file) {
-        URI uri = file.toURI();
-        String uriString = uri.toASCIIString();
-        return uriString.replaceAll("^file:/", "file:///");
-    }
-
-    public static String toFileURI(String path) {
-        return toFileURI(new File(path));
     }
 
     public static boolean isSubdirectoryOf(File parent, File subdirectory) throws IOException {
@@ -102,7 +62,6 @@ public class FileUtil {
         return false;
     }
 
-    @SuppressWarnings("ResultOfMethodCallIgnored")
     public static void createFilesByPath(File baseDir, String... files) throws IOException {
         for (String file : files) {
             File file1 = new File(baseDir, file);
@@ -115,12 +74,6 @@ public class FileUtil {
         }
     }
 
-    public static String subtractPath(File rootPath, File file) {
-        String fullPath = FilenameUtils.separatorsToUnix(file.getParentFile().getPath());
-        String basePath = FilenameUtils.separatorsToUnix(rootPath.getPath());
-        return StringUtils.removeStart(StringUtils.removeStart(fullPath, basePath), "/");
-    }
-
     public static File createTempFolder() {
         File tempDir = new File(TMP_PARENT_DIR, CRUISE_TMP_FOLDER);
         File dir = new File(tempDir, UUID.randomUUID().toString());
@@ -129,34 +82,6 @@ public class FileUtil {
             throw new RuntimeException("FileUtil#createTempFolder - Could not create temp folder");
         }
         return dir;
-    }
-
-    public static String getCanonicalPath(File workDir) {
-        try {
-            return workDir.getCanonicalPath();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public static void deleteDirectoryNoisily(File defaultDirectory) {
-        if (!defaultDirectory.exists()) {
-            return;
-        }
-
-        try {
-            FileUtils.deleteDirectory(defaultDirectory);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to delete directory: " + defaultDirectory.getAbsolutePath(), e);
-        }
-    }
-
-    public static String join(File defaultWorkingDir, String actualFileToUse) {
-        if (actualFileToUse == null) {
-            LOGGER.trace("Using the default Directory->{}", defaultWorkingDir);
-            return FilenameUtils.separatorsToUnix(defaultWorkingDir.getPath());
-        }
-        return applyBaseDirIfRelativeAndNormalize(defaultWorkingDir, new File(actualFileToUse));
     }
 }
 

@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.plugin.access.elastic.v5;
 
-import com.google.gson.Gson;
 import com.thoughtworks.go.config.elastic.ClusterProfile;
 import com.thoughtworks.go.config.elastic.ElasticProfile;
 import com.thoughtworks.go.domain.ClusterProfilesChangedStatus;
@@ -33,6 +32,7 @@ import com.thoughtworks.go.plugin.domain.elastic.Capabilities;
 import com.thoughtworks.go.plugin.domain.elastic.ElasticAgentPluginInfo;
 import com.thoughtworks.go.security.CryptoException;
 import com.thoughtworks.go.security.GoCipher;
+import com.thoughtworks.go.util.json.JsonHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -59,19 +59,19 @@ public class ElasticAgentExtensionConverterV5Test {
     }
 
     @Test
-    public void shouldUnJSONizeCanHandleResponseBody() {
-        assertTrue(new Gson().fromJson("true", Boolean.class));
-        assertFalse(new Gson().fromJson("false", Boolean.class));
+    public void shouldUnmarshallCanHandleResponseBody() {
+        assertTrue(JsonHelper.fromJson("true", Boolean.class));
+        assertFalse(JsonHelper.fromJson("false", Boolean.class));
     }
 
     @Test
-    public void shouldUnJSONizeShouldAssignWorkResponseFromBody() {
+    public void shouldAssignWorkResponseFromBody() {
         assertTrue(new ElasticAgentExtensionConverterV5().shouldAssignWorkResponseFromBody("true"));
         assertFalse(new ElasticAgentExtensionConverterV5().shouldAssignWorkResponseFromBody("false"));
     }
 
     @Test
-    public void shouldJSONizeCreateAgentRequestBody() {
+    public void shouldCreateAgentRequestBody() {
         Map<String, String> configuration = new HashMap<>();
         configuration.put("key1", "value1");
         configuration.put("key2", "value2");
@@ -96,7 +96,7 @@ public class ElasticAgentExtensionConverterV5Test {
     }
 
     @Test
-    public void shouldJSONizeShouldAssignWorkRequestBody() {
+    public void shouldAssignWorkRequestBody() {
         Map<String, String> configuration = new HashMap<>();
         configuration.put("property_name", "property_value");
         Map<String, String> clusterProfileProperties = new HashMap<>();
@@ -115,7 +115,7 @@ public class ElasticAgentExtensionConverterV5Test {
                   }
                 }""";
 
-        assertThatJson(expected).isEqualTo(actual);
+        assertThatJson(actual).isEqualTo(expected);
     }
 
     @Test
@@ -138,7 +138,7 @@ public class ElasticAgentExtensionConverterV5Test {
                   }
                 }""";
 
-        assertThatJson(expected).isEqualTo(actual);
+        assertThatJson(actual).isEqualTo(expected);
     }
 
     @Test
@@ -162,7 +162,7 @@ public class ElasticAgentExtensionConverterV5Test {
                 "    ]" +
                 "}";
 
-        assertThatJson(expected).isEqualTo(actual);
+        assertThatJson(actual).isEqualTo(expected);
     }
 
     @Test
@@ -176,7 +176,7 @@ public class ElasticAgentExtensionConverterV5Test {
                 "  \"elastic_agent_id\": \"%s\"" +
                 "}", elasticAgentId);
 
-        assertThatJson(expected).isEqualTo(actual);
+        assertThatJson(actual).isEqualTo(expected);
     }
 
     @Test
@@ -194,7 +194,7 @@ public class ElasticAgentExtensionConverterV5Test {
                   },
                 "cluster_profile_properties":  {     "key":"value"  }}""";
 
-        assertThatJson(expected).isEqualTo(actual);
+        assertThatJson(actual).isEqualTo(expected);
     }
 
     @Test
@@ -206,7 +206,7 @@ public class ElasticAgentExtensionConverterV5Test {
                 "   }" +
                 "}";
 
-        assertThatJson(expected).isEqualTo(actual);
+        assertThatJson(actual).isEqualTo(expected);
     }
 
     @Test
@@ -225,20 +225,20 @@ public class ElasticAgentExtensionConverterV5Test {
         ValidationResult result = new ElasticAgentExtensionConverterV5().getElasticProfileValidationResultResponseFromBody(responseBody);
         assertThat(result.isSuccessful()).isEqualTo(false);
         assertThat(result.getErrors().size()).isEqualTo(2);
-        assertThat(result.getErrors().get(0).getKey()).isEqualTo("key-one");
-        assertThat(result.getErrors().get(0).getMessage()).isEqualTo("error on key one");
-        assertThat(result.getErrors().get(1).getKey()).isEqualTo("key-two");
-        assertThat(result.getErrors().get(1).getMessage()).isEqualTo("error on key two");
+        assertThat(result.getErrors().getFirst().getKey()).isEqualTo("key-one");
+        assertThat(result.getErrors().getFirst().getMessage()).isEqualTo("error on key one");
+        assertThat(result.getErrors().getLast().getKey()).isEqualTo("key-two");
+        assertThat(result.getErrors().getLast().getMessage()).isEqualTo("error on key two");
     }
 
     @Test
-    public void shouldUnJSONizeGetProfileViewResponseFromBody() {
+    public void shouldUnmarshallGetProfileViewResponseFromBody() {
         String template = new ElasticAgentExtensionConverterV5().getProfileViewResponseFromBody("{\"template\":\"foo\"}");
         assertThat(template).isEqualTo("foo");
     }
 
     @Test
-    public void shouldUnJSONizeGetImageResponseFromBody() {
+    public void shouldUnmarshallGetImageResponseFromBody() {
         com.thoughtworks.go.plugin.domain.common.Image image = new ElasticAgentExtensionConverterV5().getImageResponseFromBody("{\"content_type\":\"foo\", \"data\":\"bar\"}");
         assertThat(image.getContentType()).isEqualTo("foo");
         assertThat(image.getData()).isEqualTo("bar");
@@ -312,7 +312,7 @@ public class ElasticAgentExtensionConverterV5Test {
                 "    ]" +
                 "}\n";
 
-        assertThatJson(expectedRequestBody).isEqualTo(requestBody);
+        assertThatJson(requestBody).isEqualTo(expectedRequestBody);
     }
 
     @Test
@@ -364,7 +364,7 @@ public class ElasticAgentExtensionConverterV5Test {
                 "    ]" +
                 "}\n";
 
-        assertThatJson(expectedRequestBody).isEqualTo(requestBody);
+        assertThatJson(requestBody).isEqualTo(expectedRequestBody);
     }
 
     @Test
@@ -453,10 +453,9 @@ public class ElasticAgentExtensionConverterV5Test {
     @Test
     public void shouldGetClusterProfilesChangedRequestBodyWhenClusterProfileIsCreated() {
         ClusterProfilesChangedStatus status = ClusterProfilesChangedStatus.CREATED;
-        Map<String, String> oldClusterProfile = null;
         Map<String, String> newClusterProfile = Map.of("key1", "key2");
 
-        String json = new ElasticAgentExtensionConverterV5().getClusterProfileChangedRequestBody(status, oldClusterProfile, newClusterProfile);
+        String json = new ElasticAgentExtensionConverterV5().getClusterProfileChangedRequestBody(status, null, newClusterProfile);
 
         assertThatJson(json).isEqualTo("{" +
                 "  \"status\":\"created\"," +
@@ -489,9 +488,8 @@ public class ElasticAgentExtensionConverterV5Test {
     public void shouldGetClusterProfilesChangedRequestBodyWhenClusterProfileIsDeleted() {
         ClusterProfilesChangedStatus status = ClusterProfilesChangedStatus.DELETED;
         Map<String, String> oldClusterProfile = Map.of("key1", "key2");
-        Map<String, String> newClusterProfile = null;
 
-        String json = new ElasticAgentExtensionConverterV5().getClusterProfileChangedRequestBody(status, oldClusterProfile, newClusterProfile);
+        String json = new ElasticAgentExtensionConverterV5().getClusterProfileChangedRequestBody(status, oldClusterProfile, null);
 
         assertThatJson(json).isEqualTo("{" +
                 "  \"status\":\"deleted\"," +

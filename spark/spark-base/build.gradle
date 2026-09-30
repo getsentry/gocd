@@ -19,31 +19,50 @@ plugins {
 }
 
 dependencies {
-  implementation project(path: ':app-server', configuration: 'runtimeElements')
-  api project(path: ':common', configuration: 'runtimeElements')
-  api project(path: ':server', configuration: 'runtimeElements')
+  implementation project(':app-server')
+  implementation project(':server')
+  implementation project(':config:config-api')
 
-  implementation platform(project.deps.jacksonBom)
-  implementation project.deps.jacksonCore
-  implementation project.deps.jacksonDatabind
-  implementation project.deps.springWeb
-  implementation project.deps.guava
-
-  api(project.deps.spark) {
-    transitive = false
+  implementation rootProject.deps.commonsText
+  implementation rootProject.deps.gson
+  implementation platform(rootProject.deps.jacksonBom)
+  implementation rootProject.deps.jacksonCore
+  api rootProject.deps.jacksonDatabind
+  implementation rootProject.deps.springWeb
+  if (rootProject.deps.springWeb) {
+    runtimeOnly rootProject.deps.slf4jJcl // Allow commons-logging replacement
   }
 
+  api(rootProject.deps.spark) {
+    exclude(group: 'org.eclipse.jetty')
+    exclude(group: 'org.eclipse.jetty.websocket')
+  }
+  api rootProject.deps.servletApi
+
   testImplementation localGroovy()
-  testImplementation project(path: ':jetty', configuration: 'runtimeElements')
 
-  testImplementation project.deps.junit5Api
-  testImplementation project.deps.junit5Params
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.junit5Api
+  testImplementation rootProject.deps.junit5Params
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
 
-  testImplementation project.deps.mockitoCore
-  testImplementation project.deps.mockitoJunit5
-  testImplementation project.deps.assertJ
-  testImplementation project.deps.springTest
-  testImplementation project(path: ':test:http-mocks', configuration: 'runtimeElements')
+  testImplementation rootProject.deps.mockitoCore
+  testImplementation rootProject.deps.mockitoJunit5
+  testImplementation rootProject.deps.assertJ
+
+  testRuntimeOnly project(':jetty')
+
+  testFixturesImplementation localGroovy()
+  testFixturesApi(rootProject.deps.spark) {
+    exclude(group: 'org.eclipse.jetty')
+    exclude(group: 'org.eclipse.jetty.websocket')
+  }
+  testFixturesApi rootProject.deps.servletApi
+  testFixturesApi(testFixtures(project(':test:http-mocks')))
+  testFixturesApi rootProject.deps.springTest
+  testFixturesImplementation project(':server')
+
+  testFixturesApi rootProject.deps.junit5Api
+  testFixturesImplementation rootProject.deps.mockitoCore
+  testFixturesImplementation rootProject.deps.jsonUnit
 }

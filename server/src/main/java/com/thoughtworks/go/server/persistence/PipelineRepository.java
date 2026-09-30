@@ -16,12 +16,11 @@
 package com.thoughtworks.go.server.persistence;
 
 import com.thoughtworks.go.domain.PipelineTimelineEntry;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.database.Database;
 import com.thoughtworks.go.server.database.QueryExtensions;
 import com.thoughtworks.go.server.domain.PipelineTimeline;
 import com.thoughtworks.go.server.domain.user.PipelineSelections;
-import org.apache.commons.lang3.StringUtils;
 import org.hibernate.HibernateException;
 import org.hibernate.SQLQuery;
 import org.hibernate.Session;
@@ -36,6 +35,8 @@ import org.springframework.stereotype.Component;
 import java.math.BigInteger;
 import java.util.*;
 
+import static org.apache.commons.lang3.StringUtils.isEmpty;
+
 /**
  * Understands how to store and retrieve pipelines from the database
  */
@@ -43,7 +44,7 @@ import java.util.*;
 public class PipelineRepository extends HibernateDaoSupport {
     private static final Logger LOGGER = LoggerFactory.getLogger(PipelineRepository.class);
     private final QueryExtensions queryExtensions;
-    private GoCache goCache;
+    private final GoCache goCache;
 
     @Autowired
     public PipelineRepository(SessionFactory sessionFactory, GoCache goCache, Database databaseStrategy) {
@@ -52,7 +53,7 @@ public class PipelineRepository extends HibernateDaoSupport {
         setSessionFactory(sessionFactory);
     }
 
-    public static int updateNaturalOrderForPipeline(Session session, Long pipelineId, double naturalOrder) {
+    public static int updateNaturalOrderForPipeline(Session session, long pipelineId, double naturalOrder) {
         String sql = "UPDATE pipelines SET naturalOrder = :naturalOrder WHERE id = :pipelineId";
         SQLQuery query = session.createSQLQuery(sql);
         query.setLong("pipelineId", pipelineId);
@@ -60,7 +61,7 @@ public class PipelineRepository extends HibernateDaoSupport {
         return query.executeUpdate();
     }
 
-public void updatePipelineTimeline(final PipelineTimeline pipelineTimeline, final List<PipelineTimelineEntry> tempEntriesForRollback) {
+    public void updatePipelineTimeline(final PipelineTimeline pipelineTimeline, final List<PipelineTimelineEntry> tempEntriesForRollback) {
         getHibernateTemplate().execute(new HibernateCallback<>() {
             private static final int PIPELINE_NAME = 0;
             private static final int ID = 1;
@@ -69,14 +70,13 @@ public void updatePipelineTimeline(final PipelineTimeline pipelineTimeline, fina
             private static final int FINGERPRINT = 4;
             private static final int NATURAL_ORDER = 5;
             private static final int REVISION = 6;
-            private static final int FOLDER = 7;
-            private static final int MOD_ID = 8;
-            private static final int PMR_ID = 9;
+            private static final int MOD_ID = 7;
+            private static final int PMR_ID = 8;
 
             @Override
             public Object doInHibernate(Session session) throws HibernateException {
                 LOGGER.info("Start updating pipeline timeline");
-                List<Object[]> matches = retrieveTimeline(session, pipelineTimeline);
+                List<Object[]> matches = retrieveTimeline(session, pipelineTimeline.maximumId());
                 List<PipelineTimelineEntry> newPipelines = populateFrom(matches);
                 addEntriesToPipelineTimeline(newPipelines, pipelineTimeline, tempEntriesForRollback);
 
@@ -104,9 +104,9 @@ public void updatePipelineTimeline(final PipelineTimeline pipelineTimeline, fina
                 return matches;
             }
 
-            private List<Object[]> retrieveTimeline(Session session, PipelineTimeline pipelineTimeline) {
+            private List<Object[]> retrieveTimeline(Session session, long pipelineId) {
                 SQLQuery query = session.createSQLQuery(queryExtensions.retrievePipelineTimeline());
-                query.setLong("pipelineId", pipelineTimeline.maximumId());
+                query.setLong("pipelineId", pipelineId);
 
                 List<Object[]> matches = loadTimeline(query);
                 sortTimeLineByPidAndPmrId(matches);
@@ -114,16 +114,8 @@ public void updatePipelineTimeline(final PipelineTimeline pipelineTimeline, fina
             }
 
             private void sortTimeLineByPidAndPmrId(List<Object[]> matches) {
-                matches.sort((m1, m2) -> {
-                    long id1 = id(m1);
-                    long id2 = id(m2);
-                    if (id1 == id2) {
-                        return (int) (pmrId(m1) - pmrId(m2));
-                    }
-                    return (int) (id1 - id2);
-                });
+                matches.sort(Comparator.comparing(this::id).thenComparingLong(this::pmrId));
             }
-
 
             private List<PipelineTimelineEntry> populateFrom(List<Object[]> matches) {
                 List<PipelineTimelineEntry> newPipelines = new ArrayList<>();
@@ -131,49 +123,26 @@ public void updatePipelineTimeline(final PipelineTimeline pipelineTimeline, fina
                     return newPipelines;
                 }
 
-                Map<String, List<PipelineTimelineEntry.Revision>> revisions = new HashMap<>();
+                BigInteger lastId = null;
+                PipelineTimelineEntry lastEntry = null;
 
-                String name = null;
-                long curId = -1;
-                Integer counter = null;
-                double naturalOrder = 0.0;
+                for (Object[] row : matches) {
+                    BigInteger id = id(row);
 
-                PipelineTimelineEntry entry;
-
-                for (int i = 0; i < matches.size(); i++) {
-                    Object[] row = matches.get(i);
-                    long id = id(row);
-                    if (curId != id) {
-                        name = pipelineName(row);
-                        curId = id;
-                        counter = counter(row);
-                        revisions = new HashMap<>();
-                        naturalOrder = naturalOrder(row);
+                    // New row
+                    if (!id.equals(lastId)) {
+                        lastId = id;
+                        lastEntry = new PipelineTimelineEntry(pipelineName(row), lastId.longValue(), counter(row), new HashMap<>(), naturalOrder(row));
+                        newPipelines.add(lastEntry);
                     }
 
-                    String fingerprint = fingerprint(row);
-
-                    if (!revisions.containsKey(fingerprint)) {
-                        revisions.put(fingerprint, new ArrayList<>());
-                    }
-                    revisions.get(fingerprint).add(rev(row));
-
-                    int nextI = i + 1;
-                    if (((nextI < matches.size() && id(matches.get(nextI)) != curId) ||//new pipeline instance starts in next record, so capture this one
-                        nextI == matches.size())) {//this is the last record, so capture it
-                        entry = new PipelineTimelineEntry(name, curId, counter, revisions, naturalOrder);
-                        newPipelines.add(entry);
-                    }
+                    lastEntry.addRevision(fingerprint(row), rev(row));
                 }
                 return newPipelines;
             }
 
-            private String folder(Object[] row) {
-                return (String) row[FOLDER];
-            }
-
             private PipelineTimelineEntry.Revision rev(Object[] row) {
-                return new PipelineTimelineEntry.Revision(modifiedTime(row), stringRevision(row), folder(row), modId(row));
+                return new PipelineTimelineEntry.Revision(modifiedTime(row), stringRevision(row), modId(row));
             }
 
             private long pmrId(Object[] row) {
@@ -208,8 +177,8 @@ public void updatePipelineTimeline(final PipelineTimeline pipelineTimeline, fina
                 return row[COUNTER] == null ? -1 : ((BigInteger) row[COUNTER]).intValue();
             }
 
-            private long id(Object[] first) {
-                return ((BigInteger) first[ID]).longValue();
+            private BigInteger id(Object[] first) {
+                return (BigInteger) first[ID];
             }
         });
     }
@@ -252,7 +221,7 @@ public void updatePipelineTimeline(final PipelineTimeline pipelineTimeline, fina
     }
 
     public PipelineSelections findPipelineSelectionsById(String id) {
-        if (StringUtils.isEmpty(id)) {
+        if (isEmpty(id)) {
             return null;
         }
         return findPipelineSelectionsById(Long.parseLong(id));
@@ -272,11 +241,7 @@ public void updatePipelineTimeline(final PipelineTimeline pipelineTimeline, fina
                 return goCache.get(key);
             }
             @SuppressWarnings("unchecked") List<PipelineSelections> list = (List<PipelineSelections>) getHibernateTemplate().find("FROM PipelineSelections WHERE userId = ?", new Object[]{userId});
-            if (list.isEmpty()) {
-                pipelineSelections = null;
-            } else {
-                pipelineSelections = list.get(0);
-            }
+            pipelineSelections = list.isEmpty() ? null : list.getFirst();
 
             goCache.put(key, pipelineSelections);
             return pipelineSelections;

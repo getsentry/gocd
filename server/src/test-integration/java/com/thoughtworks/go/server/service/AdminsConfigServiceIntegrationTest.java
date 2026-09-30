@@ -29,6 +29,7 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.util.List;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -45,30 +46,30 @@ public class AdminsConfigServiceIntegrationTest {
     @Autowired private CachedGoConfig cachedGoConfig;
     @Autowired private EntityHashingService entityHashingService;
 
-    private static final GoConfigFileHelper CONFIG_HELPER = new GoConfigFileHelper();
-    private static final Username USERNAME = new Username(new CaseInsensitiveString("admin"));
+    private final GoConfigFileHelper configHelper = new GoConfigFileHelper();
+    private static final Username USERNAME = new Username(cis("admin"));
 
     @BeforeEach
     public void setUp() throws Exception {
-        CONFIG_HELPER.usingCruiseConfigDao(goConfigDao);
-        CONFIG_HELPER.onSetUp();
+        configHelper.usingCruiseConfigDao(goConfigDao);
+        configHelper.onSetUp();
         cachedGoConfig.clearListeners();
     }
 
     @AfterEach
     public void tearDown() {
-        CONFIG_HELPER.usingCruiseConfigDao(goConfigDao);
-        CONFIG_HELPER.onTearDown();
+        configHelper.usingCruiseConfigDao(goConfigDao);
+        configHelper.onTearDown();
         cachedGoConfig.clearListeners();
     }
 
     @Test
     public void update_shouldBeAbleToUpdateSystemAdminsWithUsers() {
-        CONFIG_HELPER.addAdmins("existing_admin_user");
+        configHelper.addAdmins("existing_admin_user");
 
-        assertTrue(adminsConfigService.systemAdmins().has(new AdminUser(new CaseInsensitiveString("existing_admin_user")), null));
+        assertTrue(adminsConfigService.systemAdmins().has(new AdminUser(cis("existing_admin_user")), null));
 
-        AdminUser newAdminUser = new AdminUser(new CaseInsensitiveString("new_admin_user"));
+        AdminUser newAdminUser = new AdminUser(cis("new_admin_user"));
         HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
         String hashForEntity = entityHashingService.hashForEntity(adminsConfigService.systemAdmins());
 
@@ -81,18 +82,18 @@ public class AdminsConfigServiceIntegrationTest {
 
     @Test
     public void update_shouldBeAbleToUpdateSystemAdminsWithRoles() {
-        Role devs = new RoleConfig(new CaseInsensitiveString("devs"), new RoleUser(new CaseInsensitiveString("first")));
-        Role qas = new RoleConfig(new CaseInsensitiveString("qas"), new RoleUser(new CaseInsensitiveString("first")));
-        CONFIG_HELPER.addRole(devs);
-        CONFIG_HELPER.addRole(qas);
+        Role devs = new RoleConfig(cis("devs"), new RoleUser(cis("first")));
+        Role qas = new RoleConfig(cis("qas"), new RoleUser(cis("first")));
+        configHelper.addRole(devs);
+        configHelper.addRole(qas);
 
-        CONFIG_HELPER.addAdminRoles("devs");
+        configHelper.addAdminRoles("devs");
         assertTrue(adminsConfigService.systemAdmins().has(null, List.of(devs)));
 
         HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
         String hashForEntity = entityHashingService.hashForEntity(adminsConfigService.systemAdmins());
 
-        adminsConfigService.update(USERNAME, new AdminsConfig(new AdminRole(new CaseInsensitiveString("qas"))), hashForEntity, result);
+        adminsConfigService.update(USERNAME, new AdminsConfig(new AdminRole(cis("qas"))), hashForEntity, result);
 
         assertThat(result.httpCode()).isEqualTo(200);
         assertThat(adminsConfigService.systemAdmins().size()).isEqualTo(1);
@@ -103,13 +104,13 @@ public class AdminsConfigServiceIntegrationTest {
     public void update_shouldEnsureOnlyValidRolesCanBeSystemAdmins() {
         HttpLocalizedOperationResult result = new HttpLocalizedOperationResult();
         String hashForEntity = entityHashingService.hashForEntity(adminsConfigService.systemAdmins());
-        AdminsConfig newSystemAdmins = new AdminsConfig(new AdminRole(new CaseInsensitiveString("qas")));
+        AdminsConfig newSystemAdmins = new AdminsConfig(new AdminRole(cis("qas")));
 
         adminsConfigService.update(USERNAME, newSystemAdmins, hashForEntity, result);
 
         assertThat(result.httpCode()).isEqualTo(422);
         assertThat(result.message()).isEqualTo("Validations failed for admins. Error(s): [Role \"qas\" does not exist.]. Please correct and resubmit.");
         assertThat(adminsConfigService.systemAdmins().size()).isEqualTo(0);
-        assertThat(newSystemAdmins.errors().on("roles")).isEqualTo("Role \"qas\" does not exist.");
+        assertThat(newSystemAdmins.errors().firstErrorOn("roles")).isEqualTo("Role \"qas\" does not exist.");
     }
 }

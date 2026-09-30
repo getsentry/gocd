@@ -20,11 +20,12 @@ import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.domain.materials.svn.SvnCommand;
 import com.thoughtworks.go.server.materials.postcommit.PostCommitHookImplementer;
 import com.thoughtworks.go.server.materials.postcommit.UrlMatchers;
-import org.apache.commons.lang3.StringUtils;
 
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 public class SvnPostCommitHookImplementer implements PostCommitHookImplementer {
 
@@ -40,15 +41,15 @@ public class SvnPostCommitHookImplementer implements PostCommitHookImplementer {
 
             final Map<String, String> urlToRemoteUUIDMap = createUrlToRemoteUUIDMap(materials);
             for (Material material : materials) {
-                if (material instanceof SvnMaterial && isQualified(targetUUID, (SvnMaterial) material, urlToRemoteUUIDMap)) {
+                if (material instanceof SvnMaterial svnMaterial && isQualified(targetUUID, svnMaterial, urlToRemoteUUIDMap)) {
                     prunedMaterials.add(material);
                 }
             }
         } else if (params.containsKey(REPO_URL_PARAM_KEY)) {
             String paramRepoUrl = params.get(REPO_URL_PARAM_KEY);
-            if (StringUtils.isNotBlank(paramRepoUrl)) {
+            if (isNotBlank(paramRepoUrl)) {
                 for (Material material : materials) {
-                    if (material instanceof SvnMaterial && isUrlEqual(paramRepoUrl, (SvnMaterial) material)) {
+                    if (material instanceof SvnMaterial svnMaterial && isUrlEqual(paramRepoUrl, svnMaterial)) {
                         prunedMaterials.add(material);
                     }
                 }
@@ -68,8 +69,8 @@ public class SvnPostCommitHookImplementer implements PostCommitHookImplementer {
     Map<String, String> createUrlToRemoteUUIDMap(Set<Material> materials) {
         final HashSet<SvnMaterial> setOfSvnMaterials = new HashSet<>();
         for (Material material : materials) {
-            if (material instanceof SvnMaterial) {
-                setOfSvnMaterials.add((SvnMaterial) material);
+            if (material instanceof SvnMaterial svnMaterial) {
+                setOfSvnMaterials.add(svnMaterial);
             }
         }
         return getEmptySvnCommand().createUrlToRemoteUUIDMap(setOfSvnMaterials);

@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
@@ -50,7 +51,9 @@ public class ProcessManager {
         ProcessBuilder processBuilder = new ProcessBuilder(commandLine);
         LOG.debug("Executing: {}", commandLineForDisplay);
         if (workingDir != null) {
-            LOG.debug("[Command Line] Using working directory {} to start the process.", workingDir.getAbsolutePath());
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("[Command Line] Using working directory {} to start the process.", workingDir.getAbsolutePath());
+            }
             processBuilder.directory(workingDir);
         }
 
@@ -69,14 +72,12 @@ public class ProcessManager {
         }
     }
 
-    public long getIdleTimeFor(ProcessTag processTag) {
-        for (ProcessWrapper processWrapper : processMap.values()) {
-            ProcessTag tag = processWrapper.getProcessTag();
-            if (processTag.equals(tag)) {
-                return processWrapper.getIdleTime();
-            }
-        }
-        return 0;
+    public Duration idleTimeFor(ProcessTag processTag) {
+        return processMap.values().stream()
+            .filter(processWrapper -> processTag.equals(processWrapper.getProcessTag()))
+            .findFirst()
+            .map(ProcessWrapper::idleFor)
+            .orElse(Duration.ZERO);
     }
 
     public Collection<ProcessWrapper> currentProcessListForDisplay() {

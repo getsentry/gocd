@@ -22,7 +22,6 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.text.ParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -79,18 +78,18 @@ public class SvnLogXmlParserTest {
     }
 
     @Test
-    public void shouldParse() throws ParseException {
+    public void shouldParse() {
         SvnLogXmlParser parser = new SvnLogXmlParser();
         List<Modification> materialRevisions = parser.parse(XML, "", new SafeSaxBuilder());
         assertThat(materialRevisions.size()).isEqualTo(1);
-        Modification mod = materialRevisions.get(0);
+        Modification mod = materialRevisions.getFirst();
         assertThat(mod.getRevision()).isEqualTo("3");
         assertThat(mod.getUserName()).isEqualTo("cceuser");
         assertThat(mod.getModifiedTime()).isEqualTo(convertDate("2008-03-11T07:52:41.162075Z"));
         assertThat(mod.getComment()).isEqualTo("[Liyanhui & Gabbar] Checked in new file for test");
         List<ModifiedFile> files = mod.getModifiedFiles();
         assertThat(files.size()).isEqualTo(1);
-        ModifiedFile file = files.get(0);
+        ModifiedFile file = files.getFirst();
         assertThat(file.getFileName()).isEqualTo("/trunk/revision3.txt");
         assertThat(file.getAction()).isEqualTo(ModifiedAction.added);
     }
@@ -112,7 +111,7 @@ public class SvnLogXmlParserTest {
                 </logentry>
                 </log>""", "", new SafeSaxBuilder());
         assertThat(materialRevisions.size()).isEqualTo(1);
-        Modification mod = materialRevisions.get(0);
+        Modification mod = materialRevisions.getFirst();
         assertThat(mod.getRevision()).isEqualTo("3");
         assertThat(mod.getComment()).isNull();
     }
@@ -137,7 +136,7 @@ public class SvnLogXmlParserTest {
                 </logentry>
                 </log>""", "", new SafeSaxBuilder());
         assertThat(materialRevisions.size()).isEqualTo(1);
-        Modification mod = materialRevisions.get(0);
+        Modification mod = materialRevisions.getFirst();
         assertThat(mod.getRevision()).isEqualTo("3");
         assertThat(mod.getComment()).isNull();
     }
@@ -191,7 +190,7 @@ public class SvnLogXmlParserTest {
 
         SvnLogXmlParser parser = new SvnLogXmlParser();
         List<Modification> mods = parser.parse(firstChangeLog, ".", new SafeSaxBuilder());
-        assertThat(mods.get(0).getUserName()).isEqualTo("yxchu");
+        assertThat(mods.getFirst().getUserName()).isEqualTo("yxchu");
 
         List<Modification> mods2 = parser.parse(secondChangeLog, ".", new SafeSaxBuilder());
         assertThat(mods2.size()).isEqualTo(2);
@@ -202,10 +201,10 @@ public class SvnLogXmlParserTest {
         SvnLogXmlParser parser = new SvnLogXmlParser();
         List<Modification> materialRevisions = parser.parse(MULTIPLE_FILES, "/branch", new SafeSaxBuilder());
 
-        Modification mod = materialRevisions.get(0);
+        Modification mod = materialRevisions.getFirst();
         List<ModifiedFile> files = mod.getModifiedFiles();
         assertThat(files.size()).isEqualTo(1);
-        ModifiedFile file = files.get(0);
+        ModifiedFile file = files.getFirst();
         assertThat(file.getFileName()).isEqualTo("/branch/1.1/readme.txt");
         assertThat(file.getAction()).isEqualTo(ModifiedAction.deleted);
     }
@@ -215,11 +214,11 @@ public class SvnLogXmlParserTest {
         SvnLogXmlParser parser = new SvnLogXmlParser();
         List<Modification> materialRevisions = parser.parse(MULTIPLE_FILES, "", new SafeSaxBuilder());
 
-        Modification mod = materialRevisions.get(0);
+        Modification mod = materialRevisions.getFirst();
         List<ModifiedFile> files = mod.getModifiedFiles();
         assertThat(files.size()).isEqualTo(2);
 
-        ModifiedFile file = files.get(0);
+        ModifiedFile file = files.getFirst();
         assertThat(file.getFileName()).isEqualTo("/trunk/revision3.txt");
         assertThat(file.getAction()).isEqualTo(ModifiedAction.added);
 

@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.server.service;
 
-import com.google.common.collect.Sets;
 import com.thoughtworks.go.config.*;
 import com.thoughtworks.go.config.commands.EntityConfigUpdateCommand;
 import com.thoughtworks.go.config.exceptions.GoConfigInvalidException;
@@ -26,17 +25,19 @@ import com.thoughtworks.go.i18n.LocalizedMessage;
 import com.thoughtworks.go.server.domain.Username;
 import com.thoughtworks.go.server.service.result.BulkUpdateAdminsResult;
 import com.thoughtworks.go.server.service.result.LocalizedOperationResult;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.collections4.SetUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.i18n.LocalizedMessage.saveFailedWithReason;
 
 @Component
@@ -64,9 +65,9 @@ public class AdminsConfigService {
         try {
             goConfigService.updateConfig(command, currentUser);
         } catch (Exception e) {
-            if (e instanceof GoConfigInvalidException) {
+            if (e instanceof GoConfigInvalidException invalidException) {
                 String adminsTag = AdminsConfig.class.getAnnotation(ConfigTag.class).value();
-                String errors = deDuplicatedErrors(((GoConfigInvalidException) e).getCruiseConfig().getAllErrors());
+                String errors = deDuplicatedErrors(invalidException.getCruiseConfig().getAllErrors());
                 result.unprocessableEntity(LocalizedMessage.entityConfigValidationFailed(adminsTag, errors));
             } else {
                 if (!result.hasMessage()) {
@@ -79,8 +80,7 @@ public class AdminsConfigService {
 
     //Hack to remove duplicate errors. See `AdminRole.addError`
     private String deDuplicatedErrors(List<ConfigErrors> allErrors) {
-        Set<String> errors = allErrors.stream().map(ConfigErrors::firstError).collect(Collectors.toSet());
-        return StringUtils.join(errors, ",");
+        return allErrors.stream().map(ConfigErrors::firstError).distinct().collect(Collectors.joining(","));
     }
 
     public BulkUpdateAdminsResult bulkUpdate(Username currentUser,
@@ -97,8 +97,8 @@ public class AdminsConfigService {
 
         usersToAdd.forEach(user -> existingAdmins.add(new AdminUser(user)));
         rolesToAdd.forEach(role -> existingAdmins.add(new AdminRole(role)));
-        usersToRemove.forEach(user -> existingAdmins.remove(new AdminUser(new CaseInsensitiveString(user))));
-        rolesToRemove.forEach(role -> existingAdmins.remove(new AdminRole(new CaseInsensitiveString(role))));
+        usersToRemove.forEach(user -> existingAdmins.remove(new AdminUser(cis(user))));
+        rolesToRemove.forEach(role -> existingAdmins.remove(new AdminRole(cis(role))));
         AdminsConfigUpdateCommand command = new AdminsConfigUpdateCommand(goConfigService, new AdminsConfig(existingAdmins),
                 currentUser, result, entityHashingService, md5);
         updateConfig(currentUser, result, command);
@@ -109,14 +109,14 @@ public class AdminsConfigService {
     private BulkUpdateAdminsResult validateUsersAndRolesForBulkUpdate(List<String> usersToRemove, List<String> rolesToRemove,
                                                                       Set<Admin> existingAdmins) {
         Set<CaseInsensitiveString> existingAdminNames = existingAdmins.stream().map(Admin::getName).collect(Collectors.toSet());
-        Sets.SetView<CaseInsensitiveString> invalidUsersToRemove = Sets.difference(caseInsensitive(usersToRemove), existingAdminNames);
-        Sets.SetView<CaseInsensitiveString> invalidRolesToRemove = Sets.difference(caseInsensitive(rolesToRemove), existingAdminNames);
+        Collection<CaseInsensitiveString> invalidUsersToRemove = SetUtils.difference(caseInsensitive(usersToRemove), existingAdminNames);
+        Collection<CaseInsensitiveString> invalidRolesToRemove = SetUtils.difference(caseInsensitive(rolesToRemove), existingAdminNames);
         BulkUpdateAdminsResult result = new BulkUpdateAdminsResult();
-        if (invalidUsersToRemove.size() > 0) {
+        if (!invalidUsersToRemove.isEmpty()) {
             result.setNonExistentUsers(invalidUsersToRemove);
             result.unprocessableEntity("Update failed because some users or roles do not exist under super admins.");
         }
-        if (invalidRolesToRemove.size() > 0) {
+        if (!invalidRolesToRemove.isEmpty()) {
             result.setNonExistentRoles(invalidRolesToRemove);
             result.unprocessableEntity("Update failed because some users or roles do not exist under super admins.");
         }

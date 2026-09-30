@@ -17,43 +17,41 @@
 # Please file any issues or PRs at https://github.com/gocd/gocd
 ###############################################################################################
 
-FROM cgr.dev/chainguard/bash:latest AS gocd-agent-unzip
+FROM docker.io/chainguard/bash:latest AS gocd-agent-unzip
 ARG TARGETARCH
 ARG UID=1000
 <#if useFromArtifact >
-COPY go-agent-${fullVersion}.zip /tmp/go-agent-${fullVersion}.zip
+COPY go-agent-${goVersions.fullVersion}.zip /tmp/go-agent-${goVersions.fullVersion}.zip
 RUN \
 <#else>
-RUN curl --fail --location --silent --show-error "https://download.gocd.org/binaries/${fullVersion}/generic/go-agent-${fullVersion}.zip" > /tmp/go-agent-${fullVersion}.zip && \
+RUN curl --fail --location --silent --show-error "https://download.gocd.org/binaries/${goVersions.fullVersion}/generic/go-agent-${goVersions.fullVersion}.zip" > /tmp/go-agent-${goVersions.fullVersion}.zip && \
 </#if>
-    unzip -q /tmp/go-agent-${fullVersion}.zip -d / && \
+    unzip -q /tmp/go-agent-${goVersions.fullVersion}.zip -d / && \
     mkdir -p /go-agent/wrapper /go-agent/bin && \
-    mv -v /go-agent-${goVersion}/LICENSE /go-agent/LICENSE && \
-    mv -v /go-agent-${goVersion}/*.md /go-agent && \
-    mv -v /go-agent-${goVersion}/bin/go-agent /go-agent/bin/go-agent && \
-    mv -v /go-agent-${goVersion}/lib /go-agent/lib && \
-    mv -v /go-agent-${goVersion}/logs /go-agent/logs && \
-    mv -v /go-agent-${goVersion}/run /go-agent/run && \
-    mv -v /go-agent-${goVersion}/wrapper-config /go-agent/wrapper-config && \
+    mv -v /go-agent-${goVersions.goVersion}/LICENSE /go-agent/LICENSE && \
+    mv -v /go-agent-${goVersions.goVersion}/*.md /go-agent && \
+    mv -v /go-agent-${goVersions.goVersion}/bin/go-agent /go-agent/bin/go-agent && \
+    mv -v /go-agent-${goVersions.goVersion}/lib /go-agent/lib && \
+    mv -v /go-agent-${goVersions.goVersion}/logs /go-agent/logs && \
+    mv -v /go-agent-${goVersions.goVersion}/run /go-agent/run && \
+    mv -v /go-agent-${goVersions.goVersion}/wrapper-config /go-agent/wrapper-config && \
     WRAPPERARCH=${dockerAliasToWrapperArchAsShell} && \
-    mv -v /go-agent-${goVersion}/wrapper/wrapper-linux-$WRAPPERARCH* /go-agent/wrapper/ && \
-    mv -v /go-agent-${goVersion}/wrapper/libwrapper-linux-$WRAPPERARCH* /go-agent/wrapper/ && \
-    mv -v /go-agent-${goVersion}/wrapper/wrapper.jar /go-agent/wrapper/ && \
+    mv -v /go-agent-${goVersions.goVersion}/wrapper/wrapper-linux-$WRAPPERARCH* /go-agent/wrapper/ && \
+    mv -v /go-agent-${goVersions.goVersion}/wrapper/libwrapper-linux-$WRAPPERARCH* /go-agent/wrapper/ && \
+    mv -v /go-agent-${goVersions.goVersion}/wrapper/wrapper.jar /go-agent/wrapper/ && \
     chown -R ${r"${UID}"}:0 /go-agent && chmod -R g=u /go-agent
-
+<#if distro.getMultiStageInputImage()?has_content >
+FROM ${distro.getMultiStageInputImage()} AS multistageinput
+</#if>
 FROM ${distro.getBaseImageLocation(distroVersion)}
 ARG TARGETARCH
 
-LABEL gocd.version="${goVersion}" \
+LABEL gocd.version="${goVersions.goVersion}" \
   description="GoCD agent based on ${distro.getBaseImageLocation(distroVersion)}" \
   maintainer="GoCD Team <go-cd-dev@googlegroups.com>" \
   url="https://www.gocd.org" \
-  gocd.full.version="${fullVersion}" \
-  gocd.git.sha="${gitRevision}"
-
-<#list additionalFiles as filePath, fileDescriptor>
-ADD ${fileDescriptor.url} ${filePath}
-</#list>
+  gocd.full.version="${goVersions.fullVersion}" \
+  gocd.git.sha="${goVersions.gitRevision}"
 
 # force encoding
 ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8
@@ -63,15 +61,10 @@ ENV ${key}="${value}"
 
 ARG UID=1000
 ARG GID=1000
-
-RUN \
-<#if additionalFiles?size != 0>
-# add mode and permissions for files we added above
-  <#list additionalFiles as filePath, fileDescriptor>
-  chmod ${fileDescriptor.mode} ${filePath} && \
-  chown ${fileDescriptor.owner}:${fileDescriptor.group} ${filePath} && \
-  </#list>
+<#if distro.getMultiStageInputImage()?has_content >
+COPY --from=multistageinput ${distro.getMultiStageInputDirectory()} ${distro.getMultiStageInputDirectory()}
 </#if>
+RUN \
 <#list distro.getBaseImageUpdateCommands(distroVersion) as command>
   ${command} && \
 </#list>
@@ -85,13 +78,12 @@ RUN \
 <#list distro.getInstallPrerequisitesCommands(distroVersion) as command>
   ${command} && \
 </#list>
-<#list distro.getInstallJavaCommands(project) as command>
+<#list distro.getInstallJavaCommands(goVersions.packagedJavaVersion) as command>
   ${command} && \
 </#list>
-  mkdir -p /go-agent /docker-entrypoint.d /go /godata
+  mkdir -p /go-agent /docker-entrypoint.d /go-working-dir /godata
 
 ADD docker-entrypoint.sh /
-
 
 COPY --from=gocd-agent-unzip /go-agent /go-agent
 # ensure that logs are printed to console output
@@ -100,13 +92,15 @@ COPY --chown=go:root agent-bootstrapper-logback-include.xml agent-launcher-logba
 COPY --chown=root:root dockerd-sudo /etc/sudoers.d/dockerd-sudo
 </#if>
 
-RUN chown -R go:root /docker-entrypoint.d /go /godata /docker-entrypoint.sh && \
-    chmod -R g=u /docker-entrypoint.d /go /godata /docker-entrypoint.sh
+RUN chown -R go:root /docker-entrypoint.d /go-working-dir /godata /docker-entrypoint.sh && \
+    chmod -R g=u /docker-entrypoint.d /go-working-dir /godata /docker-entrypoint.sh
+VOLUME /go-working-dir
+VOLUME /godata
 
 <#if distro.name() == "docker">
   COPY --chown=root:root run-docker-daemon.sh /
 </#if>
 
-ENTRYPOINT ["/docker-entrypoint.sh"]
+ENTRYPOINT ["tini-static", "-g", "--", "/docker-entrypoint.sh"]
 
 USER go

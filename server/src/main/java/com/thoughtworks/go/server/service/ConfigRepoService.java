@@ -45,7 +45,8 @@ import static java.lang.String.format;
 
 @Service
 public class ConfigRepoService {
-    public static final Logger LOGGER = LoggerFactory.getLogger(ConfigRepoService.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ConfigRepoService.class);
+
     private final GoConfigService goConfigService;
     private final EntityHashingService entityHashingService;
     private final ConfigRepoExtension configRepoExtension;
@@ -67,19 +68,17 @@ public class ConfigRepoService {
     }
 
     public PartialConfig partialConfigDefinedBy(ConfigRepoConfig repo) {
-        return goConfigService.cruiseConfig().getPartials().parallelStream().
-                filter(definedByRepo(repo)).findFirst().orElseThrow(
-                () -> new RecordNotFoundException(format("Repository `%s` does not define any configurations", repo.getId()))
+        return goConfigService.cruiseConfig().getPartials()
+            .parallelStream()
+            .filter(definedByRepo(repo))
+            .findFirst()
+            .orElseThrow(() -> new RecordNotFoundException(format("Repository `%s` does not define any configurations", repo.getId()))
         );
     }
 
     private Predicate<PartialConfig> definedByRepo(ConfigRepoConfig repo) {
-        return (part) -> part.getOrigin() instanceof RepoConfigOrigin &&
+        return part -> part.getOrigin() instanceof RepoConfigOrigin &&
                 ((RepoConfigOrigin) part.getOrigin()).getConfigRepo().equals(repo);
-    }
-
-    public GoConfigService getGoConfigService() {
-        return goConfigService;
     }
 
     public ConfigRepoConfig getConfigRepo(String repoId) {

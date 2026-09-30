@@ -14,77 +14,69 @@
  * limitations under the License.
  */
 
-import {CleanWebpackPlugin} from "clean-webpack-plugin";
 import ESLintPlugin from "eslint-webpack-plugin";
 import ForkTsCheckerWebpackPlugin from "fork-ts-checker-webpack-plugin";
-import fs from "fs";
 import HtmlWebpackPlugin from "html-webpack-plugin";
 import _ from "lodash";
 import MiniCssExtractPlugin from "mini-css-extract-plugin";
-import path from "path";
-import webpack from "webpack";
+import fs from "node:fs";
+import path from "node:path";
+import StylelintPlugin from "stylelint-webpack-plugin";
+import {Compiler, ProvidePlugin, sources, WebpackPluginInstance} from "webpack";
+import {WebpackAssetsManifest} from "webpack-assets-manifest";
 import {ConfigOptions, getEntries} from "./variables";
 import {LicensePlugins} from "./webpack-license-plugin";
 
-const jasmineCore                = require("jasmine-core");
-const StatsPlugin                = require("stats-webpack-plugin");
-const StylelintPlugin            = require("stylelint-webpack-plugin");
-const UnusedWebpackPlugin        = require("unused-webpack-plugin");
-const WebpackBuildNotifierPlugin = require("webpack-build-notifier");
+const jasmineCore = require("jasmine-core");
 
-export function plugins(configOptions: ConfigOptions): webpack.Plugin[] {
-  const plugins = [
+export function plugins(configOptions: ConfigOptions): WebpackPluginInstance[] {
+  const plugins: WebpackPluginInstance[] = [
     new ESLintPlugin({
       extensions: ["js", "msx"],
       exclude: ["node_modules", "webpack/gen"],
-      failOnWarning: true,
-      threads: true
+      failOnWarning: !configOptions.watch,
+      failOnError: !configOptions.watch,
+      cache: true,
+      cacheLocation: path.join(configOptions.cacheDir, "eslint-webpack-plugin"),
     }),
-    new CleanWebpackPlugin(),
-    new UnusedWebpackPlugin({
-                              directories: [
-                                path.join(configOptions.railsRoot, "webpack"),
-                                path.join(configOptions.railsRoot, "spec", "webpack")
-                              ],
-                              exclude: ["config/**/*.*", "*.d.ts", 'tsconfig.json'],
-                            }) as webpack.Plugin,
-    new StylelintPlugin({configFile: path.join(configOptions.railsRoot, ".stylelintrc.yml"), files: configOptions.assetsDir, failOnWarning: true}) as webpack.Plugin,
-    new StatsPlugin("manifest.json", {
-      chunkModules: false,
-      source: false,
-      chunks: false,
-      modules: false,
-      assets: true
-    }) as webpack.Plugin,
-    new webpack.ProvidePlugin({
-                                "$": "jquery",
-                                "jQuery": "jquery",
-                                "window.jQuery": "jquery"
-                              }) as webpack.Plugin,
+    new StylelintPlugin({
+      configFile: path.join(configOptions.railsRoot, ".stylelintrc.yml"),
+      files: configOptions.assetsDir,
+      failOnWarning: true,
+      cache: true,
+      cacheLocation: path.join(configOptions.cacheDir, "stylelint-webpack-plugin"),
+    }),
+    new WebpackAssetsManifest({
+      output: "manifest.json",
+      entrypoints: true,
+      writeToDisk: true,
+      publicPath: true,
+    }),
+    new ProvidePlugin(
+      {
+        "$": "jquery",
+        "jQuery": "jquery",
+        "window.jQuery": "jquery"
+      }),
     new LicensePlugins(configOptions.licenseReportFile),
     new ForkTsCheckerWebpackPlugin({
-      typescript: { memoryLimit: 512, diagnosticOptions: { semantic: true, syntactic: true } }
+      typescript: {memoryLimit: 800, diagnosticOptions: {semantic: true, syntactic: true}}
     })
   ];
 
   if (configOptions.production) {
-    plugins.push(new MiniCssExtractPlugin({
-                                            filename: "[name]-[contenthash].css",
-                                            chunkFilename: "[id]-[contenthash].css",
-                                            ignoreOrder: true
-                                          }) as unknown as webpack.Plugin);
+    plugins.push(new MiniCssExtractPlugin(
+      {
+        filename: "[name]-[contenthash].css",
+        chunkFilename: "[id]-[contenthash].css",
+        ignoreOrder: true
+      }));
   } else {
     const jasmineFiles = jasmineCore.files;
 
     const entries = getEntries(configOptions);
-    delete entries.specRoot;
 
     const jasmineIndexPage = {
-      // rebuild every time; without this, `_specRunner.html` disappears in webpack-watch
-      // after a code change (because of the `clean-webpack-plugin`), unless the template
-      // itself changes.
-      cache: false,
-
       inject: true,
       xhtml: true,
       filename: "_specRunner.html",
@@ -99,44 +91,26 @@ export function plugins(configOptions: ConfigOptions): webpack.Plugin[] {
     };
 
     class JasmineAssetsPlugin {
-      apply(compiler: webpack.Compiler) {
-        compiler.hooks.emit.tapAsync("JasmineAssetsPlugin",
-                                     (compilation: webpack.compilation.Compilation, callback: () => any) => {
-                                       const allJasmineAssets = jasmineFiles.jsFiles.concat(jasmineFiles.bootFiles)
-                                                                            .concat(jasmineFiles.cssFiles);
+      apply(compiler: Compiler) {
+        compiler.hooks.emit.tapAsync(
+          "JasmineAssetsPlugin",
+          (compilation, callback) => {
+            const allJasmineAssets = jasmineFiles.jsFiles
+              .concat(jasmineFiles.bootFiles)
+              .concat(jasmineFiles.cssFiles);
 
-                                       _.each(allJasmineAssets, (asset) => {
-                                         const file = path.join(jasmineFiles.path, asset);
+            _.each(allJasmineAssets, (asset) => {
+              const contents = fs.readFileSync(path.join(jasmineFiles.path, asset));
+              compilation.emitAsset(`__jasmine/${asset}`, new sources.RawSource(contents));
+            });
 
-                                         const contents = fs.readFileSync(file).toString();
-
-                                         compilation.assets[`__jasmine/${asset}`] = {
-                                           source() {
-                                             return contents;
-                                           },
-                                           size() {
-                                             return contents.length;
-                                           }
-                                         };
-                                       });
-
-                                       callback();
-                                     });
+            callback();
+          });
       }
     }
 
     plugins.push(new HtmlWebpackPlugin(jasmineIndexPage));
     plugins.push(new JasmineAssetsPlugin());
-
-    // in Windows Server Core containers, this causes webpack to hang indefinitely.
-    // it's not critical for builds anyway, just a nice dev utility.
-    if (process.platform !== "win32") {
-      plugins.push(new WebpackBuildNotifierPlugin({
-                                                    suppressSuccess: true,
-                                                    suppressWarning: true
-                                                  })
-      );
-    }
   }
   return plugins;
 }

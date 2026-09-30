@@ -15,9 +15,10 @@
  */
 package com.thoughtworks.go.domain;
 
+import com.thoughtworks.go.util.SystemEnvironment;
 import com.thoughtworks.go.util.ZipUtil;
-import com.thoughtworks.go.validation.ChecksumValidator;
 import com.thoughtworks.go.work.GoPublisher;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,28 +27,28 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.util.Objects;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-import static com.thoughtworks.go.util.CachedDigestUtils.md5Hex;
 import static java.lang.String.format;
 
 public class DirHandler implements FetchHandler {
+    private static final Logger LOG = LoggerFactory.getLogger(DirHandler.class);
+
     private final String srcFile;
     private final File destOnAgent;
-    private static final Logger LOG = LoggerFactory.getLogger(DirHandler.class);
+    private final ChecksumValidationPublisher checksumValidationPublisher = new ChecksumValidationPublisher();
     private ArtifactMd5Checksums artifactMd5Checksums;
-    private ChecksumValidationPublisher checksumValidationPublisher;
 
     public DirHandler(String srcFile, File destOnAgent) {
         this.srcFile = srcFile;
         this.destOnAgent = destOnAgent;
-        checksumValidationPublisher = new ChecksumValidationPublisher();
     }
 
     @Override
-    public String url(String remoteHost, String workingUrl) {
-        return format("%s/remoting/files/%s.zip", remoteHost, workingUrl);
+    public String url(String uriPathFromContext) {
+        return format("%s/remoting/files/%s.zip", SystemEnvironment.getNormalizedServiceUrl(), uriPathFromContext);
     }
 
     @Override
@@ -56,11 +57,11 @@ public class DirHandler implements FetchHandler {
             LOG.info("[Agent Fetch Artifact] Downloading from '{}' to '{}'. Will read from Socket stream to compute MD5 and write to file", srcFile, destOnAgent.getAbsolutePath());
 
             long before = System.currentTimeMillis();
-            new ZipUtil((entry, stream1) -> {
+            new ZipUtil((entry, entryStream) -> {
                 LOG.info("[Agent Fetch Artifact] Downloading a directory from '{}' to '{}'. Handling the entry: '{}'", srcFile, destOnAgent.getAbsolutePath(), entry.getName());
-                new ChecksumValidator(artifactMd5Checksums).validate(getSrcFilePath(entry), md5Hex(stream1), checksumValidationPublisher);
+                new ChecksumValidator(artifactMd5Checksums).validate(getSrcFilePath(entry), DigestUtils.md5Hex(entryStream), checksumValidationPublisher);
             }).unzip(zipInputStream, destOnAgent);
-            LOG.info("[Agent Fetch Artifact] Downloading a directory from '{}' to '{}'. Took: {}ms", srcFile, destOnAgent.getAbsolutePath(), System.currentTimeMillis() - before);
+            LOG.info("[Agent Fetch Artifact] Downloading a directory from '{}' to '{}'. Took: {} ms", srcFile, destOnAgent.getAbsolutePath(), System.currentTimeMillis() - before);
         }
     }
 
@@ -85,18 +86,9 @@ public class DirHandler implements FetchHandler {
         if (this == o) {
             return true;
         }
-        if (!(o instanceof DirHandler that)) {
-            return false;
-        }
-
-        if (destOnAgent != null ? !destOnAgent.equals(that.destOnAgent) : that.destOnAgent != null) {
-            return false;
-        }
-        if (srcFile != null ? !srcFile.equals(that.srcFile) : that.srcFile != null) {
-            return false;
-        }
-
-        return true;
+        return o instanceof DirHandler that &&
+            Objects.equals(destOnAgent, that.destOnAgent) &&
+            Objects.equals(srcFile, that.srcFile);
     }
 
     @Override

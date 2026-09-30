@@ -20,7 +20,7 @@ import com.thoughtworks.go.domain.JobInstance;
 import com.thoughtworks.go.domain.JobResult;
 import com.thoughtworks.go.domain.JobState;
 import com.thoughtworks.go.remote.work.InvalidAgentException;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,9 +28,10 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class BuildRepositoryService {
-    private ScheduleService scheduleService;
-    public JobInstanceService jobInstanceService;
     private static final Logger LOGGER = LoggerFactory.getLogger(BuildRepositoryService.class);
+
+    private final ScheduleService scheduleService;
+    private final JobInstanceService jobInstanceService;
 
     @Autowired
     public BuildRepositoryService(JobInstanceService jobInstanceService,
@@ -45,7 +46,7 @@ public class BuildRepositoryService {
         scheduleService.jobCompleting(jobIdentifier, result, agentUuid);
     }
 
-    public void updateStatusFromAgent(JobIdentifier jobIdentifier, JobState jobState, String agentUuid) throws Exception {
+    public void updateStatusFromAgent(JobIdentifier jobIdentifier, JobState jobState, String agentUuid) {
         checkAgentUUID(jobIdentifier, agentUuid, jobState.toString());
         LOGGER.debug("Changing status of job instance with identifier {} to {} from agent[{}]", jobIdentifier, jobState, agentUuid);
         scheduleService.updateJobStatus(jobIdentifier, jobState);
@@ -53,14 +54,14 @@ public class BuildRepositoryService {
 
     private void checkAgentUUID(JobIdentifier jobIdentifier, String agentUuid, String state) {
         JobInstance job = jobInstanceService.buildByIdWithTransitions(jobIdentifier.getBuildId());
-        if (!StringUtils.equals(job.getAgentUuid(), agentUuid)) {
+        if (!Strings.CS.equals(job.getAgentUuid(), agentUuid)) {
             LOGGER.error("Build Instance [{}] is using agent [{}] but is being updated to [{}] from agent [{}]", jobIdentifier, job.getAgentUuid(), state, agentUuid);
             throw new InvalidAgentException("AgentUUID has changed in the middle of a job. AgentUUID:"
                     + agentUuid + ", Build: " + job);
         }
     }
 
-    public boolean isCancelledOrRescheduled(Long buildInstanceId) {
+    public boolean isCancelledOrRescheduled(long buildInstanceId) {
         JobInstance instance = jobInstanceService.buildByIdWithTransitions(buildInstanceId);
         if (instance.isNull()) {
             return false;

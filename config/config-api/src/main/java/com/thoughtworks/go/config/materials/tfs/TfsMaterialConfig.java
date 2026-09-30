@@ -18,15 +18,16 @@ package com.thoughtworks.go.config.materials.tfs;
 import com.thoughtworks.go.config.ConfigAttribute;
 import com.thoughtworks.go.config.ConfigTag;
 import com.thoughtworks.go.config.ParamsAttributeAware;
-import com.thoughtworks.go.config.ValidationContext;
 import com.thoughtworks.go.config.materials.PasswordAwareMaterial;
 import com.thoughtworks.go.config.materials.ScmMaterialConfig;
 import com.thoughtworks.go.util.command.UrlArgument;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
 
 import java.util.Map;
+import java.util.Objects;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @ConfigTag(value = "tfs", label = "TFS")
 public class TfsMaterialConfig extends ScmMaterialConfig implements ParamsAttributeAware, PasswordAwareMaterial {
@@ -72,17 +73,17 @@ public class TfsMaterialConfig extends ScmMaterialConfig implements ParamsAttrib
 
     @Override
     public String getUriForDisplay() {
-        return this.url.forDisplay();
+        return url != null ? url.forDisplay() : null;
     }
 
     @Override
-    public void validateConcreteScmMaterial(ValidationContext validationContext) {
+    public void validateConcreteScmMaterial() {
         validateMaterialUrl(this.url);
 
-        if (StringUtils.isBlank(userName)) {
+        if (isBlank(userName)) {
             errors().add(USERNAME, "Username cannot be blank");
         }
-        if (StringUtils.isBlank(projectPath)) {
+        if (isBlank(projectPath)) {
             errors().add(PROJECT_PATH, "Project Path cannot be blank");
         }
         validateEncryptedPassword();
@@ -136,21 +137,10 @@ public class TfsMaterialConfig extends ScmMaterialConfig implements ParamsAttrib
 
         TfsMaterialConfig material = (TfsMaterialConfig) o;
 
-        if (projectPath != null ? !projectPath.equals(material.projectPath) : material.projectPath != null) {
-            return false;
-        }
-        if (url != null ? !url.equals(material.url) : material.url != null) {
-            return false;
-        }
-
-        if (userName != null ? !userName.equals(material.userName) : material.userName != null) {
-            return false;
-        }
-
-        if (domain != null ? !domain.equals(material.domain) : material.domain != null) {
-            return false;
-        }
-        return true;
+        return Objects.equals(projectPath, material.projectPath) &&
+            Objects.equals(url, material.url) &&
+            Objects.equals(userName, material.userName) &&
+            Objects.equals(domain, material.domain);
     }
 
     @Override

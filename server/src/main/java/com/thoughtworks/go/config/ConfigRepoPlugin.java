@@ -20,7 +20,6 @@ import com.thoughtworks.go.domain.config.Configuration;
 import com.thoughtworks.go.plugin.access.configrepo.ConfigFileList;
 import com.thoughtworks.go.plugin.access.configrepo.ConfigRepoExtension;
 import com.thoughtworks.go.plugin.access.configrepo.ExportedConfig;
-import com.thoughtworks.go.plugin.access.configrepo.InvalidPartialConfigException;
 import com.thoughtworks.go.plugin.configrepo.contract.CRConfigurationProperty;
 import com.thoughtworks.go.plugin.configrepo.contract.CRParseResult;
 import com.thoughtworks.go.plugin.configrepo.contract.CRPipeline;
@@ -49,13 +48,14 @@ public class ConfigRepoPlugin implements PartialConfigProvider {
      * @return a list of decrypted, serializable configuration properties
      */
     public static List<CRConfigurationProperty> getCrConfigurations(Configuration configuration) {
-        return configuration.stream().
-                map((prop) -> new CRConfigurationProperty(
-                        prop.getConfigKeyName(),
-                        prop.getValue(), // decrypt any secrets
-                        null
-                )).
-                collect(Collectors.toList());
+        return configuration
+            .stream()
+            .map(prop -> new CRConfigurationProperty(
+                prop.getConfigKeyName(),
+                prop.getValue(),
+                null) // /decrypt any secrets
+            )
+            .collect(Collectors.toList());
     }
 
     @Override
@@ -93,8 +93,9 @@ public class ConfigRepoPlugin implements PartialConfigProvider {
 
     public CRParseResult parseDirectory(File configRepoCheckoutDirectory, Collection<CRConfigurationProperty> cRconfigurations) {
         CRParseResult crParseResult = this.crExtension.parseDirectory(this.pluginId, configRepoCheckoutDirectory.getAbsolutePath(), cRconfigurations);
-        if (crParseResult.hasErrors())
+        if (crParseResult.hasErrors()) {
             throw new InvalidPartialConfigException(crParseResult, crParseResult.getErrors().getErrorsAsText());
+        }
         return crParseResult;
     }
 }

@@ -19,10 +19,11 @@ import com.thoughtworks.go.config.ConfigAttribute;
 import com.thoughtworks.go.config.ConfigValue;
 import com.thoughtworks.go.config.Validatable;
 import com.thoughtworks.go.config.ValidationContext;
+import com.thoughtworks.go.config.ValidationContext.PolicyValidationContext;
 import com.thoughtworks.go.domain.ConfigErrors;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOCase;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 
 import java.util.List;
 import java.util.Objects;
@@ -30,7 +31,7 @@ import java.util.Objects;
 import static com.thoughtworks.go.config.policy.SupportedEntity.ELASTIC_AGENT_PROFILE;
 import static com.thoughtworks.go.config.policy.SupportedEntity.fromString;
 import static java.lang.String.format;
-import static org.apache.commons.lang3.StringUtils.equalsIgnoreCase;
+import static org.apache.commons.lang3.StringUtils.isEmpty;
 
 public abstract class AbstractDirective implements Directive {
     @ConfigAttribute(value = "action", optional = false)
@@ -44,7 +45,7 @@ public abstract class AbstractDirective implements Directive {
 
     private final ConfigErrors configErrors = new ConfigErrors();
 
-    private DirectiveType directiveType;
+    private final DirectiveType directiveType;
 
     public AbstractDirective(DirectiveType allow) {
         this.directiveType = allow;
@@ -61,12 +62,12 @@ public abstract class AbstractDirective implements Directive {
     public void validate(ValidationContext validationContext) {
         PolicyValidationContext policyValidationContext = validationContext.getPolicyValidationContext();
 
-        if (isInvalidAction(action, policyValidationContext.getAllowedActions())) {
-            this.addError("action", format("Invalid action, must be one of %s.", policyValidationContext.getAllowedActions()));
+        if (isInvalidAction(action, policyValidationContext.allowedActions())) {
+            this.addError("action", format("Invalid action, must be one of %s.", policyValidationContext.allowedActions()));
         }
 
-        if (isInvalidType(type, policyValidationContext.getAllowedTypes())) {
-            this.addError("type", format("Invalid type, must be one of %s.", policyValidationContext.getAllowedTypes()));
+        if (isInvalidType(type, policyValidationContext.allowedTypes())) {
+            this.addError("type", format("Invalid type, must be one of %s.", policyValidationContext.allowedTypes()));
         }
 
         if (isInvalidResource(resource)) {
@@ -75,7 +76,7 @@ public abstract class AbstractDirective implements Directive {
     }
 
     private boolean isInvalidResource(String resource) {
-        if (StringUtils.isEmpty(resource)) {
+        if (isEmpty(resource)) {
             return false;
         }
 
@@ -87,7 +88,7 @@ public abstract class AbstractDirective implements Directive {
             return false;
         }
 
-        return allowedTypes.stream().noneMatch(it -> equalsIgnoreCase(it, type));
+        return allowedTypes.stream().noneMatch(it -> Strings.CI.equals(it, type));
     }
 
     protected boolean isRequestForClusterProfiles(Class<? extends Validatable> aClass) {
@@ -99,15 +100,15 @@ public abstract class AbstractDirective implements Directive {
     }
 
     private boolean isInvalidAction(String action, List<String> allowedActions) {
-        return allowedActions.stream().noneMatch(it -> equalsIgnoreCase(it, action));
+        return allowedActions.stream().noneMatch(it -> Strings.CI.equals(it, action));
     }
 
     protected boolean matchesAction(String action) {
-        if (equalsIgnoreCase("administer", this.action)) {
+        if (Strings.CI.equals("administer", this.action)) {
             return true;
         }
 
-        return equalsIgnoreCase(action, this.action);
+        return Strings.CI.equals(action, this.action);
     }
 
     protected boolean isViewAction(String action) {
@@ -115,7 +116,7 @@ public abstract class AbstractDirective implements Directive {
     }
 
     protected boolean matchesType(Class<? extends Validatable> entityType) {
-        if (equalsIgnoreCase("*", this.type)) {
+        if (Strings.CI.equals("*", this.type)) {
             return true;
         }
 
@@ -123,7 +124,7 @@ public abstract class AbstractDirective implements Directive {
     }
 
     protected boolean matchesResource(String resource) {
-        if (equalsIgnoreCase("*", this.resource)) {
+        if (Strings.CI.equals("*", this.resource)) {
             return true;
         }
 
@@ -142,8 +143,12 @@ public abstract class AbstractDirective implements Directive {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         AbstractDirective directive = (AbstractDirective) o;
         return Objects.equals(action, directive.action) &&
                 Objects.equals(type, directive.type) &&

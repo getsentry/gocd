@@ -18,10 +18,11 @@ package com.thoughtworks.go.apiv1.serverhealthmessages;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.apiv1.serverhealthmessages.representers.ServerHealthMessagesRepresenter;
 import com.thoughtworks.go.serverhealth.ServerHealthService;
 import com.thoughtworks.go.serverhealth.ServerHealthStates;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,13 +35,13 @@ import static spark.Spark.*;
 @Component
 public class ServerHealthMessagesController extends ApiController implements SparkSpringController {
     private final ServerHealthService serverHealthService;
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
 
     @Autowired
-    public ServerHealthMessagesController(ServerHealthService serverHealthService, ApiAuthenticationHelper apiAuthenticationHelper) {
+    public ServerHealthMessagesController(ServerHealthService serverHealthService, ApiAuthorizationHelper apiAuthorizationHelper) {
         super(ApiVersion.v1);
         this.serverHealthService = serverHealthService;
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
     }
 
     @Override
@@ -49,13 +50,13 @@ public class ServerHealthMessagesController extends ApiController implements Spa
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(Routes.ServerHealthMessages.BASE, () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
 
-            before("", mimeType, apiAuthenticationHelper::checkUserAnd403);
-            before("/*", mimeType, apiAuthenticationHelper::checkUserAnd403);
+            before("", mimeType, apiAuthorizationHelper::checkUserAnd403);
+            before("/*", mimeType, apiAuthorizationHelper::checkUserAnd403);
 
             get("", mimeType, this::show);
             head("", mimeType, this::show);

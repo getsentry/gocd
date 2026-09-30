@@ -21,13 +21,13 @@ import com.thoughtworks.go.plugin.infra.plugininfo.GoPluginBundleDescriptor;
 import com.thoughtworks.go.plugin.infra.plugininfo.GoPluginDescriptor;
 import com.thoughtworks.go.util.SystemEnvironment;
 import org.apache.commons.collections4.EnumerationUtils;
-import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.UUID;
 import java.util.zip.ZipFile;
@@ -88,14 +88,14 @@ class PluginsZipTest {
         GoPluginBundleDescriptor externalPackageMaterialPlugin = new GoPluginBundleDescriptor(getPluginDescriptor("external-package-material-4", externalPackageMaterialJar, false));
 
         when(pluginManager.plugins()).thenReturn(List.of(
-                bundledTaskPlugin.descriptors().get(0),
-                bundledAuthPlugin.descriptors().get(0),
-                bundledSCMPlugin.descriptors().get(0),
-                bundledPackageMaterialPlugin.descriptors().get(0),
-                externalTaskPlugin.descriptors().get(0),
-                externalElasticAgentPlugin.descriptors().get(0),
-                externalSCMPlugin.descriptors().get(0),
-                externalPackageMaterialPlugin.descriptors().get(0)
+                bundledTaskPlugin.descriptors().getFirst(),
+                bundledAuthPlugin.descriptors().getFirst(),
+                bundledSCMPlugin.descriptors().getFirst(),
+                bundledPackageMaterialPlugin.descriptors().getFirst(),
+                externalTaskPlugin.descriptors().getFirst(),
+                externalElasticAgentPlugin.descriptors().getFirst(),
+                externalSCMPlugin.descriptors().getFirst(),
+                externalPackageMaterialPlugin.descriptors().getFirst()
         ));
 
         when(pluginManager.isPluginOfType("task", "bundled-task-1")).thenReturn(true);
@@ -135,7 +135,7 @@ class PluginsZipTest {
     void shouldUpdateChecksumIfFileIsReCreated() throws Exception {
         pluginsZip.create();
         String oldMd5 = pluginsZip.md5();
-        FileUtils.writeStringToFile(new File(externalPluginsDir, "external-task-1.jar"), UUID.randomUUID().toString(), UTF_8);
+        Files.writeString(new File(externalPluginsDir, "external-task-1.jar").toPath(), UUID.randomUUID().toString(), UTF_8);
         pluginsZip.create();
         assertThat(pluginsZip.md5()).isNotEqualTo(oldMd5);
     }
@@ -145,35 +145,9 @@ class PluginsZipTest {
         File bundledPluginsDir = temporaryFolder.newFolder("plugins-bundled-ext");
         SystemEnvironment systemEnvironmentFail = mock(SystemEnvironment.class);
         when(systemEnvironmentFail.get(PLUGIN_GO_PROVIDED_PATH)).thenReturn(bundledPluginsDir.getAbsolutePath());
-        when(systemEnvironmentFail.get(PLUGIN_EXTERNAL_PROVIDED_PATH)).thenReturn("");
+        when(systemEnvironmentFail.get(PLUGIN_EXTERNAL_PROVIDED_PATH)).thenReturn("dummy");
         when(systemEnvironmentFail.get(ALL_PLUGINS_ZIP_PATH)).thenReturn("");
-        FileUtils.writeStringToFile(new File(bundledPluginsDir, "bundled-task-1.jar"), "Bundled1", UTF_8);
-
-        PluginsZip pluginsZipFail = new PluginsZip(systemEnvironmentFail, pluginManager);
-        assertThatCode(pluginsZipFail::create)
-                .isInstanceOf(FileAccessRightsCheckException.class);
-    }
-
-    @Test
-    void shouldFailGracefullyWhenBundledFileCannotBeRead() throws Exception {
-        SystemEnvironment systemEnvironmentFail = mock(SystemEnvironment.class);
-        when(systemEnvironmentFail.get(PLUGIN_GO_PROVIDED_PATH)).thenReturn("");
-        when(systemEnvironmentFail.get(PLUGIN_EXTERNAL_PROVIDED_PATH)).thenReturn(externalPluginsDir.getAbsolutePath());
-        when(systemEnvironmentFail.get(ALL_PLUGINS_ZIP_PATH)).thenReturn("");
-        FileUtils.writeStringToFile(new File(externalPluginsDir, "external-task-1.jar"), "External1", UTF_8);
-
-        PluginsZip pluginsZipFail = new PluginsZip(systemEnvironmentFail, pluginManager);
-        assertThatCode(pluginsZipFail::create)
-                .isInstanceOf(FileAccessRightsCheckException.class);
-    }
-
-    @Test
-    void fileAccessErrorShouldContainPathToTheFolderInWhichTheErrorOccurred() throws Exception {
-        SystemEnvironment systemEnvironmentFail = mock(SystemEnvironment.class);
-        when(systemEnvironmentFail.get(PLUGIN_GO_PROVIDED_PATH)).thenReturn("/dummy");
-        when(systemEnvironmentFail.get(PLUGIN_EXTERNAL_PROVIDED_PATH)).thenReturn(externalPluginsDir.getAbsolutePath());
-        when(systemEnvironmentFail.get(ALL_PLUGINS_ZIP_PATH)).thenReturn("");
-        FileUtils.writeStringToFile(new File(externalPluginsDir, "external-task-1.jar"), "External1", UTF_8);
+        Files.writeString(new File(bundledPluginsDir, "bundled-task-1.jar").toPath(), "Bundled1", UTF_8);
 
         PluginsZip pluginsZipFail = new PluginsZip(systemEnvironmentFail, pluginManager);
         assertThatCode(pluginsZipFail::create)
@@ -181,6 +155,19 @@ class PluginsZipTest {
                 .hasMessageContaining("dummy");
     }
 
+    @Test
+    void shouldFailGracefullyWhenBundledFileCannotBeRead() throws Exception {
+        SystemEnvironment systemEnvironmentFail = mock(SystemEnvironment.class);
+        when(systemEnvironmentFail.get(PLUGIN_GO_PROVIDED_PATH)).thenReturn("dummy");
+        when(systemEnvironmentFail.get(PLUGIN_EXTERNAL_PROVIDED_PATH)).thenReturn(externalPluginsDir.getAbsolutePath());
+        when(systemEnvironmentFail.get(ALL_PLUGINS_ZIP_PATH)).thenReturn("");
+        Files.writeString(new File(externalPluginsDir, "external-task-1.jar").toPath(), "External1", UTF_8);
+
+        PluginsZip pluginsZipFail = new PluginsZip(systemEnvironmentFail, pluginManager);
+        assertThatCode(pluginsZipFail::create)
+                .isInstanceOf(FileAccessRightsCheckException.class)
+                .hasMessageContaining("dummy");
+    }
 
     @Test
     void shouldCreatePluginsWhenTaskPluginsAreAdded() {
@@ -192,19 +179,19 @@ class PluginsZipTest {
 
     @Test
     void shouldCreatePluginsWhenTaskPluginsAreRemoved() {
-        pluginsZip.pluginUnLoaded(externalTaskPlugin.descriptors().get(0));
+        pluginsZip.pluginUnLoaded(externalTaskPlugin.descriptors().getFirst());
         verify(pluginsZip, times(1)).create();
     }
 
     @Test
     void shouldDoNothingWhenAPluginThatIsNotATaskOrScmOrPackageMaterialPluginPluginIsAdded() {
-        pluginsZip.pluginLoaded(externalElasticAgentPlugin.descriptors().get(0));
+        pluginsZip.pluginLoaded(externalElasticAgentPlugin.descriptors().getFirst());
         verify(pluginsZip, never()).create();
     }
 
     @Test
     void shouldDoNothingWhenAPluginThatIsNotATaskOrScmOrPackageMaterialPluginPluginIsRemoved() {
-        pluginsZip.pluginUnLoaded(externalElasticAgentPlugin.descriptors().get(0));
+        pluginsZip.pluginUnLoaded(externalElasticAgentPlugin.descriptors().getFirst());
         verify(pluginsZip, never()).create();
     }
 
@@ -224,11 +211,11 @@ class PluginsZipTest {
         );
 
         when(pluginManager.plugins()).thenReturn(List.of(
-                bundledTaskPlugin.descriptors().get(0),
-                bundledTaskPlugin.descriptors().get(1),
+                bundledTaskPlugin.descriptors().getFirst(),
+                bundledTaskPlugin.descriptors().getLast(),
 
-                externalTaskPlugin.descriptors().get(0),
-                externalTaskPlugin.descriptors().get(1)
+                externalTaskPlugin.descriptors().getFirst(),
+                externalTaskPlugin.descriptors().getLast()
         ));
 
         when(pluginManager.isPluginOfType("task", "bundled-plugin-1")).thenReturn(true);
@@ -259,7 +246,7 @@ class PluginsZipTest {
 
     private File createPluginFile(File pluginsDir, String pluginJarFileName, String contents) throws IOException {
         File bundledTask1Jar = new File(pluginsDir, pluginJarFileName);
-        FileUtils.writeStringToFile(bundledTask1Jar, contents, UTF_8);
+        Files.writeString(bundledTask1Jar.toPath(), contents, UTF_8);
         return bundledTask1Jar;
     }
 }

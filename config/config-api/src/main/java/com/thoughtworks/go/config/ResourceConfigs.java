@@ -17,20 +17,16 @@ package com.thoughtworks.go.config;
 
 import com.thoughtworks.go.domain.BaseCollection;
 import com.thoughtworks.go.domain.ConfigErrors;
-import com.thoughtworks.go.util.comparator.AlphaAsciiCollectionComparator;
+import com.thoughtworks.go.util.CommaSeparatedString;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static com.thoughtworks.go.util.CommaSeparatedString.append;
-import static com.thoughtworks.go.util.StringUtil.joinForDisplay;
 import static org.apache.commons.lang3.StringUtils.isBlank;
-import static org.apache.commons.lang3.StringUtils.isNotEmpty;
 
 @ConfigTag("resources")
 @ConfigCollection(ResourceConfig.class)
-public class ResourceConfigs extends BaseCollection<ResourceConfig> implements Comparable<ResourceConfigs>, Validatable {
+public class ResourceConfigs extends BaseCollection<ResourceConfig> implements Validatable {
     private final ConfigErrors configErrors = new ConfigErrors();
 
     public ResourceConfigs() {
@@ -41,21 +37,11 @@ public class ResourceConfigs extends BaseCollection<ResourceConfig> implements C
     }
 
     public ResourceConfigs(String commaSeparatedResources) {
-        if (isNotEmpty(commaSeparatedResources)) {
-            String[] resourceArr = commaSeparatedResources.split(",");
-            Arrays.stream(resourceArr)
-                    .map(String::trim)
-                    .map(ResourceConfig::new)
-                    .forEach(this::add);
-        }
+        addAll(commaSeparatedResources);
     }
 
     public boolean hasErrors() {
         return !this.errors().isEmpty();
-    }
-
-    public String getCommaSeparatedResourceNames() {
-        return append("", resourceNames());
     }
 
     public ResourceConfigs(List<ResourceConfig> resourceConfigs) {
@@ -81,12 +67,7 @@ public class ResourceConfigs extends BaseCollection<ResourceConfig> implements C
 
     @Override
     public String toString() {
-        return joinForDisplay(resourceNames());
-    }
-
-    @Override
-    public int compareTo(ResourceConfigs other) {
-        return new AlphaAsciiCollectionComparator<ResourceConfig>().compare(this, other);
+        return String.join(" | ", resourceNames()).trim();
     }
 
     public boolean validateTree(ValidationContext validationContext) {
@@ -118,24 +99,14 @@ public class ResourceConfigs extends BaseCollection<ResourceConfig> implements C
         configErrors.add(fieldName, message);
     }
 
-    public String exportToCsv() {
-        return join(resourceNames(), ", ");
-    }
-
-    private static String join(List<String> c, String join) {
-        StringBuilder sb = new StringBuilder();
-        for (String s : c) {
-            sb.append(s);
-            sb.append(join);
-        }
-        return sb.toString();
-    }
-
     public void importFromCsv(String csv) {
         clear();
-        String[] resourceNames = csv.split(",");
-        Arrays.stream(resourceNames).map(String::trim)
-                .map(ResourceConfig::new)
-                .forEach(this::add);
+        addAll(csv);
+    }
+
+    private void addAll(String commaSeparatedResources) {
+        CommaSeparatedString.commaSeparatedStrToTrimmed(commaSeparatedResources)
+            .map(ResourceConfig::new)
+            .forEach(this::add);
     }
 }

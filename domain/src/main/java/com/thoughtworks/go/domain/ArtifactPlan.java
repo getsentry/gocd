@@ -15,49 +15,47 @@
  */
 package com.thoughtworks.go.domain;
 
-import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.thoughtworks.go.config.ArtifactTypeConfig;
 import com.thoughtworks.go.config.ArtifactTypeConfigs;
 import com.thoughtworks.go.config.BuiltinArtifactConfig;
 import com.thoughtworks.go.config.PluggableArtifactConfig;
 import com.thoughtworks.go.util.FileUtil;
+import com.thoughtworks.go.util.FilenameUtil;
+import com.thoughtworks.go.util.json.JsonHelper;
 import com.thoughtworks.go.work.GoPublisher;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.tools.ant.types.selectors.SelectorUtils;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
-import static com.thoughtworks.go.util.FileUtil.subtractPath;
-import static org.apache.commons.lang3.StringUtils.removeStart;
+import static org.apache.commons.io.FilenameUtils.separatorsToUnix;
+import static org.apache.commons.lang3.Strings.CS;
+import static org.apache.tools.ant.types.selectors.SelectorUtils.rtrimWildcardTokens;
 
 public class ArtifactPlan extends PersistentObject {
     private static final Logger LOG = LoggerFactory.getLogger(ArtifactPlan.class);
-    public static final Gson GSON = new Gson();
+    private static final String MERGED_TEST_RESULT_FOLDER = "result";
+
+    protected final List<ArtifactPlan> testArtifactPlansForMerging = new ArrayList<>();
+
     private long buildId;
     private ArtifactPlanType artifactPlanType;
     private String src;
     private String dest;
     private String pluggableArtifactConfigJson;
-    private static final String MERGED_TEST_RESULT_FOLDER = "result";
-    protected final List<ArtifactPlan> testArtifactPlansForMerging = new ArrayList<>();
 
     public ArtifactPlan() {
     }
 
     public ArtifactPlan(ArtifactTypeConfig artifactTypeConfig) {
         this.artifactPlanType = ArtifactPlanType.fromArtifactType(artifactTypeConfig.getArtifactType());
-        if (artifactTypeConfig instanceof PluggableArtifactConfig) {
-            this.pluggableArtifactConfigJson = ((PluggableArtifactConfig) artifactTypeConfig).toJSON();
+        if (artifactTypeConfig instanceof PluggableArtifactConfig pluggableArtifactConfig) {
+            this.pluggableArtifactConfigJson = pluggableArtifactConfig.toJSON();
         } else {
             BuiltinArtifactConfig buildArtifactConfig = (BuiltinArtifactConfig) artifactTypeConfig;
             setSrc(buildArtifactConfig.getSource());
@@ -90,11 +88,11 @@ public class ArtifactPlan extends PersistentObject {
     }
 
     public String getSrc() {
-        return FilenameUtils.separatorsToUnix(src);
+        return separatorsToUnix(src);
     }
 
     public String getDest() {
-        return FilenameUtils.separatorsToUnix(dest);
+        return separatorsToUnix(dest);
     }
 
     public void setBuildId(long buildId) {
@@ -106,11 +104,11 @@ public class ArtifactPlan extends PersistentObject {
     }
 
     public void setSrc(String src) {
-        this.src = StringUtils.trim(src);
+        this.src = src == null ? null : src.trim();
     }
 
     public void setDest(String dest) {
-        this.dest = StringUtils.trim(dest);
+        this.dest = dest == null ? null : dest.trim();
     }
 
     public void printArtifactInfo(StringBuilder builder) {
@@ -139,7 +137,7 @@ public class ArtifactPlan extends PersistentObject {
             publisher.taggedConsumeLineWithPrefix(GoPublisher.PUBLISH_ERR, message);
             throw new RuntimeException(message);
         }
-        uploadArtifactFile(publisher, rootPath, getSrc(), getDest(), files);
+        uploadArtifactFiles(publisher, rootPath, getSrc(), getDest(), files);
     }
 
     private void publishTestArtifact(GoPublisher goPublisher, File rootPath) {
@@ -147,22 +145,22 @@ public class ArtifactPlan extends PersistentObject {
     }
 
     public List<File> uploadTestResults(GoPublisher publisher, File rootPath) {
-        List<File> allFiles = new ArrayList<>();
+        List<File> uploadedFiles = new ArrayList<>();
         for (ArtifactPlan artifactPlan : testArtifactPlansForMerging) {
             File[] files = getArtifactFiles(rootPath, artifactPlan);
             if (files.length > 0) {
-                allFiles.addAll(uploadArtifactFile(publisher, rootPath, artifactPlan.getSrc(), artifactPlan.getDest(), files));
+                uploadedFiles.addAll(uploadArtifactFiles(publisher, rootPath, artifactPlan.getSrc(), artifactPlan.getDest(), files));
             } else {
                 final String message = MessageFormat.format("The directory {0} specified as a test artifact was not found."
-                        + " Please check your configuration", FilenameUtils.separatorsToUnix(artifactPlan.getSource(rootPath).getPath()));
+                        + " Please check your configuration", separatorsToUnix(artifactPlan.getSource(rootPath).getPath()));
                 publisher.taggedConsumeLineWithPrefix(GoPublisher.PUBLISH_ERR, message);
                 LOG.error(message);
             }
         }
-        return allFiles;
+        return uploadedFiles;
     }
 
-    private List<File> uploadArtifactFile(GoPublisher publisher, File rootPath, String src, String dest, File[] files) {
+    private List<File> uploadArtifactFiles(GoPublisher publisher, File rootPath, String src, String dest, File[] files) {
         final List<File> fileList = files == null ? new ArrayList<>() : Arrays.asList(files);
         for (File file : fileList) {
             publisher.upload(file, destinationURL(rootPath, file, src, dest));
@@ -199,7 +197,7 @@ public class ArtifactPlan extends PersistentObject {
     }
 
     protected File getSource(File rootPath) {
-        return new File(FileUtil.applyBaseDirIfRelativeAndNormalize(rootPath, new File(getSrc())));
+        return new File(FilenameUtil.applyBaseDirIfRelativeAndNormalize(rootPath, new File(getSrc())));
     }
 
     public String destinationURL(File rootPath, File file) {
@@ -207,17 +205,23 @@ public class ArtifactPlan extends PersistentObject {
     }
 
     protected String destinationURL(File rootPath, File file, String src, String dest) {
-        String trimmedPattern = SelectorUtils.rtrimWildcardTokens(FilenameUtils.separatorsToUnix(src).replace('/', File.separatorChar));
-        if (StringUtils.equals(FilenameUtils.separatorsToUnix(trimmedPattern), FilenameUtils.separatorsToUnix(src))) {
+        String trimmedPattern = rtrimWildcardTokens(separatorsToUnix(src).replace('/', File.separatorChar));
+        if (CS.equals(separatorsToUnix(trimmedPattern), separatorsToUnix(src))) {
             return dest;
         }
-        String trimmedPath = removeStart(subtractPath(rootPath, file), FilenameUtils.separatorsToUnix(trimmedPattern));
-        if (!StringUtils.startsWith(trimmedPath, "/") && StringUtils.isNotEmpty(trimmedPath)) {
+        String trimmedPath = CS.removeStart(subtractPath(rootPath, file), separatorsToUnix(trimmedPattern));
+        if (!trimmedPath.isEmpty() && !CS.startsWith(trimmedPath, "/")) {
             trimmedPath = "/" + trimmedPath;
         }
         return dest + trimmedPath;
     }
 
+
+    private static @NotNull String subtractPath(File rootPath, File file) {
+        String fullPath = separatorsToUnix(file.getParentFile().getPath());
+        String basePath = separatorsToUnix(rootPath.getPath());
+        return CS.removeStart(CS.removeStart(fullPath, basePath), "/");
+    }
 
     public static List<ArtifactPlan> toArtifactPlans(ArtifactTypeConfigs artifactConfigs) {
         List<ArtifactPlan> artifactPlans = new ArrayList<>();
@@ -228,18 +232,20 @@ public class ArtifactPlan extends PersistentObject {
     }
 
     public Map<String, Object> getPluggableArtifactConfiguration() {
-        return GSON.fromJson(pluggableArtifactConfigJson, new TypeToken<Map<String, Object>>() {}.getType());
+        return JsonHelper.fromJson(pluggableArtifactConfigJson, new TypeToken<Map<String, Object>>() {}.getType());
     }
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof ArtifactPlan that)) return false;
+        if (this == o) {
+            return true;
+        }
+        return o instanceof ArtifactPlan that &&
+            artifactPlanType == that.artifactPlanType &&
+            Objects.equals(src, that.src) &&
+            Objects.equals(dest, that.dest) &&
+            Objects.equals(pluggableArtifactConfigJson, that.pluggableArtifactConfigJson);
 
-        if (artifactPlanType != that.artifactPlanType) return false;
-        if (src != null ? !src.equals(that.src) : that.src != null) return false;
-        if (dest != null ? !dest.equals(that.dest) : that.dest != null) return false;
-        return pluggableArtifactConfigJson != null ? pluggableArtifactConfigJson.equals(that.pluggableArtifactConfigJson) : that.pluggableArtifactConfigJson == null;
     }
 
     @Override

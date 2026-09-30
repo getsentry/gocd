@@ -243,6 +243,7 @@ export class AdminPipelinesPage extends Page<null, State> {
       sm,
       shouldOpenEditView: this.operation === "edit"
     };
+    const canMovePipeline                              = vnode.state.pipelineGroups().length > 1;
     const filteredPipelineGrps: Stream<PipelineGroups> = Stream();
     if (vnode.state.searchText()) {
       const results = _.filter(vnode.state.pipelineGroups(), (grp: PipelineGroup) => grp.matches(vnode.state.searchText()));
@@ -259,7 +260,10 @@ export class AdminPipelinesPage extends Page<null, State> {
     return (
       <div>
         <FlashMessage type={this.flashMessage.type} message={this.flashMessage.message}/>
-        <PipelineGroupsWidget {...vnode.state} pipelineGroups={filteredPipelineGrps} scrollOptions={scrollOptions}/>
+        <PipelineGroupsWidget {...vnode.state}
+                              pipelineGroups={filteredPipelineGrps}
+                              canMovePipeline={canMovePipeline}
+                              scrollOptions={scrollOptions}/>
       </div>
     );
   }
@@ -271,7 +275,7 @@ export class AdminPipelinesPage extends Page<null, State> {
   fetchData(vnode: m.Vnode<null, State>): Promise<any> {
     this.pageState = PageState.LOADING;
 
-    return Promise.all([PipelineStructureCRUD.allPipelines("administer", "view"),
+    return Promise.all([PipelineStructureCRUD.allPipelinesPrivileged("administer", "view"),
                          PluginInfoCRUD.all({type: ExtensionTypeString.CONFIG_REPO})
                        ]).then((args) => {
       const pipelineGroups: ApiResult<PipelineStructureWithAdditionalInfo> = args[0];

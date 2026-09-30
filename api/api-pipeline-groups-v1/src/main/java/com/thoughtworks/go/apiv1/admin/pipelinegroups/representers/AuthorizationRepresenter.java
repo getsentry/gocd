@@ -22,8 +22,9 @@ import com.thoughtworks.go.config.*;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 import java.util.stream.Collectors;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 
 public class AuthorizationRepresenter {
     public static void toJSON(OutputWriter jsonWriter, Authorization authorization) {
@@ -43,9 +44,9 @@ public class AuthorizationRepresenter {
 
     private static void writeUsersAndRoles(OutputWriter viewWriter, List<AdminUser> users, List<AdminRole> roles) {
         List<String> userErrors = new ArrayList<>();
-        users.stream().map(user -> user.errors().getAllOn(AdminUser.ADMIN)).filter(Objects::nonNull).forEach(userErrors::addAll);
+        users.stream().map(user -> user.errors().getAllOn(AdminUser.ADMIN)).forEach(userErrors::addAll);
         List<String> rolesErrors = new ArrayList<>();
-        roles.stream().map(role -> role.errors().getAllOn(AdminRole.ADMIN)).filter(Objects::nonNull).forEach(rolesErrors::addAll);
+        roles.stream().map(role -> role.errors().getAllOn(AdminRole.ADMIN)).forEach(rolesErrors::addAll);
 
         if (!rolesErrors.isEmpty() || !userErrors.isEmpty()) {
             viewWriter.addChild("errors", errorsWriter -> {
@@ -87,7 +88,7 @@ public class AuthorizationRepresenter {
     }
 
     private static void populateConfig(AdminsConfig config, JsonReader jsonReader) {
-        jsonReader.readArrayIfPresent("users", users -> users.forEach(user -> config.add(new AdminUser(new CaseInsensitiveString(user.getAsString())))));
-        jsonReader.readArrayIfPresent("roles", roles -> roles.forEach(role -> config.add(new AdminRole(new CaseInsensitiveString(role.getAsString())))));
+        jsonReader.readArrayIfPresent("users", users -> users.forEach(user -> config.add(new AdminUser(cis(user.getAsString())))));
+        jsonReader.readArrayIfPresent("roles", roles -> roles.forEach(role -> config.add(new AdminRole(cis(role.getAsString())))));
     }
 }

@@ -26,9 +26,12 @@ import com.thoughtworks.go.config.remote.ConfigOrigin;
 import com.thoughtworks.go.domain.BaseCollection;
 import com.thoughtworks.go.domain.ConfigErrors;
 import com.thoughtworks.go.domain.materials.MaterialConfig;
-import org.apache.commons.lang3.StringUtils;
 
 import java.util.*;
+import java.util.stream.Stream;
+
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 @ConfigTag("materials")
 @ConfigCollection(MaterialConfig.class)
@@ -71,8 +74,8 @@ public class MaterialConfigs extends BaseCollection<MaterialConfig> implements V
     public List<CaseInsensitiveString> getDependentPipelineNames() {
         Set<CaseInsensitiveString> names = new TreeSet<>();
         for (MaterialConfig material : this) {
-            if (material instanceof DependencyMaterialConfig) {
-                names.add(((DependencyMaterialConfig) material).getPipelineName());
+            if (material instanceof DependencyMaterialConfig dependencyMaterialConfig) {
+                names.add(dependencyMaterialConfig.getPipelineName());
             }
         }
         return new ArrayList<>(names);
@@ -140,8 +143,9 @@ public class MaterialConfigs extends BaseCollection<MaterialConfig> implements V
     private void validateOrigins(PipelineConfig currentPipeline, ValidationContext validationContext) {
         for (DependencyMaterialConfig material : filterDependencyMaterials()) {
             PipelineConfig upstream = validationContext.getPipelineConfigByName(material.getPipelineName());
-            if (upstream == null)
+            if (upstream == null) {
                 continue; // other rule validates existence of upstream
+            }
             ConfigOrigin myOrigin = currentPipeline.getOrigin();
             ConfigOrigin upstreamOrigin = upstream.getOrigin();
 
@@ -160,10 +164,10 @@ public class MaterialConfigs extends BaseCollection<MaterialConfig> implements V
     }
 
     private void validateScmMaterials() {
-        List<MaterialConfig> allSCMMaterials = getSCMAndPluggableSCMConfigs();
+        List<MaterialConfig> allSCMMaterials = getSCMAndPluggableSCMConfigs().toList();
         if (allSCMMaterials.size() > 1) {
             for (MaterialConfig material : allSCMMaterials) {
-                if (StringUtils.isBlank(material.getFolder())) {
+                if (isBlank(material.getFolder())) {
                     String fieldName = material instanceof ScmMaterialConfig ? ScmMaterialConfig.FOLDER : PluggableSCMMaterialConfig.FOLDER;
                     material.addError(fieldName, "Destination directory is required when a pipeline has multiple SCM materials.");
                 } else {
@@ -173,71 +177,57 @@ public class MaterialConfigs extends BaseCollection<MaterialConfig> implements V
         }
     }
 
-    private List<MaterialConfig> getSCMAndPluggableSCMConfigs() {
-        List<ScmMaterialConfig> scmMaterials = filterScmMaterials();
-        List<PluggableSCMMaterialConfig> pluggableSCMMaterials = filterPluggableSCMMaterials();
-        List<MaterialConfig> allSCMMaterials = new ArrayList<>();
-        allSCMMaterials.addAll(scmMaterials);
-        allSCMMaterials.addAll(pluggableSCMMaterials);
-        return allSCMMaterials;
+    private Stream<MaterialConfig> getSCMAndPluggableSCMConfigs() {
+        return materialsOfType(ScmMaterialConfig.class, PluggableSCMMaterialConfig.class);
     }
 
     private void validateDestinationFolder(List<MaterialConfig> allSCMMaterials, MaterialConfig material) {
         String materialFolder = material.getFolder();
-        for (MaterialConfig otherMaterial : allSCMMaterials) {
-            if (otherMaterial != material) {
-                if (otherMaterial instanceof ScmMaterialConfig) {
-                    ((ScmMaterialConfig) otherMaterial).validateNotSubdirectoryOf(materialFolder);
-                    ((ScmMaterialConfig) otherMaterial).validateDestinationDirectoryName(materialFolder);
+        allSCMMaterials.stream()
+            .filter(other -> other != material)
+            .forEach(otherMaterial -> {
+                if (otherMaterial instanceof ScmMaterialConfig scmMaterial) {
+                    scmMaterial.validateNotSubdirectoryOf(materialFolder);
+                    scmMaterial.validateDestinationDirectoryName(materialFolder);
+                } else if (otherMaterial instanceof PluggableSCMMaterialConfig pluggableMaterial) {
+                    pluggableMaterial.validateNotSubdirectoryOf(materialFolder);
+                    pluggableMaterial.validateDestinationDirectoryName(materialFolder);
                 } else {
-                    ((PluggableSCMMaterialConfig) otherMaterial).validateNotSubdirectoryOf(materialFolder);
-                    ((PluggableSCMMaterialConfig) otherMaterial).validateDestinationDirectoryName(materialFolder);
+                    throw new IllegalStateException("Unknown SCM material type: " + otherMaterial.getClass().getName());
                 }
-            }
-        }
+            });
     }
 
 /*
     To two methods below are to avoid creating methods on already long Material interface with a No Op implementations.
  */
 
-    private List<ScmMaterialConfig> filterScmMaterials() {
-        List<ScmMaterialConfig> scmMaterials = new ArrayList<>();
-        for (MaterialConfig material : this) {
-            if (material instanceof ScmMaterialConfig) {
-                scmMaterials.add((ScmMaterialConfig) material);
-            }
-        }
-        return scmMaterials;
+    private <T extends MaterialConfig> Stream<T> materialsOfType(Class<T> klass) {
+        return this.stream().filter(klass::isInstance).map(klass::cast);
     }
 
-    private List<PluggableSCMMaterialConfig> filterPluggableSCMMaterials() {
-        List<PluggableSCMMaterialConfig> pluggableSCMMaterials = new ArrayList<>();
-        for (MaterialConfig materialConfig : this) {
-            if (materialConfig instanceof PluggableSCMMaterialConfig) {
-                pluggableSCMMaterials.add((PluggableSCMMaterialConfig) materialConfig);
-            }
-        }
-        return pluggableSCMMaterials;
+    @SuppressWarnings("SameParameterValue")
+    private <T extends MaterialConfig, T2 extends MaterialConfig> Stream<MaterialConfig> materialsOfType(Class<T> klass, Class<T2> klass2) {
+        return this.stream().filter(o -> klass.isInstance(o) || klass2.isInstance(o));
     }
 
     private List<DependencyMaterialConfig> filterDependencyMaterials() {
         List<DependencyMaterialConfig> dependencyMaterials = new ArrayList<>();
         for (MaterialConfig material : this) {
-            if (material instanceof DependencyMaterialConfig) {
-                dependencyMaterials.add((DependencyMaterialConfig) material);
+            if (material instanceof DependencyMaterialConfig dependencyMaterialConfig) {
+                dependencyMaterials.add(dependencyMaterialConfig);
             }
         }
         return dependencyMaterials;
     }
 
     private void validateAutoUpdateState(ValidationContext validationContext) {
-        for (MaterialConfig material : filterScmMaterials()) {
+        materialsOfType(ScmMaterialConfig.class).forEach(material -> {
             String fingerprint;
             try {
                 fingerprint = material.getFingerprint();
-            } catch (Exception e) {
-                continue;
+            } catch (Exception ignore) {
+                return;
             }
             MaterialConfigs allMaterialsByFingerPrint = validationContext.getAllMaterialsByFingerPrint(fingerprint);
             if (allMaterialsByFingerPrint != null && allMaterialsByFingerPrint.size() > 1 && allMaterialsByFingerPrint.stream().anyMatch(m -> material.isAutoUpdate() != m.isAutoUpdate())) {
@@ -252,7 +242,7 @@ public class MaterialConfigs extends BaseCollection<MaterialConfig> implements V
                     )
                 );
             }
-        }
+        });
     }
 
     private void validateNameUniqueness() {
@@ -318,7 +308,7 @@ public class MaterialConfigs extends BaseCollection<MaterialConfig> implements V
     }
 
     public DependencyMaterialConfig getDependencyMaterial() {
-        return getExistingOrDefaultMaterial(new DependencyMaterialConfig(new CaseInsensitiveString(""), new CaseInsensitiveString("")));
+        return getExistingOrDefaultMaterial(new DependencyMaterialConfig(cis(""), cis("")));
     }
 
     public PackageMaterialConfig getPackageMaterial() {
@@ -331,16 +321,11 @@ public class MaterialConfigs extends BaseCollection<MaterialConfig> implements V
 
     @SuppressWarnings("unchecked")
     <T extends MaterialConfig> T getExistingOrDefaultMaterial(T defaultMaterial) {
-        for (MaterialConfig material : this) {
-            if (material.getClass().isAssignableFrom(defaultMaterial.getClass())) {
-                return (T) material;
-            }
-        }
-        return defaultMaterial;
-    }
-
-    public String getMaterialOptions() {
-        return first() == null ? "" : first().getType();
+        return this.stream()
+            .filter(m -> defaultMaterial.getClass().isInstance(m))
+            .map(m -> (T) m)
+            .findFirst()
+            .orElse(defaultMaterial);
     }
 
     @SuppressWarnings("unchecked")
@@ -371,26 +356,15 @@ public class MaterialConfigs extends BaseCollection<MaterialConfig> implements V
         }
     }
 
-    public boolean scmMaterialsHaveDestination() {
-        for (MaterialConfig scmMaterial : getSCMAndPluggableSCMConfigs()) {
-            String destination = scmMaterial.getFolder();
-            if (StringUtils.isBlank(destination)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     public List<CaseInsensitiveString> materialNames() {
         List<CaseInsensitiveString> names = new ArrayList<>();
         for (MaterialConfig material : this) {
-            if (!CaseInsensitiveString.isBlank(material.getName())) {
+            if (!CaseInsensitiveString.isEmpty(material.getName())) {
                 names.add(material.getName());
             }
         }
         return names;
     }
-
 
     private void addMaterialConfig(MaterialConfig materialConfig, Object attributes) {
         materialConfig.setConfigAttributes(attributes);
@@ -407,7 +381,7 @@ public class MaterialConfigs extends BaseCollection<MaterialConfig> implements V
                 .filter(materialConfig -> materialConfig.getFingerprint().equals(materialFingerprint))
                 .toList();
         if (!materialConfigs.isEmpty()) {
-            return materialConfigs.get(0);
+            return materialConfigs.getFirst();
         }
         return null;
     }

@@ -19,13 +19,12 @@ import com.thoughtworks.go.config.elastic.ClusterProfiles;
 import com.thoughtworks.go.config.exceptions.RecordNotFoundException;
 import com.thoughtworks.go.config.materials.MaterialConfigs;
 import com.thoughtworks.go.config.remote.ConfigReposConfig;
-import com.thoughtworks.go.config.rules.RulesValidationContext;
 import com.thoughtworks.go.domain.PipelineGroups;
 import com.thoughtworks.go.domain.materials.MaterialConfig;
 import com.thoughtworks.go.domain.packagerepository.PackageRepository;
 import com.thoughtworks.go.domain.scm.SCM;
 import com.thoughtworks.go.util.Node;
-import org.apache.commons.lang3.NotImplementedException;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,6 +40,7 @@ public class PipelineConfigSaveValidationContext implements ValidationContext {
     private StageConfig stage;
     private JobConfig job;
     private MaterialConfigFingerprintMap materialConfigsFingerprintMap;
+    private Map<CaseInsensitiveString, Node> dependencies;
 
     private PipelineConfigSaveValidationContext(Boolean isPipelineBeingCreated, String groupName, Validatable immediateParent) {
         this.isPipelineBeingCreated = isPipelineBeingCreated;
@@ -54,23 +54,23 @@ public class PipelineConfigSaveValidationContext implements ValidationContext {
         this.groupName = parentContext.groupName;
         this.immediateParent = immediateParent;
         this.parentContext = parentContext;
-        if (immediateParent instanceof BasicCruiseConfig) {
-            this.cruiseConfig = (BasicCruiseConfig) immediateParent;
+        if (immediateParent instanceof BasicCruiseConfig basicCruiseConfig) {
+            this.cruiseConfig = basicCruiseConfig;
         } else if (parentContext.cruiseConfig != null) {
             this.cruiseConfig = parentContext.cruiseConfig;
         }
-        if (immediateParent instanceof PipelineConfig) {
-            this.pipeline = (PipelineConfig) immediateParent;
+        if (immediateParent instanceof PipelineConfig stageConfigs) {
+            this.pipeline = stageConfigs;
         } else if (parentContext.pipeline != null) {
             this.pipeline = parentContext.pipeline;
         }
-        if (immediateParent instanceof JobConfig) {
-            this.job = (JobConfig) immediateParent;
+        if (immediateParent instanceof JobConfig jobConfig) {
+            this.job = jobConfig;
         } else if (parentContext.getJob() != null) {
             this.job = parentContext.job;
         }
-        if (immediateParent instanceof StageConfig) {
-            this.stage = (StageConfig) immediateParent;
+        if (immediateParent instanceof StageConfig stageConfig) {
+            this.stage = stageConfig;
         } else if (parentContext.stage != null) {
             this.stage = parentContext.stage;
         }
@@ -95,22 +95,17 @@ public class PipelineConfigSaveValidationContext implements ValidationContext {
 
     @Override
     public EnvironmentConfig getEnvironment() {
-        throw new NotImplementedException("Operation not supported");
+        throw new UnsupportedOperationException("Operation not supported");
     }
 
     @Override
     public ConfigReposConfig getConfigRepos() {
-        throw new NotImplementedException("Operation not supported");
+        throw new UnsupportedOperationException("Operation not supported");
     }
 
     @Override
     public JobConfig getJob() {
         return this.job;
-    }
-
-    @Override
-    public boolean isWithinEnvironment() {
-        return false;
     }
 
     @Override
@@ -125,7 +120,7 @@ public class PipelineConfigSaveValidationContext implements ValidationContext {
 
     @Override
     public PipelineTemplateConfig getTemplate() {
-        throw new NotImplementedException("Operation not supported");
+        throw new UnsupportedOperationException("Operation not supported");
     }
 
     @Override
@@ -149,18 +144,12 @@ public class PipelineConfigSaveValidationContext implements ValidationContext {
     }
 
     @Override
-    public PipelineConfigs getPipelineGroup() {
-        if (cruiseConfig.hasPipelineGroup(groupName))
-            return cruiseConfig.findGroup(groupName);
-        else return null;
+    public @NotNull PipelineConfigs getPipelineGroup() {
+        return cruiseConfig.findGroup(groupName);
     }
 
-
     public Node getDependencyMaterialsFor(CaseInsensitiveString pipelineName) {
-        if (getDependencies().containsKey(pipelineName)) {
-            return getDependencies().get(pipelineName);
-        }
-        return new Node(new ArrayList<>());
+        return Optional.ofNullable(getDependencies().get(pipelineName)).orElseGet(() -> new Node(new ArrayList<>()));
     }
 
     @Override
@@ -197,35 +186,28 @@ public class PipelineConfigSaveValidationContext implements ValidationContext {
     }
 
     @Override
-    public boolean doesTemplateExist(CaseInsensitiveString template) {
-        return cruiseConfig.getTemplates().hasTemplateNamed(template);
-    }
-
-    @Override
     public SCM findScmById(String scmID) {
         return cruiseConfig.getSCMs().find(scmID);
     }
 
     @Override
     public PackageRepository findPackageById(String packageId) {
-        return cruiseConfig.getPackageRepositories().findPackageRepositoryHaving(packageId);
+        return cruiseConfig.getPackageRepositories().findByPackageId(packageId);
     }
 
     public Set<CaseInsensitiveString> getPipelinesWithDependencyMaterials() {
         return getDependencies().keySet();
     }
 
-    private Hashtable<CaseInsensitiveString, Node> getDependencies() {
+    private Map<CaseInsensitiveString, Node> getDependencies() {
         if (dependencies == null) {
-            dependencies = new Hashtable<>();
+            dependencies = new HashMap<>();
             for (PipelineConfig pipeline : cruiseConfig.getAllPipelineConfigs()) {
                 dependencies.put(pipeline.name(), pipeline.getDependenciesAsNode());
             }
         }
         return dependencies;
     }
-
-    private Hashtable<CaseInsensitiveString, Node> dependencies;
 
     public PipelineGroups getGroups() {
         return cruiseConfig.getGroups();
@@ -290,15 +272,5 @@ public class PipelineConfigSaveValidationContext implements ValidationContext {
     @Override
     public RulesValidationContext getRulesValidationContext() {
         return null;
-    }
-
-    @Override
-    public Map<CaseInsensitiveString, Boolean> getPipelineToMaterialAutoUpdateMapByFingerprint(String fingerprint) {
-        Map<CaseInsensitiveString, Boolean> map = new HashMap<>();
-        getCruiseConfig().getAllPipelineConfigs().forEach(pipeline -> pipeline.materialConfigs().stream()
-                .filter(materialConfig -> materialConfig.getFingerprint().equals(fingerprint))
-                .findFirst()
-                .ifPresent(expectedMaterialConfig -> map.put(pipeline.name(), expectedMaterialConfig.isAutoUpdate())));
-        return map;
     }
 }

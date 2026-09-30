@@ -16,23 +16,23 @@
 package com.thoughtworks.go.domain.activity;
 
 import com.thoughtworks.go.domain.JobInstance;
-import com.thoughtworks.go.domain.JobState;
 import com.thoughtworks.go.server.dao.JobInstanceDao;
 import com.thoughtworks.go.server.domain.JobStatusListener;
+import org.jetbrains.annotations.TestOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class AgentAssignment implements JobStatusListener {
-    private Map<String, JobInstance> map = Collections.synchronizedMap(new HashMap<>());
-    private final JobInstanceDao jobInstanceDao;
     private static final Logger LOGGER = LoggerFactory.getLogger(AgentAssignment.class);
+
+    private final Map<String, JobInstance> jobsByAgentUuid = new ConcurrentHashMap<>();
+    private final JobInstanceDao jobInstanceDao;
 
     @Autowired
     public AgentAssignment(JobInstanceDao jobInstanceDao) {
@@ -41,26 +41,35 @@ public class AgentAssignment implements JobStatusListener {
 
     @Override
     public void jobStatusChanged(JobInstance job) {
-        if (job.getState() == JobState.Rescheduled || job.getState() == JobState.Completed) {
-            map.remove(job.getAgentUuid());
-            LOGGER.debug("Removed agent assignment for job [{}]", job);
-        }
-        if (job.getState().isActiveOnAgent()) {
-            map.put(job.getAgentUuid(), job);
+        if (!job.isAssignedToAgent()) {
+            LOGGER.debug("Ignoring job not yet assigned [{}]", job);
+        } else if (job.getState().isInactiveOnAgent()) {
+            jobsByAgentUuid.remove(job.getAgentUuid());
+            LOGGER.debug("Agent assignment removed for job [{}]", job);
+        } else if (job.getState().isActiveOnAgent()) {
+            jobsByAgentUuid.put(job.getAgentUuid(), job);
             LOGGER.debug("Agent assignment added for job [{}]", job);
         }
     }
 
     public JobInstance latestActiveJobOnAgent(String agentUuid) {
-        if (!map.containsKey(agentUuid)) {
-            JobInstance job = jobInstanceDao.getLatestInProgressBuildByAgentUuid(agentUuid);
-            LOGGER.debug("Getting AgentAssignment for agent with UUID [{}], got: {}", agentUuid, job);
-            map.put(agentUuid, job);
+        if (agentUuid == null) {
+            return null;
         }
-        return map.get(agentUuid);
+        return jobsByAgentUuid.computeIfAbsent(agentUuid, uuid -> {
+            JobInstance job = jobInstanceDao.getLatestInProgressBuildByAgentUuid(uuid);
+            LOGGER.debug("Getting AgentAssignment for agent with UUID [{}], got: {}", uuid, job);
+            return job;
+        });
     }
 
+    @TestOnly
     public void clear() {
-        map.clear();
+        jobsByAgentUuid.clear();
+    }
+
+    @TestOnly
+    public int size() {
+        return jobsByAgentUuid.size();
     }
 }

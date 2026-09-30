@@ -18,6 +18,7 @@ package com.thoughtworks.go.server.service;
 import com.google.gson.annotations.Expose;
 
 import java.io.Serializable;
+import java.util.Objects;
 
 import static com.thoughtworks.go.util.ExceptionUtils.bombIfNull;
 
@@ -55,26 +56,20 @@ public class AgentBuildingInfo implements Serializable {
 
         AgentBuildingInfo that = (AgentBuildingInfo) o;
 
-        if (buildLocator != null ? !buildLocator.equals(that.buildLocator) : that.buildLocator != null) {
-            return false;
-        }
-        if (buildingInfo != null ? !buildingInfo.equals(that.buildingInfo) : that.buildingInfo != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(buildLocator, that.buildLocator) &&
+            Objects.equals(buildingInfo, that.buildingInfo);
     }
 
     @Override
     public int hashCode() {
         int result;
-        result = (buildingInfo != null ? buildingInfo.hashCode() : 0);
+        result = buildingInfo != null ? buildingInfo.hashCode() : 0;
         result = 31 * result + (buildLocator != null ? buildLocator.hashCode() : 0);
         return result;
     }
 
     public String getPipelineName() {
-        if(isBuilding()) {
+        if (isBuilding()) {
             return buildLocator.split("/")[0];
         }
         return null;
@@ -92,7 +87,7 @@ public class AgentBuildingInfo implements Serializable {
     }
 
     public String getStageName() {
-        if(isBuilding()) {
+        if (isBuilding()) {
             try {
                 return buildLocator.split("/")[2];
             } catch (ArrayIndexOutOfBoundsException e) {
@@ -103,7 +98,7 @@ public class AgentBuildingInfo implements Serializable {
     }
 
     public boolean isBuilding() {
-        return !buildingInfo.equals("");
+        return !buildingInfo.isEmpty();
     }
 
     public String getBuildLocator() {

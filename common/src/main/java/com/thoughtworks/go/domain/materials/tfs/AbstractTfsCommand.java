@@ -21,18 +21,17 @@ import com.thoughtworks.go.domain.materials.Revision;
 import com.thoughtworks.go.domain.materials.SCMCommand;
 import com.thoughtworks.go.util.command.CommandArgument;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.MalformedURLException;
 import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 public abstract class AbstractTfsCommand extends SCMCommand implements TfsCommand {
 
@@ -163,7 +162,7 @@ public abstract class AbstractTfsCommand extends SCMCommand implements TfsComman
     protected abstract void unMap(File workDir) throws IOException;
 
     private List<Modification> modificationsSinceRevInHistory(Revision revision) {
-        Modification latest = latestInHistory().get(0);
+        Modification latest = latestInHistory().getFirst();
         long latestRev = Long.parseLong(latest.getRevision());
         long sinceRev = Long.parseLong(revision.getRevision());
         long numberOfModifications = latestRev - sinceRev;
@@ -198,26 +197,12 @@ public abstract class AbstractTfsCommand extends SCMCommand implements TfsComman
 
         AbstractTfsCommand that = (AbstractTfsCommand) o;
 
-        if (domain != null ? !domain.equals(that.domain) : that.domain != null) {
-            return false;
-        }
-        if (password != null ? !password.equals(that.password) : that.password != null) {
-            return false;
-        }
-        if (projectPath != null ? !projectPath.equals(that.projectPath) : that.projectPath != null) {
-            return false;
-        }
-        if (url != null ? !url.equals(that.url) : that.url != null) {
-            return false;
-        }
-        if (userName != null ? !userName.equals(that.userName) : that.userName != null) {
-            return false;
-        }
-        if (workspace != null ? !workspace.equals(that.workspace) : that.workspace != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(domain, that.domain) &&
+            Objects.equals(password, that.password) &&
+            Objects.equals(projectPath, that.projectPath) &&
+            Objects.equals(url, that.url) &&
+            Objects.equals(userName, that.userName) &&
+            Objects.equals(workspace, that.workspace);
     }
 
     @Override
@@ -233,17 +218,17 @@ public abstract class AbstractTfsCommand extends SCMCommand implements TfsComman
 
     protected URI getUri() {
         try {
-            return new URL(url.toString()).toURI();
-        } catch (URISyntaxException | MalformedURLException e) {
+            return URI.create(url.toString()).toURL().toURI();
+        } catch (Exception e) {
             throw new RuntimeException(String.format("[TFS] Failed when converting the url string to a uri: %s, Project Path: %s, Username: %s, Domain: %s", url, projectPath, userName, domain), e);
         }
     }
 
     protected String usernameWithDomain() {
-        if (StringUtils.isBlank(domain)) {
+        if (isBlank(domain)) {
             return getUserName();
         } else {
-            return String.format("%s\\%s", getDomain(), getUserName());
+            return getDomain() + "\\" + getUserName();
         }
     }
 

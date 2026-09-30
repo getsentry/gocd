@@ -21,36 +21,32 @@ import com.thoughtworks.go.agent.common.launcher.AgentProcessParent;
 import com.thoughtworks.go.agent.common.util.Downloader;
 import com.thoughtworks.go.agent.launcher.DownloadableFile;
 import com.thoughtworks.go.agent.launcher.ServerBinaryDownloader;
-import com.thoughtworks.go.util.GoConstants;
 import com.thoughtworks.go.util.SystemEnvironment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.nio.file.FileSystems;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static org.apache.commons.lang3.StringUtils.isEmpty;
-import static org.apache.commons.lang3.StringUtils.join;
-
 public class AgentProcessParentImpl implements AgentProcessParent {
 
-    /* 40-50 for launcher error codes*/
     private static final Logger LOG = LoggerFactory.getLogger(AgentProcessParentImpl.class);
     private static final int EXCEPTION_OCCURRED = -373;
-    static final String AGENT_STARTUP_ARGS = "AGENT_STARTUP_ARGS";
+    static final String ENV_GO_AGENT_STARTUP_ARGS = "AGENT_STARTUP_ARGS";
     static final String GO_AGENT_STDERR_LOG = "go-agent-stderr.log";
     static final String GO_AGENT_STDOUT_LOG = "go-agent-stdout.log";
 
     @Override
     public int run(String launcherVersion, String launcherMd5, ServerUrlGenerator urlGenerator, Map<String, String> env, Map<String, String> context) {
         int exitValue = 0;
-        LOG.info("Agent launcher is version: {}", CurrentGoCDVersion.getInstance().fullVersion());
         String[] command = new String[]{};
 
         try {
+            LOG.info("Preparing for agent boot from launcher {} by downloading plugins...", CurrentGoCDVersion.getInstance().fullVersion());
             AgentBootstrapperArgs bootstrapperArgs = AgentBootstrapperArgs.fromProperties(context);
 
             ServerBinaryDownloader agentDownloader = new ServerBinaryDownloader(urlGenerator, bootstrapperArgs);
@@ -64,7 +60,7 @@ public class AgentProcessParentImpl implements AgentProcessParent {
 
             command = agentInvocationCommand(agentDownloader.getMd5(), launcherMd5, pluginZipDownloader.getMd5(), tfsImplDownloader.getMd5(),
                     env, context, agentDownloader.getExtraProperties());
-            LOG.info("Launching Agent with command: {}", join(command, " "));
+            LOG.info("Launching Agent (took {} ms since first boot) with command: {}", ManagementFactory.getRuntimeMXBean().getUptime(), String.join(" ", command));
 
             Process agent = invoke(command);
 
@@ -87,6 +83,7 @@ public class AgentProcessParentImpl implements AgentProcessParent {
             Shutdown shutdownHook = new Shutdown(agent);
             Runtime.getRuntime().addShutdownHook(shutdownHook);
             try {
+                LOG.info("Waiting for agent to complete...");
                 exitValue = agent.waitFor();
             } catch (InterruptedException ie) {
                 LOG.error("Agent was interrupted. Terminating agent and respawning. {}", ie.toString());
@@ -97,7 +94,7 @@ public class AgentProcessParentImpl implements AgentProcessParent {
                 stdOutThd.stopAndJoin();
             }
         } catch (Exception e) {
-            LOG.error("Exception while executing command: {} - {}", join(command, " "), e.toString());
+            LOG.error("Exception while executing command: {} - {}", String.join(" ", command), e.toString());
             exitValue = EXCEPTION_OCCURRED;
         }
         return exitValue;
@@ -114,14 +111,14 @@ public class AgentProcessParentImpl implements AgentProcessParent {
                                             Map<String, String> extraProperties) {
         AgentBootstrapperArgs bootstrapperArgs = AgentBootstrapperArgs.fromProperties(context);
 
-        String startupArgsString = env.get(AGENT_STARTUP_ARGS);
+        String startupArgsString = env.getOrDefault(ENV_GO_AGENT_STARTUP_ARGS, "");
         List<String> commandSnippets = new ArrayList<>();
         commandSnippets.add(javaCmd());
-        if (!isEmpty(startupArgsString)) {
+        if (!startupArgsString.isEmpty()) {
             String[] startupArgs = startupArgsString.split(" ");
             for (String startupArg : startupArgs) {
                 String decodedStartupArg = startupArg.trim().replace("%20", " ");
-                if (!isEmpty(decodedStartupArg)) {
+                if (!decodedStartupArg.isEmpty()) {
                     commandSnippets.add(decodedStartupArg);
                 }
             }
@@ -129,11 +126,11 @@ public class AgentProcessParentImpl implements AgentProcessParent {
 
         extraProperties.forEach((key, value) -> commandSnippets.add(property(key, value)));
 
-        commandSnippets.add(property(GoConstants.AGENT_PLUGINS_MD5, agentPluginsZipMd5));
-        commandSnippets.add(property(GoConstants.AGENT_JAR_MD5, agentMD5));
-        commandSnippets.add(property(GoConstants.GIVEN_AGENT_LAUNCHER_JAR_MD5, launcherMd5));
-        commandSnippets.add(property(GoConstants.TFS_IMPL_MD5, tfsImplMd5));
-        commandSnippets.add(property(GoConstants.AGENT_BOOTSTRAPPER_VERSION, context.getOrDefault(GoConstants.AGENT_BOOTSTRAPPER_VERSION, "UNKNOWN")));
+        commandSnippets.add(property(SystemEnvironment.AGENT_PLUGINS_MD5, agentPluginsZipMd5));
+        commandSnippets.add(property(SystemEnvironment.AGENT_JAR_MD5, agentMD5));
+        commandSnippets.add(property(SystemEnvironment.AGENT_LAUNCHER_JAR_MD5, launcherMd5));
+        commandSnippets.add(property(SystemEnvironment.AGENT_TFS_IMPL_MD5, tfsImplMd5));
+        commandSnippets.add(property(SystemEnvironment.AGENT_BOOTSTRAPPER_VERSION, context.getOrDefault(SystemEnvironment.AGENT_BOOTSTRAPPER_VERSION, "UNKNOWN")));
 
         commandSnippets.add("-jar");
         commandSnippets.add(Downloader.AGENT_BINARY);

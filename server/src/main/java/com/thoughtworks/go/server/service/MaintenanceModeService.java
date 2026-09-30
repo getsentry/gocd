@@ -15,9 +15,9 @@
  */
 package com.thoughtworks.go.server.service;
 
-import com.google.gson.internal.bind.util.ISO8601Utils;
 import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.server.domain.ServerMaintenanceMode;
+import com.thoughtworks.go.util.Dates;
 import com.thoughtworks.go.util.SystemEnvironment;
 import com.thoughtworks.go.util.TimeProvider;
 import org.slf4j.Logger;
@@ -30,8 +30,6 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static com.thoughtworks.go.util.DateUtils.UTC;
-
 @Service
 public class MaintenanceModeService {
     private static final Logger LOGGER = LoggerFactory.getLogger(MaintenanceModeService.class);
@@ -43,7 +41,7 @@ public class MaintenanceModeService {
     public MaintenanceModeService(TimeProvider timeProvider, SystemEnvironment systemEnvironment) {
         this.timeProvider = timeProvider;
         if (systemEnvironment.shouldStartServerInMaintenanceMode()) {
-            this.serverMaintenanceMode = new ServerMaintenanceMode(true, "GoCD", timeProvider.currentTime());
+            this.serverMaintenanceMode = new ServerMaintenanceMode(true, "GoCD", timeProvider.currentUtilDate());
         } else {
             this.serverMaintenanceMode = new ServerMaintenanceMode();
         }
@@ -70,7 +68,7 @@ public class MaintenanceModeService {
     }
 
     public String updatedOn() {
-        return ISO8601Utils.format(updatedOnTimeStamp(), false, UTC);
+        return Dates.formatIso8601UtcNoMillis(updatedOnTimeStamp());
     }
 
     public String updatedBy() {
@@ -85,7 +83,7 @@ public class MaintenanceModeService {
     }
 
     public void mduStartedForMaterial(Material material) {
-        runningMDUs.put(material.getFingerprint(), new MaterialPerformingMDU(material, new Timestamp(timeProvider.currentTimeMillis())));
+        runningMDUs.put(material.getFingerprint(), new MaterialPerformingMDU(material, timeProvider.currentSqlTimestamp()));
     }
 
     public void mduFinishedForMaterial(Material material) {

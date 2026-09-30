@@ -25,34 +25,39 @@ import com.thoughtworks.go.domain.materials.Material;
 import com.thoughtworks.go.domain.materials.Modification;
 import com.thoughtworks.go.domain.materials.Modifications;
 import com.thoughtworks.go.server.persistence.MaterialRepository;
-import org.apache.commons.lang3.StringUtils;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 import static java.lang.String.format;
+import static org.apache.commons.lang3.StringUtils.isEmpty;
 
 /**
  * Understands how to retrieve changes on SCMs given a material
  */
 @Component
 public class MaterialChecker {
-    private MaterialRepository materialRepository;
+    private final MaterialRepository materialRepository;
 
     @Autowired
     public MaterialChecker(MaterialRepository materialRepository) {
         this.materialRepository = materialRepository;
     }
 
-    public MaterialRevision findSpecificRevision(Material material, String revision) {
-        if (StringUtils.isEmpty(revision)) { throw new RuntimeException(format("Revision was not specified for material [%s]", material)); }
+    public @NotNull MaterialRevision findSpecificRevision(@NotNull Material material, String revision) {
+        if (isEmpty(revision)) {
+            throw new RuntimeException(format("Revision was not specified for material [%s]", material));
+        }
         Modification modification = materialRepository.findModificationWithRevision(material, revision);
-        if (modification == null) { throw new RuntimeException(format("Unable to find revision [%s] for material [%s]", revision, material)); }
+        if (modification == null) {
+            throw new RuntimeException(format("Unable to find revision [%s] for material [%s]", revision, material));
+        }
         return new MaterialRevision(material, modification);
     }
 
-    public MaterialRevisions findRevisionsSince(MaterialRevisions peggedRevisions, Materials newMaterials, MaterialRevisions previous, MaterialRevisions latestRevisions) {
+    public @NotNull MaterialRevisions findRevisionsSince(MaterialRevisions peggedRevisions, Materials newMaterials, MaterialRevisions previous, MaterialRevisions latestRevisions) {
         MaterialRevisions materialRevisions = new MaterialRevisions();
         for (Material material : newMaterials) {
             MaterialRevision previousRevision = previous.findRevisionFor(material);
@@ -72,11 +77,13 @@ public class MaterialChecker {
         return materialRevisions;
     }
 
-    public MaterialRevisions findLatestRevisions(MaterialRevisions peggedRevisions, Materials materials) {
+    public @NotNull MaterialRevisions findLatestRevisions(MaterialRevisions peggedRevisions, Materials materials) {
         MaterialRevisions revisions = new MaterialRevisions();
 
         for (Material material : materials) {
-            if (ensureHasRevisionForMaterial(peggedRevisions, revisions, material)) { continue; }
+            if (ensureHasRevisionForMaterial(peggedRevisions, revisions, material)) {
+                continue;
+            }
 
             for (MaterialRevision revision : materialRepository.findLatestModification(material)) {
                 revision.markAsChanged();
@@ -105,14 +112,14 @@ public class MaterialChecker {
             Long latestModificationRunByPipeline = materialRepository.latestModificationRunByPipeline(pipelineName, materialRevision.getMaterial());
             Modifications revised = new Modifications();
             for (Modification modification : materialRevision.getModifications()) {
-                if(modification.getId() > latestModificationRunByPipeline)
+                if (modification.getId() > latestModificationRunByPipeline) {
                     revised.add(modification);
+                }
             }
-            if(!revised.isEmpty()) {
+            if (!revised.isEmpty()) {
                 materialRevision.replaceModifications(revised);
                 materialRevision.markAsChanged();
-            }
-            else{
+            } else {
                 materialRevision.markAsNotChanged();
             }
         }

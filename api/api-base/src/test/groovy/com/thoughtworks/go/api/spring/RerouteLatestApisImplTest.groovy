@@ -19,6 +19,7 @@ import com.thoughtworks.go.api.ApiVersion
 import com.thoughtworks.go.config.exceptions.HttpException
 import com.thoughtworks.go.http.mocks.HttpRequestBuilder
 import com.thoughtworks.go.server.service.support.toggle.FeatureToggleService
+import com.thoughtworks.go.spark.GlobalExceptionMapper
 import com.thoughtworks.go.spark.SparkController
 import com.thoughtworks.go.spark.mocks.TestApplication
 import com.thoughtworks.go.spark.mocks.TestSparkPreFilter
@@ -31,7 +32,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mock
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.quality.Strictness
-import org.springframework.context.ApplicationContext
+import org.springframework.beans.factory.ListableBeanFactory
 import org.springframework.mock.web.MockHttpServletResponse
 import spark.*
 import spark.servlet.SparkFilter
@@ -87,7 +88,7 @@ class RerouteLatestApisImplTest {
     FeatureToggleService features
 
     @Mock
-    ApplicationContext context
+    ListableBeanFactory context
 
     private SparkController controller1
     private SparkController controller2
@@ -108,7 +109,7 @@ class RerouteLatestApisImplTest {
             }
 
             @Override
-            void setupRoutes() {
+            void setupRoutes(GlobalExceptionMapper exceptionMapper) {
                 path(controllerBasePath(), { ->
                     // some filters
                     before("/bar", "application/vnd.go.cd." + "v11" + "+json", apiv11BeforeFilter1)
@@ -120,7 +121,7 @@ class RerouteLatestApisImplTest {
                     after("/bar", "application/vnd.go.cd." + "v11" + "+json", apiv11AfterFilter2)
 
                     // some exception handlers
-                    exception(HttpException.class, apiv11ExceptionHandler1)
+                    exceptionMapper.register(HttpException.class, apiv11ExceptionHandler1)
                 })
             }
         }
@@ -132,7 +133,7 @@ class RerouteLatestApisImplTest {
             }
 
             @Override
-            void setupRoutes() {
+            void setupRoutes(GlobalExceptionMapper exceptionMapper) {
                 path(controllerBasePath(), { ->
                     // some filters
                     before("/bar", "application/vnd.go.cd." + "v10" + "+json", apiv10BeforeFilter1)
@@ -144,7 +145,7 @@ class RerouteLatestApisImplTest {
                     after("/bar", "application/vnd.go.cd." + "v10" + "+json", apiv10AfterFilter1)
 
                     // some exception handlers
-                    exception(HttpException.class, apiv10ExceptionHandler1)
+                    exceptionMapper.register(HttpException.class, apiv10ExceptionHandler1)
                 })
             }
         }
@@ -156,7 +157,7 @@ class RerouteLatestApisImplTest {
             }
 
             @Override
-            void setupRoutes() {
+            void setupRoutes(GlobalExceptionMapper exceptionMapper) {
                 path(controllerBasePath(), { ->
                     // some filters
                     before("/bar", "application/vnd.go.cd." + "v1" + "+json", apiv1BeforeFilter1)
@@ -165,7 +166,7 @@ class RerouteLatestApisImplTest {
                     get("/bar", "application/vnd.go.cd." + "v1" + "+json", apiv1GetMethod)
 
                     // some exception handlers
-                    exception(Exception.class, apiv1ExceptionHandler1)
+                    exceptionMapper.register(Exception.class, apiv1ExceptionHandler1)
                 })
             }
         }
@@ -206,8 +207,7 @@ class RerouteLatestApisImplTest {
         @Test
         void shouldRegisterLatestRoutes() {
             // original route list
-            RerouteLatestApisImpl rerouteLatestApis = new RerouteLatestApisImpl(routeInformationProvider, features)
-            rerouteLatestApis.setApplicationContext(context)
+            RerouteLatestApisImpl rerouteLatestApis = new RerouteLatestApisImpl(routeInformationProvider, features, context)
             when(context.getBeansWithAnnotation()).thenReturn(Collections.emptyMap())
 
             routeInformationProvider.cacheRouteInformation()
@@ -235,7 +235,7 @@ class RerouteLatestApisImplTest {
                 }
 
                 @Override
-                void setupRoutes() {
+                void setupRoutes(GlobalExceptionMapper exceptionMapper) {
                     path(controllerPath(), { ->
                         get("/bar", v.mimeType(), route)
                     })
@@ -246,8 +246,7 @@ class RerouteLatestApisImplTest {
 
         @Test
         void 'ignores annotated controllers when calculating the latest version route alias if matching toggle is off'() {
-            RerouteLatestApisImpl rerouteLatestApis = new RerouteLatestApisImpl(routeInformationProvider, features)
-            rerouteLatestApis.setApplicationContext(context)
+            RerouteLatestApisImpl rerouteLatestApis = new RerouteLatestApisImpl(routeInformationProvider, features, context)
             when(context.getBeansWithAnnotation(ToggleRegisterLatest.class)).thenReturn(
                     Map.of(TestControllerV2.class.name, controller2)
             )
@@ -292,8 +291,7 @@ class RerouteLatestApisImplTest {
 
         @Test
         void 'considers annotated controllers when calculating the latest version route alias if matching toggle is on'() {
-            RerouteLatestApisImpl rerouteLatestApis = new RerouteLatestApisImpl(routeInformationProvider, features)
-            rerouteLatestApis.setApplicationContext(context)
+            RerouteLatestApisImpl rerouteLatestApis = new RerouteLatestApisImpl(routeInformationProvider, features, context)
             when(context.getBeansWithAnnotation(ToggleRegisterLatest.class)).thenReturn(
                     Map.of(TestControllerV2.class.name, controller2)
             )
@@ -384,7 +382,7 @@ class RerouteLatestApisImplTest {
         }
 
         @Override
-        void setupRoutes() {
+        void setupRoutes(GlobalExceptionMapper exceptionMapper) {
             path(controllerPath(), { ->
                 get("", v.mimeType(), this.route)
                 get("/show/:id", v.mimeType(), this.route)

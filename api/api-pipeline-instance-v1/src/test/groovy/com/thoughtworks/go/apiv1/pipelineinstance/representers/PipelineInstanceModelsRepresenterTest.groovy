@@ -18,12 +18,15 @@ package com.thoughtworks.go.apiv1.pipelineinstance.representers
 import com.thoughtworks.go.domain.PipelineRunIdInfo
 import com.thoughtworks.go.domain.buildcause.BuildCause
 import com.thoughtworks.go.helper.ModificationsMother
+import com.thoughtworks.go.helper.StageInstanceModelMother
 import com.thoughtworks.go.helper.StageMother
 import com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModel
 import com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModels
 import com.thoughtworks.go.presentation.pipelinehistory.StageInstanceModels
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+
+import java.time.Instant
 
 import static com.thoughtworks.go.api.base.JsonUtils.toObject
 import static com.thoughtworks.go.api.base.JsonUtils.toObjectString
@@ -133,8 +136,8 @@ class PipelineInstanceModelsRepresenterTest {
   }
 
   private static def createPipelineInstance(int counter) {
-    def stage = StageMother.passedStageInstance("pipelineName", "stageName", 4, "buildName", new Date())
-    def stageInstanceModel = StageMother.toStageInstanceModel(stage)
+    def stage = StageMother.passedStageInstance("pipelineName", "stageName", 4, "buildName", Instant.now())
+    def stageInstanceModel = StageInstanceModelMother.fromStage(stage)
     def stageInstanceModels = new StageInstanceModels()
     stageInstanceModels.add(stageInstanceModel)
 

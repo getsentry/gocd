@@ -38,7 +38,7 @@ import com.thoughtworks.go.plugin.access.scm.SCMConfigurations;
 import com.thoughtworks.go.plugin.access.scm.SCMMetadataStore;
 import com.thoughtworks.go.plugin.access.scm.SCMProperty;
 import com.thoughtworks.go.plugin.access.scm.SCMPropertyConfiguration;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.materials.StaleMaterialsOnBuildCause;
 import com.thoughtworks.go.serverhealth.HealthStateScope;
@@ -49,7 +49,6 @@ import com.thoughtworks.go.util.GoConfigFileHelper;
 import com.thoughtworks.go.util.ReflectionUtil;
 import com.thoughtworks.go.util.TimeProvider;
 import org.apache.commons.io.FileUtils;
-import org.joda.time.DateTime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,13 +60,16 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Date;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.git;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.time.temporal.ChronoUnit.HOURS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -131,7 +133,7 @@ public class ScheduledPipelineLoaderIntegrationTest {
     public void shouldLoadPipelineAlongWithBuildCauseHavingMaterialPasswordsPopulated() {
         JobConfig jobConfig = new JobConfig("job-one");
         jobConfig.addTask(new AntTask());
-        PipelineConfig pipelineConfig = PipelineConfigMother.pipelineConfig("last", new StageConfig(new CaseInsensitiveString("stage"), new JobConfigs(jobConfig)));
+        PipelineConfig pipelineConfig = PipelineConfigMother.pipelineConfig("last", new StageConfig(cis("stage"), new JobConfigs(jobConfig)));
         pipelineConfig.materialConfigs().clear();
         SvnMaterial onDirOne = MaterialsMother.svnMaterial("google.com", "dirOne", "loser", "boozer", false, "**/*.html");
         P4Material onDirTwo = MaterialsMother.p4Material("host:987654321", "zoozer", "secret", "through-the-window", true);
@@ -144,7 +146,7 @@ public class ScheduledPipelineLoaderIntegrationTest {
         Pipeline building = PipelineMother.building(pipelineConfig);
         Pipeline pipeline = dbHelper.savePipelineWithStagesAndMaterials(building);
 
-        final long jobId = pipeline.getStages().get(0).getJobInstances().get(0).getId();
+        final long jobId = pipeline.getStages().getFirst().getJobInstances().getFirst().getId();
         Pipeline loadedPipeline = loader.pipelineWithPasswordAwareBuildCauseByBuildId(jobId);
 
         MaterialRevisions revisions = loadedPipeline.getBuildCause().getMaterialRevisions();
@@ -158,7 +160,7 @@ public class ScheduledPipelineLoaderIntegrationTest {
         PipelineConfig pipelineConfig = setupPipelineWithScmMaterial("pipeline_with_pluggable_scm_mat", "stage", jobName);
         final Pipeline previousSuccessfulBuildWithOlderScmConfig = simulateSuccessfulPipelineRun(pipelineConfig);
         PipelineConfig updatedPipelineConfig = configHelper.updatePipeline(pipelineConfig.name(), config -> {
-            PluggableSCMMaterialConfig materialConfig = (PluggableSCMMaterialConfig) config.materialConfigs().first();
+            PluggableSCMMaterialConfig materialConfig = (PluggableSCMMaterialConfig) config.materialConfigs().getFirst();
             materialConfig.getSCMConfig().getConfiguration().getProperty("password").setConfigurationValue(new ConfigurationValue("new_value"));
         });
 
@@ -167,7 +169,7 @@ public class ScheduledPipelineLoaderIntegrationTest {
         Pipeline loadedPipeline = loader.pipelineWithPasswordAwareBuildCauseByBuildId(jobId);
 
         MaterialRevisions revisions = loadedPipeline.getBuildCause().getMaterialRevisions();
-        Configuration updatedConfiguration = ((PluggableSCMMaterial) revisions.findRevisionFor(updatedPipelineConfig.materialConfigs().first()).getMaterial()).getScmConfig().getConfiguration();
+        Configuration updatedConfiguration = ((PluggableSCMMaterial) revisions.findRevisionFor(updatedPipelineConfig.materialConfigs().getFirst()).getMaterial()).getScmConfig().getConfiguration();
         assertThat(updatedConfiguration.size()).isEqualTo(2);
         assertThat(updatedConfiguration.getProperty("password").getConfigurationValue()).isEqualTo(new ConfigurationValue("new_value"));
     }
@@ -178,7 +180,7 @@ public class ScheduledPipelineLoaderIntegrationTest {
         PipelineConfig pipelineConfig = setupPipelineWithPackageMaterial("pipeline_with_pluggable_scm_mat", "stage", jobName);
         final Pipeline previousSuccessfulBuildWithOlderPackageConfig = simulateSuccessfulPipelineRun(pipelineConfig);
         PipelineConfig updatedPipelineConfig = configHelper.updatePipeline(pipelineConfig.name(), config -> {
-            PackageMaterialConfig materialConfig = (PackageMaterialConfig) config.materialConfigs().first();
+            PackageMaterialConfig materialConfig = (PackageMaterialConfig) config.materialConfigs().getFirst();
             materialConfig.getPackageDefinition().getConfiguration().getProperty("package-key2").setConfigurationValue(new ConfigurationValue("package-updated-value"));
             materialConfig.getPackageDefinition().getRepository().getConfiguration().getProperty("repo-key2").setConfigurationValue(new ConfigurationValue("repo-updated-value"));
         });
@@ -186,7 +188,7 @@ public class ScheduledPipelineLoaderIntegrationTest {
         Pipeline loadedPipeline = loader.pipelineWithPasswordAwareBuildCauseByBuildId(jobId);
 
         MaterialRevisions revisions = loadedPipeline.getBuildCause().getMaterialRevisions();
-        PackageMaterial updatedMaterial = (PackageMaterial) revisions.findRevisionFor(updatedPipelineConfig.materialConfigs().first()).getMaterial();
+        PackageMaterial updatedMaterial = (PackageMaterial) revisions.findRevisionFor(updatedPipelineConfig.materialConfigs().getFirst()).getMaterial();
         Configuration updatedConfiguration = updatedMaterial.getPackageDefinition().getConfiguration();
         assertThat(updatedConfiguration.size()).isEqualTo(2);
         assertThat(updatedConfiguration.getProperty("package-key2").getConfigurationValue()).isEqualTo(new ConfigurationValue("package-updated-value"));
@@ -195,7 +197,7 @@ public class ScheduledPipelineLoaderIntegrationTest {
     }
 
     private long rerunJob(String jobName, PipelineConfig pipelineConfig, Pipeline previousSuccessfulBuildWithOlderPackageConfig) {
-        Stage stage = instanceFactory.createStageForRerunOfJobs(previousSuccessfulBuildWithOlderPackageConfig.getFirstStage(), List.of(jobName), new DefaultSchedulingContext(), pipelineConfig.getFirstStageConfig(), new TimeProvider(), configHelper.getGoConfigDao().md5OfConfigFile());
+        Stage stage = instanceFactory.createStageForRerunOfJobs(previousSuccessfulBuildWithOlderPackageConfig.getFirstStage(), List.of(jobName), new DefaultSchedulingContext(), pipelineConfig.getFirstStageConfig(), new TimeProvider(), configHelper.currentConfig().getMd5());
         stage = stageService.save(previousSuccessfulBuildWithOlderPackageConfig, stage);
         return stage.getFirstJob().getId();
     }
@@ -244,7 +246,7 @@ public class ScheduledPipelineLoaderIntegrationTest {
     public void shouldSetAServerHealthMessageWhenMaterialForPipelineWithBuildCauseIsNotFound() throws IllegalArtifactLocationException, IOException {
         JobConfig jobConfig = new JobConfig("job-one");
         jobConfig.addTask(new AntTask());
-        PipelineConfig pipelineConfig = PipelineConfigMother.pipelineConfig("last", new StageConfig(new CaseInsensitiveString("stage"), new JobConfigs(jobConfig)));
+        PipelineConfig pipelineConfig = PipelineConfigMother.pipelineConfig("last", new StageConfig(cis("stage"), new JobConfigs(jobConfig)));
         pipelineConfig.materialConfigs().clear();
         SvnMaterialConfig onDirOne = MaterialConfigsMother.svnMaterialConfig("google.com", "dirOne", "loser", "boozer", false, "**/*.html");
         final P4MaterialConfig onDirTwo = MaterialConfigsMother.p4MaterialConfig("host:987654321", "zoozer", "secret", "through-the-window", true);
@@ -258,15 +260,15 @@ public class ScheduledPipelineLoaderIntegrationTest {
         final Pipeline pipeline = dbHelper.savePipelineWithStagesAndMaterials(building);
 
         CruiseConfig cruiseConfig = configHelper.currentConfig();
-        PipelineConfig cfg = cruiseConfig.pipelineConfigByName(new CaseInsensitiveString("last"));
+        PipelineConfig cfg = cruiseConfig.pipelineConfigByName(cis("last"));
         cfg.removeMaterialConfig(cfg.materialConfigs().get(1));
         configHelper.writeConfigFile(cruiseConfig);
 
         assertThat(serverHealthService.logsSortedForScope(HealthStateScope.forPipeline("last")).size()).isEqualTo(0);
 
-        final long jobId = pipeline.getStages().get(0).getJobInstances().get(0).getId();
+        final long jobId = pipeline.getStages().getFirst().getJobInstances().getFirst().getId();
 
-        Date currentTime = new Date(System.currentTimeMillis() - 1);
+        Instant currentTime = Instant.now();
 
         Pipeline loadedPipeline = null;
         try {
@@ -285,13 +287,13 @@ public class ScheduledPipelineLoaderIntegrationTest {
 
         HealthStateScope scope = HealthStateScope.forJob("last", "stage", "job-one");
         assertThat(serverHealthService.logsSortedForScope(scope).size()).isEqualTo(1);
-        ServerHealthState error = serverHealthService.logsSortedForScope(HealthStateScope.forJob("last", "stage", "job-one")).get(0);
+        ServerHealthState error = serverHealthService.logsSortedForScope(HealthStateScope.forJob("last", "stage", "job-one")).getFirst();
         assertThat(error).isEqualTo(ServerHealthState.error("Cannot load job 'last/" + pipeline.getCounter() + "/stage/1/job-one' because material " + onDirTwo + " was not found in config.", "Job for pipeline 'last/" + pipeline.getCounter() + "/stage/1/job-one' has been failed as one or more material configurations were either changed or removed.", HealthStateType.general(HealthStateScope.forJob("last", "stage", "job-one"))));
-        DateTime expiryTime = ReflectionUtil.getField(error, "expiryTime");
-        assertThat(expiryTime.toDate().after(currentTime)).isTrue();
-        assertThat(expiryTime.toDate().before(new Date(System.currentTimeMillis() + 5 * 60 * 1000 + 1))).isTrue();
+        Instant expiryTime = ReflectionUtil.getField(error, "expiryTime");
+        assertThat(expiryTime.isAfter(currentTime)).isTrue();
+        assertThat(expiryTime.isBefore(currentTime.plus(5, HOURS))).isTrue();
 
-        String logText = FileUtils.readFileToString(consoleService.consoleLogArtifact(reloadedJobInstance.getIdentifier()), UTF_8);
+        String logText = Files.readString(consoleService.consoleLogFile(reloadedJobInstance.getIdentifier()).toPath(), UTF_8);
         assertThat(logText).contains("Cannot load job 'last/" + pipeline.getCounter() + "/stage/1/job-one' because material " + onDirTwo + " was not found in config.");
         assertThat(logText).contains("Job for pipeline 'last/" + pipeline.getCounter() + "/stage/1/job-one' has been failed as one or more material configurations were either changed or removed.");
     }
@@ -300,7 +302,7 @@ public class ScheduledPipelineLoaderIntegrationTest {
     public void shouldSetPasswordForExpandedSvnMaterial() {
         JobConfig jobConfig = new JobConfig("job-one");
         jobConfig.addTask(new AntTask());
-        PipelineConfig pipelineConfig = PipelineConfigMother.pipelineConfig("last", new StageConfig(new CaseInsensitiveString("stage"), new JobConfigs(jobConfig)));
+        PipelineConfig pipelineConfig = PipelineConfigMother.pipelineConfig("last", new StageConfig(cis("stage"), new JobConfigs(jobConfig)));
         pipelineConfig.materialConfigs().clear();
         SvnMaterialConfig materialConfig = svnRepo.materialConfig();
         materialConfig.setConfigAttributes(Map.of(SvnMaterialConfig.CHECK_EXTERNALS, String.valueOf(true)));
@@ -312,8 +314,8 @@ public class ScheduledPipelineLoaderIntegrationTest {
 
         MaterialRevisions revisions = loadedPipeline.getBuildCause().getMaterialRevisions();
         assertThat(revisions.getRevisions().size()).isEqualTo(2);
-        assertThat(((SvnMaterial) revisions.getRevisions().get(0).getMaterial()).getPassword()).isEqualTo("boozer");
-        assertThat(((SvnMaterial) revisions.getRevisions().get(1).getMaterial()).getPassword()).isEqualTo("boozer");
+        assertThat(((SvnMaterial) revisions.getRevisions().getFirst().getMaterial()).getPassword()).isEqualTo("boozer");
+        assertThat(((SvnMaterial) revisions.getRevisions().getLast().getMaterial()).getPassword()).isEqualTo("boozer");
     }
 
     @Test
@@ -323,23 +325,23 @@ public class ScheduledPipelineLoaderIntegrationTest {
         JobConfig jobConfig = new JobConfig("job-one");
         jobConfig.addTask(new AntTask());
 
-        PipelineConfig shallowPipeline = PipelineConfigMother.pipelineConfig("shallowPipeline", new StageConfig(new CaseInsensitiveString("stage"), new JobConfigs(jobConfig)));
+        PipelineConfig shallowPipeline = PipelineConfigMother.pipelineConfig("shallowPipeline", new StageConfig(cis("stage"), new JobConfigs(jobConfig)));
         shallowPipeline.materialConfigs().clear();
         shallowPipeline.addMaterialConfig(git(testRepo.projectRepositoryUrl(), true));
         configHelper.addPipeline(shallowPipeline);
 
-        PipelineConfig fullPipeline = PipelineConfigMother.pipelineConfig("fullPipeline", new StageConfig(new CaseInsensitiveString("stage"), new JobConfigs(jobConfig)));
+        PipelineConfig fullPipeline = PipelineConfigMother.pipelineConfig("fullPipeline", new StageConfig(cis("stage"), new JobConfigs(jobConfig)));
         fullPipeline.materialConfigs().clear();
         fullPipeline.addMaterialConfig(git(testRepo.projectRepositoryUrl(), false));
         configHelper.addPipeline(fullPipeline);
 
         Pipeline shallowPipelineInstance = createAndLoadModifyOneFilePipeline(shallowPipeline);
         MaterialRevisions shallowRevisions = shallowPipelineInstance.getBuildCause().getMaterialRevisions();
-        assertThat(((GitMaterial) shallowRevisions.getRevisions().get(0).getMaterial()).isShallowClone()).isTrue();
+        assertThat(((GitMaterial) shallowRevisions.getRevisions().getFirst().getMaterial()).isShallowClone()).isTrue();
 
         Pipeline fullPipelineInstance = createAndLoadModifyOneFilePipeline(fullPipeline);
         MaterialRevisions fullRevisions = fullPipelineInstance.getBuildCause().getMaterialRevisions();
-        assertThat(((GitMaterial) fullRevisions.getRevisions().get(0).getMaterial()).isShallowClone()).isFalse();
+        assertThat(((GitMaterial) fullRevisions.getRevisions().getFirst().getMaterial()).isShallowClone()).isFalse();
     }
 
     private Pipeline createAndLoadModifyOneFilePipeline(PipelineConfig pipelineConfig) {
@@ -347,7 +349,7 @@ public class ScheduledPipelineLoaderIntegrationTest {
         MaterialRevisions materialRevisions = ModificationsMother.modifyOneFile(new MaterialConfigConverter().toMaterials(expandedConfigs));
         Pipeline building = PipelineMother.buildingWithRevisions(pipelineConfig, materialRevisions);
         Pipeline pipeline = dbHelper.savePipelineWithStagesAndMaterials(building);
-        final long jobId = pipeline.getStages().get(0).getJobInstances().get(0).getId();
+        final long jobId = pipeline.getStages().getFirst().getJobInstances().getFirst().getId();
         return loader.pipelineWithPasswordAwareBuildCauseByBuildId(jobId);
     }
 }

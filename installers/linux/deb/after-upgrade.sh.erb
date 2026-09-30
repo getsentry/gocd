@@ -1,20 +1,18 @@
-<%
-#########################################################################
-# Copyright Thoughtworks, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#########################################################################
--%>
+<%#
+  Copyright Thoughtworks, Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+%>
 
 <%= ERB.new(File.read(File.join(install_scripts_dir, 'shared', 'partials', '_set-debian-permissions.sh.erb')), trim_mode: '-', eoutvar: "_#{SecureRandom.hex}").result(binding) %>
 
@@ -23,23 +21,6 @@
 <% end -%>
 
     /usr/share/<%= name %>/bin/<%= name %> install 2>&1 || true
-
-    # recall if migration of pre 19.6 config needs to happen
-    MIGRATION_FILE="/var/run/<%= name %>.pre-19.6-migration"
-
-    if [ -f "${MIGRATION_FILE}" ]; then
-      echo "" >> /usr/share/<%= name %>/wrapper-config/wrapper-properties.conf
-
-      echo "###### begin auto-migrated content ######" >> /usr/share/<%= name %>/wrapper-config/wrapper-properties.conf
-      echo "# These lines have been added automatically on upgrade of the <%= name %> package" >> /usr/share/<%= name %>/wrapper-config/wrapper-properties.conf
-      cat "${MIGRATION_FILE}" >> /usr/share/<%= name %>/wrapper-config/wrapper-properties.conf
-      echo "###### end auto-migrated content ######" >> /usr/share/<%= name %>/wrapper-config/wrapper-properties.conf
-
-      echo "The contents of /etc/default/<%= name %> have been migrated to /usr/share/<%= name %>/wrapper-config/wrapper-properties.conf"
-      echo "The following lines have been appended to /usr/share/<%= name %>/wrapper-config/wrapper-properties.conf:"
-      cat "${MIGRATION_FILE}" | sed -e 's/^/  /g'
-      rm -rf "${MIGRATION_FILE}"
-    fi
 
     if [ -e /var/run/<%= name %>-running-check-from-deb-package ]; then
         rm -rf /var/run/<%= name %>-running-check-from-deb-package

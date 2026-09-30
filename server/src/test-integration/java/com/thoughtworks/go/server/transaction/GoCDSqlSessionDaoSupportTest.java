@@ -17,7 +17,7 @@ package com.thoughtworks.go.server.transaction;
 
 import com.thoughtworks.go.config.GoConfigDao;
 import com.thoughtworks.go.domain.User;
-import com.thoughtworks.go.server.cache.GoCache;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.dao.DatabaseAccessHelper;
 import com.thoughtworks.go.server.dao.UserDao;
 import com.thoughtworks.go.util.GoConfigFileHelper;
@@ -87,7 +87,7 @@ public class GoCDSqlSessionDaoSupportTest {
 
         final User[] loadedUser = new User[1];
 
-        assertThat(assertionUtil.doInTxnWithCachePut(() -> loadedUser[0] = userDao.allUsers().get(0))).isEqualTo("boozer");
+        assertThat(assertionUtil.doInTxnWithCachePut(() -> loadedUser[0] = userDao.allUsers().getFirst())).isEqualTo("boozer");
 
         assertThat(loadedUser[0].getName()).isEqualTo("loser");
     }

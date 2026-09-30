@@ -16,15 +16,11 @@
 package com.thoughtworks.go.server.service.dd;
 
 import com.thoughtworks.go.domain.StageIdentifier;
+import org.jetbrains.annotations.NotNull;
 
-public class StageIdFaninScmMaterialPair {
-    StageIdentifier stageIdentifier;
-    FaninScmMaterial faninScmMaterial;
+import java.util.Objects;
 
-    public StageIdFaninScmMaterialPair(StageIdentifier stageIdentifier, FaninScmMaterial faninScmMaterial) {
-        this.stageIdentifier = stageIdentifier;
-        this.faninScmMaterial = faninScmMaterial;
-    }
+record StageIdFaninScmMaterialPair(@NotNull StageIdentifier stageIdentifier, @NotNull FaninScmMaterial faninScmMaterial) {
 
     @Override
     public boolean equals(Object o) {
@@ -37,15 +33,11 @@ public class StageIdFaninScmMaterialPair {
 
         StageIdFaninScmMaterialPair that = (StageIdFaninScmMaterialPair) o;
 
-        if (faninScmMaterial != null ? !faninScmMaterial.equals(that.faninScmMaterial) : that.faninScmMaterial != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(faninScmMaterial, that.faninScmMaterial);
     }
 
     @Override
     public int hashCode() {
-        return faninScmMaterial != null ? faninScmMaterial.hashCode() : 0;
+        return faninScmMaterial.hashCode();
     }
 }

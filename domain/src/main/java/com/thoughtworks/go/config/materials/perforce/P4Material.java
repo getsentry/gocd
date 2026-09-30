@@ -24,9 +24,7 @@ import com.thoughtworks.go.domain.MaterialInstance;
 import com.thoughtworks.go.domain.materials.*;
 import com.thoughtworks.go.domain.materials.perforce.P4Client;
 import com.thoughtworks.go.domain.materials.perforce.P4MaterialInstance;
-import com.thoughtworks.go.util.GoConstants;
 import com.thoughtworks.go.util.SystemUtil;
-import com.thoughtworks.go.util.TempFiles;
 import com.thoughtworks.go.util.command.ConsoleOutputStreamConsumer;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
 import com.thoughtworks.go.util.command.InMemoryStreamConsumer;
@@ -36,11 +34,13 @@ import org.apache.commons.io.FileUtils;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.*;
 
 import static com.thoughtworks.go.util.ExceptionUtils.bomb;
 import static com.thoughtworks.go.util.ExceptionUtils.bombIfNull;
 import static com.thoughtworks.go.util.command.ProcessOutputStreamConsumer.inMemoryConsumer;
+import static com.thoughtworks.go.work.GoPublisher.PRODUCT_NAME;
 import static java.lang.Long.parseLong;
 import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -155,17 +155,19 @@ public class P4Material extends ScmMaterial implements PasswordEncrypter, Passwo
         boolean cleaned = cleanDirectoryIfRepoChanged(workingDir, outputConsumer);
         String revision = revisionContext.getLatestRevision().getRevision();
         try {
-            outputConsumer.stdOutput(format("[%s] Start updating %s at revision %s from %s", GoConstants.PRODUCT_NAME, updatingTarget(), revision, serverAndPort));
+            outputConsumer.stdOutput(format("[%s] Start updating %s at revision %s from %s", PRODUCT_NAME, updatingTarget(), revision, serverAndPort));
             p4(workingDir, outputConsumer).sync(parseLong(revision), cleaned, outputConsumer);
-            outputConsumer.stdOutput(format("[%s] Done.\n", GoConstants.PRODUCT_NAME));
+            outputConsumer.stdOutput(format("[%s] Done.\n", PRODUCT_NAME));
         } catch (Exception e) {
             bomb(e);
         }
     }
 
+    @Override
     public ValidationBean checkConnection(final SubprocessExecutionContext execCtx) {
-        File baseDir = new TempFiles().createUniqueFolder("for-p4");
+        File baseDir = null;
         try {
+            baseDir = Files.createTempDirectory("cruise-for-p4").toFile();
             getP4(baseDir).checkConnection();
             return ValidationBean.valid();
         } catch (Exception e) {
@@ -258,21 +260,10 @@ public class P4Material extends ScmMaterial implements PasswordEncrypter, Passwo
 
         P4Material that = (P4Material) o;
 
-        if (serverAndPort != null ? !serverAndPort.equals(that.serverAndPort) : that.serverAndPort != null) {
-            return false;
-        }
-        if (useTickets != null ? !useTickets.equals(that.useTickets) : that.useTickets != null) {
-            return false;
-        }
-        if (view != null ? !view.equals(that.view) : that.view != null) {
-            return false;
-        }
-
-        if (userName != null ? !userName.equals(that.userName) : that.userName != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(serverAndPort, that.serverAndPort) &&
+            Objects.equals(useTickets, that.useTickets) &&
+            Objects.equals(view, that.view) &&
+            Objects.equals(userName, that.userName);
     }
 
     @Override
@@ -312,16 +303,17 @@ public class P4Material extends ScmMaterial implements PasswordEncrypter, Passwo
             String p4RepoId = p4RepoId();
             File file = new File(workingDirectory, ".cruise_p4repo");
             if (!file.exists()) {
-                FileUtils.writeStringToFile(file, p4RepoId, UTF_8);
+                workingDirectory.mkdirs();
+                Files.writeString(file.toPath(), p4RepoId, UTF_8);
                 return true;
             }
 
-            String existingRepoId = FileUtils.readFileToString(file, UTF_8);
+            String existingRepoId = Files.readString(file.toPath(), UTF_8);
             if (!p4RepoId.equals(existingRepoId)) {
-                outputConsumer.stdOutput(format("[%s] Working directory has changed. Deleting and re-creating it.", GoConstants.PRODUCT_NAME));
+                outputConsumer.stdOutput(format("[%s] Working directory has changed. Deleting and re-creating it.", PRODUCT_NAME));
                 FileUtils.deleteDirectory(workingDirectory);
                 workingDirectory.mkdirs();
-                FileUtils.writeStringToFile(file, p4RepoId, UTF_8);
+                Files.writeString(file.toPath(), p4RepoId, UTF_8);
                 cleaned = true;
             }
             return cleaned;

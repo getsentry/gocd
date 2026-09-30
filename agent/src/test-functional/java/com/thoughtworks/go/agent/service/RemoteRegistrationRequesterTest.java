@@ -16,7 +16,7 @@
 package com.thoughtworks.go.agent.service;
 
 import com.thoughtworks.go.agent.AgentAutoRegistrationPropertiesImpl;
-import com.thoughtworks.go.agent.common.ssl.GoAgentServerHttpClient;
+import com.thoughtworks.go.agent.common.GoAgentServerHttpClient;
 import com.thoughtworks.go.config.DefaultAgentRegistry;
 import com.thoughtworks.go.config.TokenService;
 import com.thoughtworks.go.util.SystemUtil;
@@ -121,7 +121,7 @@ public class RemoteRegistrationRequesterTest {
                     assertThat(getParameter(params, "elasticPluginId")).isEqualTo(elasticPluginId);
                     assertThat(getParameter(params, "token")).isEqualTo("token-from-server");
                     return true;
-                } catch (Exception e) {
+                } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
             }

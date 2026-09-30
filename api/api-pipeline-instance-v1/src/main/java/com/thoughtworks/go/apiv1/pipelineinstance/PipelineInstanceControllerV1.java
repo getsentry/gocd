@@ -18,7 +18,7 @@ package com.thoughtworks.go.apiv1.pipelineinstance;
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.apiv1.pipelineinstance.representers.PipelineInstanceModelRepresenter;
 import com.thoughtworks.go.apiv1.pipelineinstance.representers.PipelineInstanceModelsRepresenter;
@@ -28,6 +28,7 @@ import com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModel;
 import com.thoughtworks.go.presentation.pipelinehistory.PipelineInstanceModels;
 import com.thoughtworks.go.server.service.PipelineHistoryService;
 import com.thoughtworks.go.server.service.result.HttpOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,13 +42,13 @@ import static spark.Spark.*;
 
 @Component
 public class PipelineInstanceControllerV1 extends ApiController implements SparkSpringController {
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final PipelineHistoryService pipelineHistoryService;
 
     @Autowired
-    public PipelineInstanceControllerV1(ApiAuthenticationHelper apiAuthenticationHelper, PipelineHistoryService pipelineHistoryService) {
+    public PipelineInstanceControllerV1(ApiAuthorizationHelper apiAuthorizationHelper, PipelineHistoryService pipelineHistoryService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.pipelineHistoryService = pipelineHistoryService;
     }
 
@@ -57,14 +58,14 @@ public class PipelineInstanceControllerV1 extends ApiController implements Spark
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("/*", mimeType, this::setContentType);
             before("/*", mimeType, this::verifyContentType);
 
-            before(Routes.PipelineInstance.INSTANCE_PATH, mimeType, apiAuthenticationHelper::checkPipelineViewPermissionsAnd403);
-            before(Routes.PipelineInstance.HISTORY_PATH, mimeType, apiAuthenticationHelper::checkPipelineViewPermissionsAnd403);
-            before(Routes.PipelineInstance.COMMENT_PATH, mimeType, apiAuthenticationHelper::checkPipelineGroupOperateOfPipelineOrGroupInURLUserAnd403);
+            before(Routes.PipelineInstance.INSTANCE_PATH, mimeType, apiAuthorizationHelper::checkPipelineViewPermissionsAnd403);
+            before(Routes.PipelineInstance.HISTORY_PATH, mimeType, apiAuthorizationHelper::checkPipelineViewPermissionsAnd403);
+            before(Routes.PipelineInstance.COMMENT_PATH, mimeType, apiAuthorizationHelper::checkPipelineGroupOperateViaNameParamsAnd403);
 
             get(Routes.PipelineInstance.HISTORY_PATH, mimeType, this::getHistoryInfo);
             get(Routes.PipelineInstance.INSTANCE_PATH, mimeType, this::getInstanceInfo);
@@ -74,28 +75,28 @@ public class PipelineInstanceControllerV1 extends ApiController implements Spark
 
     String getInstanceInfo(Request request, Response response) throws IOException {
         String pipelineName = request.params("pipeline_name");
-        Integer pipelineCounter = getCounterValue(request);
+        int pipelineCounter = getCounterValue(request);
         HttpOperationResult result = new HttpOperationResult();
         PipelineInstanceModel pipelineInstance = pipelineHistoryService.findPipelineInstance(pipelineName, pipelineCounter, currentUsername(), result);
         if (result.canContinue()) {
-            return writerForTopLevelObject(request, response, (outputWriter) -> PipelineInstanceModelRepresenter.toJSON(outputWriter, pipelineInstance));
+            return writerForTopLevelObject(request, response, outputWriter -> PipelineInstanceModelRepresenter.toJSON(outputWriter, pipelineInstance));
         }
         return renderHTTPOperationResult(result, request, response);
     }
 
     String getHistoryInfo(Request request, Response response) throws IOException {
         String pipelineName = request.params("pipeline_name");
-        Integer pageSize = getPageSize(request);
-        Long after = getCursor(request, "after");
-        Long before = getCursor(request, "before");
+        int pageSize = getPageSize(request);
+        long after = getCursor(request, "after");
+        long before = getCursor(request, "before");
         PipelineInstanceModels pipelineInstanceModels = pipelineHistoryService.loadPipelineHistoryData(currentUsername(), pipelineName, after, before, pageSize);
         PipelineRunIdInfo latestAndOldestPipelineIds = pipelineHistoryService.getOldestAndLatestPipelineId(pipelineName, currentUsername());
-        return writerForTopLevelObject(request, response, (outputWriter) -> PipelineInstanceModelsRepresenter.toJSON(outputWriter, pipelineInstanceModels, latestAndOldestPipelineIds));
+        return writerForTopLevelObject(request, response, outputWriter -> PipelineInstanceModelsRepresenter.toJSON(outputWriter, pipelineInstanceModels, latestAndOldestPipelineIds));
     }
 
     String comment(Request request, Response response) {
         String pipelineName = request.params("pipeline_name");
-        Integer pipelineCounter = getCounterValue(request);
+        int pipelineCounter = getCounterValue(request);
 
         JsonReader reader = GsonTransformer.getInstance().jsonReaderFrom(request.body());
 
@@ -104,7 +105,7 @@ public class PipelineInstanceControllerV1 extends ApiController implements Spark
         return renderMessage(response, 200, "Comment successfully updated.");
     }
 
-    private Integer getCounterValue(Request request) {
+    private int getCounterValue(Request request) {
         try {
             int counter = Integer.parseInt(request.params("pipeline_counter"));
             if (counter < 1) {

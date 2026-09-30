@@ -19,17 +19,16 @@ import com.thoughtworks.go.util.command.ConsoleOutputStreamConsumer;
 import com.thoughtworks.go.util.command.ErrorConsumer;
 import com.thoughtworks.go.util.command.OutputConsumer;
 import com.thoughtworks.go.util.command.StreamPumper;
-import org.apache.commons.io.IOUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
+import java.io.*;
 import java.nio.charset.Charset;
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Objects;
+
+import static com.thoughtworks.go.util.Clock.min;
 
 public class ProcessWrapper {
 
@@ -37,31 +36,36 @@ public class ProcessWrapper {
     private final StreamPumper processOutputStream;
     private final StreamPumper processErrorStream;
     private final PrintWriter processInputStream;
-    private final long startTime;
+    private final long startTimeMillis;
     private final ProcessTag processTag;
     private final String command;
-    private static final Logger LOGGER = LoggerFactory.getLogger(ProcessWrapper.class);
 
     ProcessWrapper(Process process, ProcessTag processTag, String command, ConsoleOutputStreamConsumer consumer, Charset encoding, String errorPrefix) {
         this.process = process;
         this.processTag = processTag;
         this.command = command;
-        this.startTime = System.currentTimeMillis();
+        this.startTimeMillis = System.currentTimeMillis();
         this.processOutputStream = StreamPumper.pump(process.getInputStream(), new OutputConsumer(consumer), "", encoding);
         this.processErrorStream = StreamPumper.pump(process.getErrorStream(), new ErrorConsumer(consumer), errorPrefix, encoding);
         this.processInputStream = new PrintWriter(new OutputStreamWriter(process.getOutputStream()));
     }
 
+    @SuppressWarnings("try")
     public int waitForExit() {
         int returnValue = -1;
-        try {
+        try (InputStream ignored = process.getInputStream();
+             InputStream ignored1 = process.getErrorStream();
+             OutputStream ignored2 = process.getOutputStream()) {
+
             returnValue = process.waitFor();
             processOutputStream.readToEnd();
             processErrorStream.readToEnd();
         } catch (InterruptedException ignored) {
-            LOGGER.warn(ignored.getMessage(), ignored);
+            Thread.currentThread().interrupt();
+        } catch (IOException ignored) {
         } finally {
-            close();
+            process.destroy();
+            ProcessManager.getInstance().processKilled(process);
         }
         return returnValue;
     }
@@ -74,10 +78,9 @@ public class ProcessWrapper {
         processInputStream.close();
     }
 
-
-    private long lastHeardTime() {
-        if (processErrorStream == null & processOutputStream == null) {
-            return System.currentTimeMillis();
+    private Instant lastHeard() {
+        if (processErrorStream == null && processOutputStream == null) {
+            return Instant.now();
         }
         if (processErrorStream == null) {
             return processOutputStream.getLastHeard();
@@ -85,17 +88,11 @@ public class ProcessWrapper {
         if (processOutputStream == null) {
             return processErrorStream.getLastHeard();
         }
-        return Math.min(processOutputStream.getLastHeard(), processErrorStream.getLastHeard());
+        return min(processOutputStream.getLastHeard(), processErrorStream.getLastHeard());
     }
-
 
     public void closeOutputStream() throws IOException {
         process.getOutputStream().close();
-    }
-
-    public void close() {
-        close(process);
-        ProcessManager.getInstance().processKilled(process);
     }
 
     public boolean isRunning() {
@@ -108,15 +105,15 @@ public class ProcessWrapper {
     }
 
     public String getStartTimeForDisplay() {
-        return new SimpleDateFormat("dd/MM/yy - H:mm:ss:S").format(new Date(startTime));
+        return DateTimeFormatter.ISO_DATE_TIME.format(Instant.ofEpochMilli(startTimeMillis));
     }
 
     public ProcessTag getProcessTag() {
         return processTag;
     }
 
-    public long getIdleTime() {
-        return System.currentTimeMillis() - lastHeardTime();
+    public Duration idleFor() {
+        return Duration.between(lastHeard(), Instant.now());
     }
 
     public String getCommand() {
@@ -134,28 +131,12 @@ public class ProcessWrapper {
 
         ProcessWrapper that = (ProcessWrapper) o;
 
-        if (process != null ? !process.equals(that.process) : that.process != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(process, that.process);
     }
 
     @Override
     public int hashCode() {
         return process != null ? process.hashCode() : 0;
-    }
-
-    private void close(Process p) {
-        try {
-            IOUtils.closeQuietly(p.getInputStream());
-            IOUtils.closeQuietly(p.getOutputStream());
-            IOUtils.closeQuietly(p.getErrorStream());
-        } finally {
-            if (p != null) {
-                p.destroy();
-            }
-        }
     }
 
 }

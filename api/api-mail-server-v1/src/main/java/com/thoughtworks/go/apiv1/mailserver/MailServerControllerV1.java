@@ -20,7 +20,7 @@ import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.CrudController;
 import com.thoughtworks.go.api.base.OutputWriter;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.api.util.MessageJson;
 import com.thoughtworks.go.apiv1.mailserver.representers.MailServerRepresenter;
@@ -32,10 +32,11 @@ import com.thoughtworks.go.config.update.DeleteMailHostCommand;
 import com.thoughtworks.go.server.service.GoConfigService;
 import com.thoughtworks.go.server.service.ServerConfigService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
-import org.apache.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import spark.Request;
 import spark.Response;
@@ -48,14 +49,14 @@ import static spark.Spark.*;
 @Component
 public class MailServerControllerV1 extends ApiController implements SparkSpringController, CrudController<MailHost> {
 
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final GoConfigService goConfigService;
     private final ServerConfigService serverConfigService;
 
     @Autowired
-    public MailServerControllerV1(ApiAuthenticationHelper apiAuthenticationHelper, GoConfigService goConfigService, ServerConfigService serverConfigService) {
+    public MailServerControllerV1(ApiAuthorizationHelper apiAuthorizationHelper, GoConfigService goConfigService, ServerConfigService serverConfigService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.goConfigService = goConfigService;
         this.serverConfigService = serverConfigService;
     }
@@ -66,13 +67,13 @@ public class MailServerControllerV1 extends ApiController implements SparkSpring
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
 
-            before("", this.mimeType, this.apiAuthenticationHelper::checkAdminUserAnd403);
-            before("/*", this.mimeType, this.apiAuthenticationHelper::checkAdminUserAnd403);
+            before("", this.mimeType, this.apiAuthorizationHelper::checkAdminUserAnd403);
+            before("/*", this.mimeType, this.apiAuthorizationHelper::checkAdminUserAnd403);
 
             get("", mimeType, this::show);
             post("", mimeType, this::createOrUpdate);
@@ -96,7 +97,7 @@ public class MailServerControllerV1 extends ApiController implements SparkSpring
         try {
             goConfigService.updateConfig(new CreateOrUpdateUpdateMailHostCommand(mailHost), currentUsername());
         } catch (GoConfigInvalidException e) {
-            response.status(HttpStatus.SC_UNPROCESSABLE_ENTITY);
+            response.status(HttpStatus.UNPROCESSABLE_ENTITY.value());
             return MessageJson.create(e.getMessage(), jsonWriter(mailHost));
         }
         return show(request, response);

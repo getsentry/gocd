@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.plugin.access.authorization.v2;
 
-import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.thoughtworks.go.config.PluginRoleConfig;
 import com.thoughtworks.go.config.SecurityAuthConfig;
@@ -31,14 +30,15 @@ import com.thoughtworks.go.plugin.domain.authorization.User;
 import com.thoughtworks.go.plugin.domain.common.Image;
 import com.thoughtworks.go.plugin.domain.common.PluginConfiguration;
 import com.thoughtworks.go.plugin.domain.common.VerifyConnectionResponse;
-import org.apache.commons.lang3.StringUtils;
+import com.thoughtworks.go.util.json.JsonHelper;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static org.apache.commons.lang3.StringUtils.isBlank;
+
 public class AuthorizationMessageConverterV2 implements AuthorizationMessageConverter {
     public static final String VERSION = "2.0";
-    private static final Gson GSON = new Gson();
 
     @Override
     public Capabilities getCapabilitiesFromResponseBody(String responseBody) {
@@ -62,7 +62,7 @@ public class AuthorizationMessageConverterV2 implements AuthorizationMessageConv
 
     @Override
     public String validatePluginConfigurationRequestBody(Map<String, String> configuration) {
-        return GSON.toJson(configuration);
+        return JsonHelper.toJson(configuration);
     }
 
     @Override
@@ -100,7 +100,7 @@ public class AuthorizationMessageConverterV2 implements AuthorizationMessageConv
         requestMap.put("credentials", credentials);
         requestMap.put("auth_configs", getAuthConfigs(authConfigs));
         requestMap.put("role_configs", getRoleConfigs(roleConfigs));
-        return GSON.toJson(requestMap);
+        return JsonHelper.toJson(requestMap);
     }
 
     private List<Map<String, Object>> getRoleConfigs(List<PluginRoleConfig> roleConfigs) {
@@ -155,7 +155,7 @@ public class AuthorizationMessageConverterV2 implements AuthorizationMessageConv
         Map<String, Object> requestMap = new HashMap<>();
         requestMap.put("search_term", searchTerm);
         requestMap.put("auth_configs", getAuthConfigs(authConfigs));
-        return GSON.toJson(requestMap);
+        return JsonHelper.toJson(requestMap);
     }
 
     @Override
@@ -167,7 +167,7 @@ public class AuthorizationMessageConverterV2 implements AuthorizationMessageConv
             e.put("configuration", role.getConfigurationAsMap(true));
             list.add(e);
         }
-        return GSON.toJson(list);
+        return JsonHelper.toJson(list);
     }
 
     @Override
@@ -176,12 +176,12 @@ public class AuthorizationMessageConverterV2 implements AuthorizationMessageConv
         requestMap.put("auth_configs", getAuthConfigs(authConfigs));
         requestMap.put("auth_session", authSessionContext);
 
-        return GSON.toJson(requestMap);
+        return JsonHelper.toJson(requestMap);
     }
 
     @Override
     public Map<String, String> getCredentials(String responseBody) {
-        return GSON.fromJson(responseBody, new TypeToken<Map<String, String>>() {}.getType());
+        return JsonHelper.fromJson(responseBody, new TypeToken<Map<String, String>>() {}.getType());
     }
 
     @Override
@@ -191,7 +191,7 @@ public class AuthorizationMessageConverterV2 implements AuthorizationMessageConv
         requestMap.put("credentials", credentials);
         requestMap.put("auth_configs", getAuthConfigs(authConfigs));
         requestMap.put("role_configs", getRoleConfigs(roleConfigs));
-        return GSON.toJson(requestMap);
+        return JsonHelper.toJson(requestMap);
     }
 
     @Override
@@ -205,7 +205,7 @@ public class AuthorizationMessageConverterV2 implements AuthorizationMessageConv
         requestMap.put("auth_configs", getAuthConfigs(authConfigs));
         requestMap.put("authorization_server_callback_url", authorizationServerCallbackUrl(pluginId, siteUrl));
 
-        return GSON.toJson(requestMap);
+        return JsonHelper.toJson(requestMap);
     }
 
     @Override
@@ -214,7 +214,7 @@ public class AuthorizationMessageConverterV2 implements AuthorizationMessageConv
         requestMap.put("username", username);
         requestMap.put("auth_config", getAuthConfig(authConfig));
 
-        return GSON.toJson(requestMap);
+        return JsonHelper.toJson(requestMap);
     }
 
     @Override
@@ -224,13 +224,12 @@ public class AuthorizationMessageConverterV2 implements AuthorizationMessageConv
         requestMap.put("auth_config", getAuthConfig(authConfig));
         requestMap.put("role_configs", getRoleConfigs(roleConfigs));
 
-        return GSON.toJson(requestMap);
+        return JsonHelper.toJson(requestMap);
     }
 
     @Override
     public List<String> getUserRolesFromResponseBody(String responseBody) {
-        return GSON.fromJson(responseBody, new TypeToken<List<String>>() {
-        }.getType());
+        return JsonHelper.fromJson(responseBody, new TypeToken<List<String>>() {}.getType());
     }
 
     private AuthenticationResponse createAuthResponse(String responseBody) {
@@ -238,8 +237,8 @@ public class AuthorizationMessageConverterV2 implements AuthorizationMessageConv
     }
 
     private String getTemplateFromResponse(String responseBody, String message) {
-        String template = (String) GSON.fromJson(responseBody, Map.class).get("template");
-        if (StringUtils.isBlank(template)) {
+        String template = (String) JsonHelper.fromJson(responseBody, Map.class).get("template");
+        if (isBlank(template)) {
             throw new RuntimeException(message);
         }
         return template;

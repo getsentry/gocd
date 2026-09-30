@@ -27,25 +27,25 @@ public class LevelAssignment {
         Node rootNode = valueStreamMap.getCurrentPipeline() != null ? valueStreamMap.getCurrentPipeline() : valueStreamMap.getCurrentMaterial();
         rootNode.setLevel(0);
 
-		if(!rootNode.getParents().isEmpty()) {
-			assignLevelsToDependencies(rootNode, new Upstream());
-		}
+        if (!rootNode.getParents().isEmpty()) {
+            assignLevelsToDependencies(rootNode, new Upstream());
+        }
 
-		if(!rootNode.getChildren().isEmpty()) {
-			assignLevelsToDependencies(rootNode, new Downstream());
-		}
+        if (!rootNode.getChildren().isEmpty()) {
+            assignLevelsToDependencies(rootNode, new Downstream());
+        }
 
         return levelToNodesMap(valueStreamMap);
     }
 
-	private void assignLevelsToDependencies(Node rootNode, LevelAssignmentDirection direction) {
-		List<Node> topologicalOrder = new ArrayList<>();
-		getTopologicalOrder(rootNode, direction, new HashSet<>(), topologicalOrder);
-		Collections.reverse(topologicalOrder);
-		assignLevels(topologicalOrder, direction);
-	}
+    private void assignLevelsToDependencies(Node rootNode, LevelAssignmentDirection direction) {
+        List<Node> topologicalOrder = new ArrayList<>();
+        getTopologicalOrder(rootNode, direction, new HashSet<>(), topologicalOrder);
+        Collections.reverse(topologicalOrder);
+        assignLevels(topologicalOrder, direction);
+    }
 
-	private void getTopologicalOrder(Node rootNode, LevelAssignmentDirection direction, Set<Node> visitedNodes, List<Node> topologicalOrder) {
+    private void getTopologicalOrder(Node rootNode, LevelAssignmentDirection direction, Set<Node> visitedNodes, List<Node> topologicalOrder) {
         if (visitedNodes.contains(rootNode)) {
             return;
         }
@@ -90,7 +90,7 @@ public class LevelAssignment {
         boolean canResetLevel(Node node, int nextLevel);
     }
 
-    private class Upstream implements LevelAssignmentDirection {
+    private static class Upstream implements LevelAssignmentDirection {
         @Override
         public List<Node> getRelatedNodes(Node node) {
             return node.getParents();
@@ -107,7 +107,7 @@ public class LevelAssignment {
         }
     }
 
-    private class Downstream implements LevelAssignmentDirection {
+    private static class Downstream implements LevelAssignmentDirection {
         @Override
         public List<Node> getRelatedNodes(Node node) {
             return node.getChildren();

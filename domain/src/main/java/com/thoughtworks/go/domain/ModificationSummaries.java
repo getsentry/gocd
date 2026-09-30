@@ -16,7 +16,6 @@
 package com.thoughtworks.go.domain;
 
 import com.thoughtworks.go.domain.materials.Modification;
-import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,9 +42,9 @@ public class ModificationSummaries extends ModificationVisitorAdapter {
 
     public String latestRevision() {
         if (mods.isEmpty()) {
-            return StringUtils.EMPTY;
+            return "";
         }
-        return mods.get(0).getRevision();
+        return mods.getFirst().getRevision();
     }
 
     public int getModificationCount() {

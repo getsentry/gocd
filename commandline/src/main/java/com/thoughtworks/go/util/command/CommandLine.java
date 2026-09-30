@@ -21,7 +21,6 @@
 package com.thoughtworks.go.util.command;
 
 import com.thoughtworks.go.util.*;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,6 +29,8 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.*;
 import java.util.function.Consumer;
+
+import static java.lang.String.format;
 
 /**
  * Commandline objects help handling command lines specifying processes to execute.
@@ -59,7 +60,7 @@ public class CommandLine {
 
     private final String executable;
     private final List<CommandArgument> arguments = new ArrayList<>();
-    private final List<SecretString> secrets = new ArrayList<>();
+    private final List<SecretRedactor> secrets = new ArrayList<>();
     private final Map<String, String> env = new HashMap<>();
     private final List<String> inputs = new ArrayList<>();
 
@@ -96,7 +97,7 @@ public class CommandLine {
     }
 
     public static String[] translateCommandLine(String toProcess) throws CommandLineException {
-        if (toProcess == null || toProcess.length() == 0) {
+        if (toProcess == null || toProcess.isEmpty()) {
             return new String[0];
         }
 
@@ -113,34 +114,31 @@ public class CommandLine {
         while (tok.hasMoreTokens()) {
             String nextTok = tok.nextToken();
             switch (state) {
-                case inQuote:
-                    if ("'".equals(nextTok)) {
-                        state = normal;
-                    } else {
-                        current.append(nextTok);
+                case inQuote -> {
+                    switch (nextTok) {
+                        case "'" -> state = normal;
+                        case null, default -> current.append(nextTok);
                     }
-                    break;
-                case inDoubleQuote:
-                    if ("\"".equals(nextTok)) {
-                        state = normal;
-                    } else {
-                        current.append(nextTok);
+                }
+                case inDoubleQuote -> {
+                    switch (nextTok) {
+                        case "\"" -> state = normal;
+                        case null, default -> current.append(nextTok);
                     }
-                    break;
-                default:
-                    if ("'".equals(nextTok)) {
-                        state = inQuote;
-                    } else if ("\"".equals(nextTok)) {
-                        state = inDoubleQuote;
-                    } else if (" ".equals(nextTok)) {
-                        if (!current.isEmpty()) {
-                            v.addElement(current.toString());
-                            current.setLength(0);
+                }
+                default -> {
+                    switch (nextTok) {
+                        case "'" -> state = inQuote;
+                        case "\"" -> state = inDoubleQuote;
+                        case " " -> {
+                            if (!current.isEmpty()) {
+                                v.addElement(current.toString());
+                                current.setLength(0);
+                            }
                         }
-                    } else {
-                        current.append(nextTok);
+                        case null, default -> current.append(nextTok);
                     }
-                    break;
+                }
             }
         }
 
@@ -166,16 +164,16 @@ public class CommandLine {
     }
 
     public String describe() {
-        String description = "--- Command ---\n" + this
-            + "\n--- Environment ---\n" + env + "\n"
-            + "--- INPUT ----\n" + StringUtils.join(inputs, ",") + "\n";
-        for (CommandArgument argument : arguments) {
-            description = argument.replaceSecretInfo(description);
-        }
-        for (SecretString secret : secrets) {
-            description = secret.replaceSecretInfo(description);
-        }
-        return description;
+        return SecretRedactor.redact(
+            format("""
+                --- Command ---
+                %s
+                --- Environment ---
+                %s
+                --- INPUT ----
+                %s
+                """, this, env, String.join(",", inputs)),
+            arguments, secrets);
     }
 
     @Override
@@ -188,10 +186,6 @@ public class CommandLine {
      */
     public String toStringForDisplay() {
         return toString(getCommandLineForDisplay(), false);
-    }
-
-    public int size() {
-        return getCommandLine().length;
     }
 
     public File getWorkingDirectory() {
@@ -240,7 +234,7 @@ public class CommandLine {
     }
 
     public CommandLine when(boolean condition, Consumer<CommandLine> thenDo) {
-        return this.tap((cmd) -> {
+        return this.tap(cmd -> {
             if (condition) {
                 thenDo.accept(cmd);
             }
@@ -249,11 +243,6 @@ public class CommandLine {
 
     public CommandLine tap(Consumer<CommandLine> thenDo) {
         thenDo.accept(this);
-        return this;
-    }
-
-    public CommandLine argPassword(String password) {
-        arguments.add(new PasswordArgument(password));
         return this;
     }
 
@@ -272,12 +261,12 @@ public class CommandLine {
         return this;
     }
 
-    public CommandLine withNonArgSecret(SecretString argument) {
+    public CommandLine withNonArgSecret(SecretRedactor argument) {
         secrets.add(argument);
         return this;
     }
 
-    public CommandLine withNonArgSecrets(List<SecretString> secrets) {
+    public CommandLine withNonArgSecrets(List<SecretRedactor> secrets) {
         this.secrets.addAll(secrets);
         return this;
     }
@@ -318,14 +307,17 @@ public class CommandLine {
         try {
             process = startProcess(environmentVariableContext, streamConsumer, processTag);
         } catch (CommandLineException e) {
-            String message = String.format("Error happened while attempting to execute '%s'. \nPlease make sure [%s] can be executed on this agent.\n", toStringForDisplay(), getExecutable());
+            String message = format("""
+                Error happened while attempting to execute '%s'.\s
+                Please make sure [%s] can be executed on this agent.
+                """, toStringForDisplay(), getExecutable());
             String path = System.getenv("PATH");
             streamConsumer.errOutput(message);
-            streamConsumer.errOutput(String.format("[Debug Information] Environment variable PATH: %s", path));
+            streamConsumer.errOutput(format("[Debug Information] Environment variable PATH: %s", path));
             LOG.error("[Command Line] {}. Path: {}", message, path);
             throw new CommandLineException(message, e);
         } catch (IOException e) {
-            String msg = String.format("Encountered an IO exception while attempting to execute '%s'. Go cannot continue.\n", toStringForDisplay());
+            String msg = format("Encountered an IO exception while attempting to execute '%s'. Go cannot continue.\n", toStringForDisplay());
             streamConsumer.errOutput(msg);
             throw new CommandLineException(msg, e);
         }
@@ -347,7 +339,7 @@ public class CommandLine {
             throw new CommandLineException(this, result);
         }
         if (LOG.isDebugEnabled()) {
-            LOG.debug("Output: \n" + StringUtils.join(result.outputForDisplay(), "\n"));
+            LOG.debug("Output: \n{}", String.join("\n", result.outputForDisplay()));
         }
         return result;
     }
@@ -380,13 +372,6 @@ public class CommandLine {
         return args.toArray(new String[0]);
     }
 
-    protected File getWorkingDir() {
-        return workingDir;
-    }
-
-    /**
-     * Sets execution directory
-     */
     public void setWorkingDir(File workingDir) {
         checkWorkingDir(workingDir);
         this.workingDir = workingDir;

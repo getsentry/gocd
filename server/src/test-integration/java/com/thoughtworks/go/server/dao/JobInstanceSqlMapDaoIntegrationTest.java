@@ -15,9 +15,7 @@
  */
 package com.thoughtworks.go.server.dao;
 
-import ch.qos.logback.classic.Level;
 import com.thoughtworks.go.config.Agents;
-import com.thoughtworks.go.config.CaseInsensitiveString;
 import com.thoughtworks.go.config.GoConfigDao;
 import com.thoughtworks.go.config.PipelineConfig;
 import com.thoughtworks.go.config.elastic.ClusterProfile;
@@ -29,8 +27,7 @@ import com.thoughtworks.go.domain.config.ConfigurationValue;
 import com.thoughtworks.go.helper.BuildPlanMother;
 import com.thoughtworks.go.helper.JobInstanceMother;
 import com.thoughtworks.go.helper.PipelineMother;
-import com.thoughtworks.go.server.cache.GoCache;
-import com.thoughtworks.go.server.service.InstanceFactory;
+import com.thoughtworks.go.server.caching.GoCache;
 import com.thoughtworks.go.server.service.JobInstanceService;
 import com.thoughtworks.go.server.service.ScheduleService;
 import com.thoughtworks.go.server.transaction.SqlMapClientTemplate;
@@ -40,23 +37,25 @@ import com.thoughtworks.go.util.GoConfigFileHelper;
 import com.thoughtworks.go.util.LogFixture;
 import com.thoughtworks.go.util.TimeProvider;
 import com.thoughtworks.go.util.command.EnvironmentVariableContext;
-import org.assertj.core.api.Assertions;
-import org.joda.time.DateTime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.slf4j.event.Level;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataRetrievalFailureException;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
+import java.time.Instant;
 import java.util.*;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
+import static com.thoughtworks.go.domain.buildcause.BuildCause.APPROVER_AUTOMATICALLY_TRIGGERED;
 import static com.thoughtworks.go.helper.JobInstanceMother.*;
 import static com.thoughtworks.go.helper.ModificationsMother.modifySomeFiles;
-import static com.thoughtworks.go.util.GoConstants.DEFAULT_APPROVED_BY;
 import static com.thoughtworks.go.util.LogFixture.logFixtureFor;
+import static java.time.temporal.ChronoUnit.MINUTES;
 import static java.util.stream.Collectors.toList;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -103,7 +102,7 @@ public class JobInstanceSqlMapDaoIntegrationTest {
     private PipelineConfig pipelineConfig;
     private Pipeline savedPipeline;
     private Stage savedStage;
-    private static final Date MOST_RECENT_DATE = new DateTime().plusMinutes(20).toDate();
+    private static final Date MOST_RECENT_DATE = Date.from(Instant.now().plus(20, MINUTES));
     private int counter;
     private static final String OTHER_JOB_NAME = "unit";
     private DefaultSchedulingContext schedulingContext;
@@ -114,7 +113,7 @@ public class JobInstanceSqlMapDaoIntegrationTest {
         dbHelper.onSetUp();
         goCache.clear();
         pipelineConfig = PipelineMother.withSingleStageWithMaterials(PIPELINE_NAME, STAGE_NAME, BuildPlanMother.withBuildPlans(JOB_NAME, OTHER_JOB_NAME));
-        schedulingContext = new DefaultSchedulingContext(DEFAULT_APPROVED_BY);
+        schedulingContext = new DefaultSchedulingContext(APPROVER_AUTOMATICALLY_TRIGGERED);
         savedPipeline = instanceFactory.createPipelineInstance(pipelineConfig, modifySomeFiles(pipelineConfig), schedulingContext, "md5-test", new TimeProvider());
 
         dbHelper.savePipelineWithStagesAndMaterials(savedPipeline);
@@ -124,7 +123,7 @@ public class JobInstanceSqlMapDaoIntegrationTest {
         savedStage = savedPipeline.getFirstStage();
         stageId = savedStage.getId();
         counter = savedPipeline.getFirstStage().getCounter();
-        JobInstance job = savedPipeline.getStages().first().getJobInstances().first();
+        JobInstance job = savedPipeline.getStages().getFirst().getJobInstances().getFirst();
         job.setIgnored(true);
         goCache.clear();
         configHelper.usingCruiseConfigDao(goConfigDao);
@@ -205,7 +204,7 @@ public class JobInstanceSqlMapDaoIntegrationTest {
         Pipeline oldPipeline = createNewPipeline(pipelineConfig);
         Pipeline newPipeline = createNewPipeline(pipelineConfig);
 
-        JobInstance expected = oldPipeline.getFirstStage().getJobInstances().first();
+        JobInstance expected = oldPipeline.getFirstStage().getJobInstances().getFirst();
         JobInstance actual = jobInstanceDao.mostRecentJobWithTransitions(
                 new JobIdentifier(oldPipeline, oldPipeline.getFirstStage(), expected));
         assertThat(actual.getId()).isEqualTo(expected.getId());
@@ -213,7 +212,7 @@ public class JobInstanceSqlMapDaoIntegrationTest {
 
     private Pipeline createNewPipeline(PipelineConfig pipelineConfig) {
         Pipeline pipeline = instanceFactory.createPipelineInstance(pipelineConfig, modifySomeFiles(pipelineConfig), new DefaultSchedulingContext(
-                DEFAULT_APPROVED_BY), "md5-test", new TimeProvider());
+            APPROVER_AUTOMATICALLY_TRIGGERED), "md5-test", new TimeProvider());
         dbHelper.savePipelineWithStagesAndMaterials(pipeline);
         return pipeline;
     }
@@ -258,8 +257,8 @@ public class JobInstanceSqlMapDaoIntegrationTest {
 
     @Test
     public void findByJobIdShouldLoadOriginalJobWhenCopiedForJobRerun() {
-        Stage firstOldStage = savedPipeline.getStages().get(0);
-        Stage newStage = instanceFactory.createStageForRerunOfJobs(firstOldStage, List.of(JOB_NAME), new DefaultSchedulingContext("loser", new Agents()), pipelineConfig.get(0), new TimeProvider(), "md5");
+        Stage firstOldStage = savedPipeline.getStages().getFirst();
+        Stage newStage = instanceFactory.createStageForRerunOfJobs(firstOldStage, List.of(JOB_NAME), new DefaultSchedulingContext("loser", new Agents()), pipelineConfig.getFirst(), new TimeProvider(), "md5");
 
         stageDao.saveWithJobs(savedPipeline, newStage);
         dbHelper.passStage(newStage);
@@ -321,15 +320,9 @@ public class JobInstanceSqlMapDaoIntegrationTest {
         );
     }
 
-    @Test
-    public void shouldLoadOldestBuild() {
-        JobStateTransition jobStateTransition = jobInstanceDao.oldestBuild();
-        assertThat(jobStateTransition.getId()).isEqualTo(stageDao.stageById(stageId).getJobInstances().first().getTransitions().first().getId());
-    }
-
     private JobInstance savedJobForAgent(final String jobName, final String uuid, final boolean runOnAllAgents, final boolean runMultipleInstance) {
         return transactionTemplate.execute(status -> {
-            JobInstance jobInstance = scheduled(jobName, new DateTime().plusMinutes(1).toDate());
+            JobInstance jobInstance = scheduled(jobName, Date.from(Instant.now().plus(1, MINUTES)));
             jobInstance.setRunOnAllAgents(runOnAllAgents);
             jobInstance.setRunMultipleInstance(runMultipleInstance);
             jobInstanceService.save(savedStage.getIdentifier(), stageId, jobInstance);
@@ -372,6 +365,7 @@ public class JobInstanceSqlMapDaoIntegrationTest {
         return instances;
     }
 
+    @SuppressWarnings("SameParameterValue")
     private JobInstance runningJob(final String name) {
         JobInstance jobInstance = JobInstanceMother.buildingInstance("pipeline", "stage", name, "1");
         jobInstanceDao.save(stageId, jobInstance);
@@ -472,8 +466,8 @@ public class JobInstanceSqlMapDaoIntegrationTest {
 
         JobInstances myinstances = jobInstanceDao.latestCompletedJobs(PIPELINE_NAME, STAGE_NAME, newName, 25);
         assertThat(myinstances.size()).isEqualTo(10);
-        assertThat(myinstances.get(0).getName()).isNotEqualTo(oldName);
-        assertThat(myinstances.get(0).getName()).isEqualTo(newName);
+        assertThat(myinstances.getFirst().getName()).isNotEqualTo(oldName);
+        assertThat(myinstances.getFirst().getName()).isEqualTo(newName);
     }
 
     private long createSomeJobs(String jobName, int count) {
@@ -577,58 +571,19 @@ public class JobInstanceSqlMapDaoIntegrationTest {
     }
 
     @Test
-    public void shouldCorrectly_getJobHistoryCount_findJobHistoryPage() {
-        // has a scheduled job
-        long stageId = createSomeJobs(JOB_NAME, 2); // create 4 instances completed, scheduled, completed, scheduled
-        createCopiedJobs(stageId, JOB_NAME, 2);
-
-        JobInstance shouldNotLoadInstance = JobInstanceMother.completed("shouldnotload", JobResult.Passed); // create job with a different name
-        jobInstanceDao.save(stageId, shouldNotLoadInstance);
-
-        JobInstance building = JobInstanceMother.building(JOB_NAME); // create a building job
-        JobInstance saved = jobInstanceDao.save(stageId, building);
-
-        int jobHistoryCount = jobInstanceDao.getJobHistoryCount(PIPELINE_NAME, STAGE_NAME, JOB_NAME);
-        assertThat(jobHistoryCount).isEqualTo(6);
-
-        JobInstances instances = jobInstanceDao.findJobHistoryPage(PIPELINE_NAME, STAGE_NAME, JOB_NAME, 4, 0);
-        assertThat(instances.size()).isEqualTo(4);
-
-        assertThat(instances.get(0).getState()).isEqualTo(JobState.Building);
-        assertThat(instances.get(1).getState()).isEqualTo(JobState.Completed);
-        assertThat(instances.get(2).getState()).isEqualTo(JobState.Scheduled);
-        assertThat(instances.get(3).getState()).isEqualTo(JobState.Completed);
-        assertJobHistoryCorrectness(instances, JOB_NAME);
-
-        instances = jobInstanceDao.findJobHistoryPage(PIPELINE_NAME, STAGE_NAME, JOB_NAME, 4, 4);
-        assertThat(instances.size()).isEqualTo(2);
-
-        assertThat(instances.get(0).getState()).isEqualTo(JobState.Scheduled);
-        assertThat(instances.get(1).getState()).isEqualTo(JobState.Scheduled);
-        assertJobHistoryCorrectness(instances, JOB_NAME);
-    }
-
-    private void assertJobHistoryCorrectness(JobInstances instances, String jobName) {
-        for (JobInstance instance : instances) {
-            assertThat(instance.getIdentifier().getBuildName()).isEqualTo(jobName);
-            assertThat(instance.isCopy()).isFalse();
-        }
-    }
-
-    @Test
     public void shouldLoadRerunOfCounterValueForScheduledBuilds() {
         List<JobPlan> jobPlans = jobInstanceDao.orderedScheduledBuilds();
         assertThat(jobPlans.size()).isEqualTo(2);
-        assertThat(jobPlans.get(0).getIdentifier().getRerunOfCounter()).isNull();
-        assertThat(jobPlans.get(1).getIdentifier().getRerunOfCounter()).isNull();
+        assertThat(jobPlans.getFirst().getIdentifier().getRerunOfCounter()).isNull();
+        assertThat(jobPlans.getLast().getIdentifier().getRerunOfCounter()).isNull();
 
         dbHelper.passStage(savedStage);
-        Stage stage = instanceFactory.createStageForRerunOfJobs(savedStage, List.of(JOB_NAME), schedulingContext, pipelineConfig.getStage(new CaseInsensitiveString(STAGE_NAME)), new TimeProvider(), "md5");
+        Stage stage = instanceFactory.createStageForRerunOfJobs(savedStage, List.of(JOB_NAME), schedulingContext, pipelineConfig.getStage(cis(STAGE_NAME)), new TimeProvider(), "md5");
         dbHelper.saveStage(savedPipeline, stage, stage.getOrderId() + 1);
 
         jobPlans = jobInstanceDao.orderedScheduledBuilds();
         assertThat(jobPlans.size()).isEqualTo(1);
-        assertThat(jobPlans.get(0).getIdentifier().getRerunOfCounter()).isEqualTo(savedStage.getCounter());
+        assertThat(jobPlans.getFirst().getIdentifier().getRerunOfCounter()).isEqualTo(savedStage.getCounter());
     }
 
     @Test
@@ -660,6 +615,7 @@ public class JobInstanceSqlMapDaoIntegrationTest {
         return newest.getId();
     }
 
+    @SuppressWarnings("SameParameterValue")
     private void assertJobInstance(JobPlan actual, long expect, String pipelineName, String stageName) {
         assertThat(actual.getPipelineName()).isEqualTo(pipelineName);
         assertThat(actual.getStageName()).isEqualTo(stageName);
@@ -728,8 +684,11 @@ public class JobInstanceSqlMapDaoIntegrationTest {
         JobInstance loaded = jobInstanceDao.buildByIdWithTransitions(jobInstance.getId());
 
         JobStateTransitions actualTransitions = loaded.getTransitions();
-        assertThat(actualTransitions).hasSize(2);
-        assertThat(actualTransitions.first().getCurrentState()).isEqualTo(JobState.Scheduled);
+        assertThat(actualTransitions)
+            .hasSize(2)
+            .first()
+            .extracting(JobStateTransition::getCurrentState)
+            .isEqualTo(JobState.Scheduled);
     }
 
     @Test
@@ -764,13 +723,12 @@ public class JobInstanceSqlMapDaoIntegrationTest {
     public void shouldNotThrowUpWhenJobAgentMetadataIsNull() {
         JobInstance instance = jobInstanceDao.save(stageId, new JobInstance(JOB_NAME));
         instance.setIdentifier(new JobIdentifier(savedPipeline, savedStage, instance));
-        ElasticProfile elasticProfile = null;
         JobPlan plan = new DefaultJobPlan(new Resources("something"), new ArrayList<>(),
-                instance.getId(), instance.getIdentifier(), null, new EnvironmentVariables(), new EnvironmentVariables(), elasticProfile, null);
+                instance.getId(), instance.getIdentifier(), null, new EnvironmentVariables(), new EnvironmentVariables(), null, null);
         jobInstanceDao.save(instance.getId(), plan);
 
         JobPlan retrieved = jobInstanceDao.loadPlan(plan.getJobId());
-        assertThat(retrieved.getElasticProfile()).isEqualTo(elasticProfile);
+        assertThat(retrieved.getElasticProfile()).isNull();
     }
 
     @Test
@@ -794,6 +752,7 @@ public class JobInstanceSqlMapDaoIntegrationTest {
         assertThat(context.getProperty("TRIGGER_VAR")).isEqualTo("trigger val");
     }
 
+    @SuppressWarnings("SameParameterValue")
     private EnvironmentVariables environmentVariables(String name, String value) {
         return new EnvironmentVariables(List.of(new EnvironmentVariable(name, value, false)));
     }
@@ -848,7 +807,7 @@ public class JobInstanceSqlMapDaoIntegrationTest {
         final List<JobPlan> plans = findPlans(planList, projectOne);
 
         assertThat(plans.size()).isEqualTo(1);
-        assertThat(plans.get(0).getResources()).isEqualTo(resources);
+        assertThat(plans.getFirst().getResources()).isEqualTo(resources);
     }
 
     @Test
@@ -897,8 +856,8 @@ public class JobInstanceSqlMapDaoIntegrationTest {
     private JobPlan findPlan(List<JobPlan> list, String jobName) {
         final List<JobPlan> planList = findPlans(list, jobName);
 
-        if (planList.size() > 0) {
-            return planList.get(0);
+        if (!planList.isEmpty()) {
+            return planList.getFirst();
         }
 
         return null;
@@ -947,7 +906,7 @@ public class JobInstanceSqlMapDaoIntegrationTest {
 
         JobInstances list = jobInstanceDao.findHungJobs(List.of("uuid1", "uuid2"));
         assertThat(list.size()).isEqualTo(1);
-        JobInstance reloaded = list.get(0);
+        JobInstance reloaded = list.getFirst();
         assertThat(reloaded.getId()).isEqualTo(buildingJob3.getId());
         assertThat(reloaded.getIdentifier()).isEqualTo(jobIdentifier(buildingJob3));
     }
@@ -984,7 +943,7 @@ public class JobInstanceSqlMapDaoIntegrationTest {
 
         List<JobInstance> jobInstances = jobInstanceDao.completedJobsOnAgent(agentUuid, JobInstanceService.JobHistoryColumns.stage, SortOrder.ASC, 0, 10);
         assertThat(jobInstances.size()).isEqualTo(2);
-        JobInstance actual = jobInstances.get(0);
+        JobInstance actual = jobInstances.getFirst();
         assertThat(actual.getName()).isEqualTo(completedJob.getName());
         completedJob.setIdentifier(actual.getIdentifier());
         assertThat(actual).isEqualTo(completedJob);
@@ -1021,22 +980,6 @@ public class JobInstanceSqlMapDaoIntegrationTest {
         assertThat(jobInstanceDao.totalCompletedJobsOnAgent(agentUuid)).isEqualTo(3);
     }
 
-    @Test
-    public void shouldGetJobInstanceBasedOnParametersProvided() {
-        long stageId = createSomeJobs(JOB_NAME, 1); // create 2 instances completed, scheduled
-        JobInstance jobInstance = jobInstanceDao.findJobInstance(PIPELINE_NAME, STAGE_NAME, JOB_NAME, 1, 1);
-
-        assertThat(jobInstance.isNull()).isFalse();
-    }
-
-    @Test
-    public void shouldReturnNullJobInstanceWhenTheSaidCountersAreNotYetRun() {
-        long stageId = createSomeJobs(JOB_NAME, 1); // create 2 instances completed, scheduled
-        JobInstance jobInstance = jobInstanceDao.findJobInstance(PIPELINE_NAME, STAGE_NAME, JOB_NAME, 10, 10);
-
-        assertThat(jobInstance.isNull()).isTrue();
-    }
-
     private List<ArtifactPlan> artifactPlans() {
         List<ArtifactPlan> artifactPlans = new ArrayList<>();
         artifactPlans.add(new ArtifactPlan(ArtifactPlanType.file, "src", "dest"));
@@ -1062,8 +1005,8 @@ public class JobInstanceSqlMapDaoIntegrationTest {
 
         PipelineRunIdInfo runIdInfo = jobInstanceDao.getOldestAndLatestJobInstanceId(pipelineName, STAGE_NAME, JOB_NAME);
 
-        assertThat(runIdInfo.getLatestRunId()).isEqualTo(jobInstances.last().getId());
-        assertThat(runIdInfo.getOldestRunId()).isEqualTo(jobInstances.first().getId());
+        assertThat(runIdInfo.getLatestRunId()).isEqualTo(jobInstances.getLast().getId());
+        assertThat(runIdInfo.getOldestRunId()).isEqualTo(jobInstances.getFirst().getId());
     }
 
     @Test
@@ -1105,8 +1048,8 @@ public class JobInstanceSqlMapDaoIntegrationTest {
 
         JobInstances history = jobInstanceDao.findDetailedJobHistoryViaCursor(pipelineName, STAGE_NAME, JOB_NAME, FeedModifier.After, jobInstances.get(2).getId(), 3);
 
-        Assertions.assertThat(history).hasSize(2);
-        Assertions.assertThat(history.stream().map(JobInstance::getId).collect(toList()))
+        assertThat(history).hasSize(2);
+        assertThat(history.stream().map(JobInstance::getId).collect(toList()))
                 .containsExactly(jobInstances.get(1).getId(), jobInstances.get(0).getId());
     }
 
@@ -1127,8 +1070,8 @@ public class JobInstanceSqlMapDaoIntegrationTest {
 
         JobInstances history = jobInstanceDao.findDetailedJobHistoryViaCursor(pipelineName, STAGE_NAME, JOB_NAME, FeedModifier.Before, jobInstances.get(2).getId(), 3);
 
-        Assertions.assertThat(history).hasSize(2);
-        Assertions.assertThat(history.stream().map(JobInstance::getId).collect(toList()))
+        assertThat(history).hasSize(2);
+        assertThat(history.stream().map(JobInstance::getId).collect(toList()))
                 .containsExactly(jobInstances.get(0).getId(), jobInstances.get(1).getId());
     }
 }

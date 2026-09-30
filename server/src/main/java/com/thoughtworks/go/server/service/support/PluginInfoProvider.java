@@ -38,11 +38,11 @@ public class PluginInfoProvider implements ServerInfoProvider {
 
     @Override
     public double priority() {
-        return 14.0;
+        return 5.5;
     }
 
     @Override
-    public Map<String, Object> asJson() {
+    public Map<String, Object> asJsonCompatibleMap() {
         List<Map<String, Object>> plugins = new ArrayList<>();
         List<GoPluginDescriptor> goPluginDescriptors = pluginManager.plugins();
         for (GoPluginDescriptor goPluginDescriptor : goPluginDescriptors) {

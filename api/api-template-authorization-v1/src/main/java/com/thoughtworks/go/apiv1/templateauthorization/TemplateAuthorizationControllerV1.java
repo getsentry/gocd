@@ -21,17 +21,17 @@ import com.thoughtworks.go.api.ApiVersion;
 import com.thoughtworks.go.api.CrudController;
 import com.thoughtworks.go.api.base.OutputWriter;
 import com.thoughtworks.go.api.representers.JsonReader;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.GsonTransformer;
 import com.thoughtworks.go.api.util.MessageJson;
 import com.thoughtworks.go.apiv1.templateauthorization.representers.AuthorizationRepresenter;
 import com.thoughtworks.go.config.Authorization;
 import com.thoughtworks.go.config.PipelineTemplateConfig;
 import com.thoughtworks.go.config.exceptions.EntityType;
-import com.thoughtworks.go.config.exceptions.NotImplementedException;
 import com.thoughtworks.go.server.service.EntityHashingService;
 import com.thoughtworks.go.server.service.TemplateConfigService;
 import com.thoughtworks.go.server.service.result.HttpLocalizedOperationResult;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,16 +47,16 @@ import static spark.Spark.*;
 
 @Component
 public class TemplateAuthorizationControllerV1 extends ApiController implements SparkSpringController, CrudController<PipelineTemplateConfig> {
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
     private final EntityHashingService entityHashingService;
     private TemplateConfigService templateConfigService;
 
     @Autowired
-    public TemplateAuthorizationControllerV1(ApiAuthenticationHelper apiAuthenticationHelper,
+    public TemplateAuthorizationControllerV1(ApiAuthorizationHelper apiAuthorizationHelper,
                                              EntityHashingService entityHashingService,
                                              TemplateConfigService templateConfigService) {
         super(ApiVersion.v1);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.entityHashingService = entityHashingService;
         this.templateConfigService = templateConfigService;
     }
@@ -67,13 +67,13 @@ public class TemplateAuthorizationControllerV1 extends ApiController implements 
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerBasePath(), () -> {
             before("", mimeType, this::setContentType);
             before("/*", mimeType, this::setContentType);
 
-            before("", this.mimeType, this.apiAuthenticationHelper::checkAdminUserAnd403);
-            before("/*", this.mimeType, this.apiAuthenticationHelper::checkAdminUserAnd403);
+            before("", this.mimeType, this.apiAuthorizationHelper::checkAdminUserAnd403);
+            before("/*", this.mimeType, this.apiAuthorizationHelper::checkAdminUserAnd403);
 
             get(Routes.PipelineTemplateConfig.AUTHORIZATION, mimeType, this::show);
             put(Routes.PipelineTemplateConfig.AUTHORIZATION, mimeType, this::update);
@@ -123,7 +123,7 @@ public class TemplateAuthorizationControllerV1 extends ApiController implements 
 
     @Override
     public PipelineTemplateConfig buildEntityFromRequestBody(Request req) {
-        throw new NotImplementedException("Not Implemented");
+        throw new UnsupportedOperationException("Not Implemented");
     }
 
     public Authorization buildAuthorizationFromRequestBody(Request req) {

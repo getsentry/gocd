@@ -15,18 +15,20 @@
  */
 package com.thoughtworks.go.util;
 
-import org.joda.time.DateTime;
+import org.jetbrains.annotations.NotNull;
 
 import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Date;
 
 public interface Clock {
-    Date currentTime();
+    Instant currentTime();
 
-    DateTime currentDateTime();
+    Date currentUtilDate();
 
-    Timestamp currentTimestamp();
+    Timestamp currentSqlTimestamp();
 
     LocalDateTime currentLocalDateTime();
 
@@ -36,7 +38,13 @@ public interface Clock {
 
     void sleepForMillis(long millis) throws InterruptedException;
 
-    DateTime timeoutTime(Timeout timeout);
+    Instant timeoutTime(Duration timeout);
 
-    DateTime timeoutTime(long milliSeconds);
+    static <T extends Comparable<? super T>> T min(@NotNull T a, @NotNull T b) {
+        return a.compareTo(b) <= 0 ? a : b;
+    }
+
+    static <T extends Comparable<? super T>> T max(@NotNull T a, @NotNull T b) {
+        return a.compareTo(b) >= 0 ? a : b;
+    }
 }

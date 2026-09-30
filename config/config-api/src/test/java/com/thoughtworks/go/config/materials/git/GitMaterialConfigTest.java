@@ -27,14 +27,16 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.helper.MaterialConfigsMother.git;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class GitMaterialConfigTest {
     @Test
     void shouldBePasswordAwareMaterial() {
-        assertTrue(PasswordAwareMaterial.class.isAssignableFrom(GitMaterialConfig.class));
+        assertThat(PasswordAwareMaterial.class).isAssignableFrom(GitMaterialConfig.class);
     }
 
     @Test
@@ -55,7 +57,7 @@ class GitMaterialConfigTest {
         assertEquals("url", gitMaterialConfig.getUrl());
         assertEquals("folder", gitMaterialConfig.getFolder());
         assertEquals("some-branch", gitMaterialConfig.getBranch());
-        assertEquals(new CaseInsensitiveString("material-name"), gitMaterialConfig.getName());
+        assertEquals(cis("material-name"), gitMaterialConfig.getName());
         assertFalse(gitMaterialConfig.isAutoUpdate());
         assertTrue(gitMaterialConfig.isShallowClone());
         assertEquals(new Filter(new IgnoredFiles("/root"), new IgnoredFiles("/**/*.help")), gitMaterialConfig.filter());
@@ -171,51 +173,51 @@ class GitMaterialConfigTest {
 
         @Test
         void rejectsBranchWithWildcard() {
-            assertEquals("Branch names may not contain '*'", validating(git("/foo", "branch-*")).
-                    errors().on(GitMaterialConfig.BRANCH));
+            assertEquals("Branch names may not contain '*'",
+                validating(git("/foo", "branch-*")).errors().firstErrorOn(GitMaterialConfig.BRANCH));
         }
 
         @Test
         void rejectsMalformedRefSpec() {
             assertEquals("Refspec is missing a source ref",
-                    String.join(";", validating(git("/foo", ":a")).errors().
-                            getAllOn(GitMaterialConfig.BRANCH)));
+                    String.join(";", validating(git("/foo", ":a")).errors()
+                        .getAllOn(GitMaterialConfig.BRANCH)));
 
             assertEquals("Refspec is missing a source ref",
-                    String.join(";", validating(git("/foo", "   :b")).errors().
-                            getAllOn(GitMaterialConfig.BRANCH)));
+                    String.join(";", validating(git("/foo", "   :b")).errors()
+                        .getAllOn(GitMaterialConfig.BRANCH)));
 
             assertEquals("Refspec is missing a destination ref",
-                    String.join(";", validating(git("/foo", "refs/foo: ")).errors().
-                            getAllOn(GitMaterialConfig.BRANCH)));
+                    String.join(";", validating(git("/foo", "refs/foo: ")).errors()
+                        .getAllOn(GitMaterialConfig.BRANCH)));
 
             assertEquals("Refspec is missing a destination ref",
-                    String.join(";", validating(git("/foo", "refs/bar:")).errors().
-                            getAllOn(GitMaterialConfig.BRANCH)));
+                    String.join(";", validating(git("/foo", "refs/bar:")).errors()
+                        .getAllOn(GitMaterialConfig.BRANCH)));
 
             assertEquals("Refspec is missing a source ref;Refspec is missing a destination ref",
-                    String.join(";", validating(git("/foo", ":")).errors().
-                            getAllOn(GitMaterialConfig.BRANCH)));
+                    String.join(";", validating(git("/foo", ":")).errors()
+                        .getAllOn(GitMaterialConfig.BRANCH)));
 
             assertEquals("Refspec is missing a source ref;Refspec is missing a destination ref",
-                    String.join(";", validating(git("/foo", " : ")).errors().
-                            getAllOn(GitMaterialConfig.BRANCH)));
+                    String.join(";", validating(git("/foo", " : ")).errors()
+                        .getAllOn(GitMaterialConfig.BRANCH)));
 
             assertEquals("Refspec source must be an absolute ref (must start with `refs/`)",
-                    String.join(";", validating(git("/foo", "a:b")).errors().
-                            getAllOn(GitMaterialConfig.BRANCH)));
+                    String.join(";", validating(git("/foo", "a:b")).errors()
+                        .getAllOn(GitMaterialConfig.BRANCH)));
 
             assertEquals("Refspecs may not contain wildcards; source and destination refs must be exact",
-                    String.join(";", validating(git("/foo", "refs/heads/*:my-branch")).errors().
-                            getAllOn(GitMaterialConfig.BRANCH)));
+                    String.join(";", validating(git("/foo", "refs/heads/*:my-branch")).errors()
+                        .getAllOn(GitMaterialConfig.BRANCH)));
 
             assertEquals("Refspecs may not contain wildcards; source and destination refs must be exact",
-                    String.join(";", validating(git("/foo", "refs/heads/foo:branches/*")).errors().
-                            getAllOn(GitMaterialConfig.BRANCH)));
+                    String.join(";", validating(git("/foo", "refs/heads/foo:branches/*")).errors()
+                        .getAllOn(GitMaterialConfig.BRANCH)));
 
             assertEquals("Refspecs may not contain wildcards; source and destination refs must be exact",
-                    String.join(";", validating(git("/foo", "refs/heads/*:branches/*")).errors().
-                            getAllOn(GitMaterialConfig.BRANCH)));
+                    String.join(";", validating(git("/foo", "refs/heads/*:branches/*")).errors()
+                        .getAllOn(GitMaterialConfig.BRANCH)));
         }
 
         @Test
@@ -226,7 +228,7 @@ class GitMaterialConfigTest {
 
         @Test
         void shouldEnsureUrlIsNotBlank() {
-            assertEquals("URL cannot be blank", validating(git("")).errors().on(GitMaterialConfig.URL));
+            assertEquals("URL cannot be blank", validating(git("")).errors().firstErrorOn(GitMaterialConfig.URL));
         }
 
         @Test
@@ -234,7 +236,8 @@ class GitMaterialConfigTest {
             GitMaterialConfig gitMaterialConfig = git("http://bob:pass@example.com");
             gitMaterialConfig.setUserName("user");
 
-            assertEquals("Ambiguous credentials, must be provided either in URL or as attributes.", validating(gitMaterialConfig).errors().on(GitMaterialConfig.URL));
+            assertEquals("Ambiguous credentials, must be provided either in URL or as attributes.",
+                validating(gitMaterialConfig).errors().firstErrorOn(GitMaterialConfig.URL));
         }
 
         @Test
@@ -242,7 +245,8 @@ class GitMaterialConfigTest {
             GitMaterialConfig gitMaterialConfig = git("http://bob:pass@example.com");
             gitMaterialConfig.setPassword("pass");
 
-            assertEquals("Ambiguous credentials, must be provided either in URL or as attributes.", validating(gitMaterialConfig).errors().on(GitMaterialConfig.URL));
+            assertEquals("Ambiguous credentials, must be provided either in URL or as attributes.",
+                validating(gitMaterialConfig).errors().firstErrorOn(GitMaterialConfig.URL));
         }
 
         @Test
@@ -306,7 +310,7 @@ class GitMaterialConfigTest {
             assertFalse(validationResult);
             assertEquals("Encrypted password value for GitMaterial with url 'http://example.com' is " +
                             "invalid. This usually happens when the cipher text is modified to have an invalid value.",
-                    gitMaterialConfig.errors().on("encryptedPassword"));
+                    gitMaterialConfig.errors().firstErrorOn("encryptedPassword"));
         }
     }
 
@@ -322,7 +326,7 @@ class GitMaterialConfigTest {
             material_2.setUserName("alice");
             material_2.setSubmoduleFolder("/var/lib/git");
 
-            assertTrue(material_1.equals(material_2));
+            assertEquals(material_1, material_2);
         }
     }
 

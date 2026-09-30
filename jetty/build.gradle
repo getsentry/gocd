@@ -17,31 +17,27 @@
 description = 'GoCD Jetty Bootstrapper'
 
 dependencies {
-  implementation project(path: ':app-server', configuration: 'runtimeElements')
-  implementation project(path: ':config:config-server', configuration: 'runtimeElements')
-  implementation project(path: ':common', configuration: 'runtimeElements')
-  implementation project(path: ':rack_hack', configuration: 'runtimeElements')
-  implementation project.deps.slf4jApi
+  implementation project(':base')
+  implementation project(':app-server')
+  implementation rootProject.deps.slf4jApi
 
-  compileOnly project.deps.jetty
-  compileOnly project.deps.jettyJmx
-  compileOnly project.deps.jettyServlets
-  compileOnly project.deps.jettyUtil
-  compileOnly project.deps.jettyDeploy
-  compileOnly(project.deps.jettyWebsocket) {
-    exclude(module: 'jetty-annotations')
-  }
+  compileOnly rootProject.deps.jetty
+  compileOnly rootProject.deps.jettyJmx
+  compileOnly rootProject.deps.jettyServlets
+  compileOnly rootProject.deps.jettyUtil
+  compileOnly rootProject.deps.jettyDeploy
+  compileOnly rootProject.deps.jettyWebsocket
 
-  testImplementation project.deps.jettyDeploy
-  testImplementation project.deps.jettyJmx
-  testImplementation(project.deps.jettyWebsocket) {
-    exclude(module: 'jetty-annotations')
-  }
-  testImplementation project(path: ':test:test-utils', configuration: 'runtimeElements')
-  testImplementation project.deps.junit5Api
-  testImplementation project.deps.junit5Params
-  testImplementation project.deps.mockitoCore
-  testImplementation project.deps.mockitoJunit5
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.jettyDeploy
+  testImplementation rootProject.deps.jettyJmx
+  testImplementation rootProject.deps.jettyWebsocket
+  testImplementation(testFixtures(project(':test:test-utils')))
+  testImplementation rootProject.deps.junit5Api
+  testImplementation rootProject.deps.junit5Params
+  testImplementation rootProject.deps.mockitoCore
+  testImplementation rootProject.deps.mockitoJunit5
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
+  testImplementation rootProject.deps.assertJ
+  testImplementation rootProject.deps.systemStubs
 }

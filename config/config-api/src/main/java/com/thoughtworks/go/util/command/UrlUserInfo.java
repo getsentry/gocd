@@ -21,7 +21,8 @@ import java.net.URISyntaxException;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 public class UrlUserInfo {
-    private static final String MASKED_VALUE = "******";
+    static final String MASKED_VALUE = "******";
+
     private String username;
     private String password;
 
@@ -33,7 +34,7 @@ public class UrlUserInfo {
             final String[] parts = colonSeparatedCredentials.split(":", 2);
             this.username = parts[0];
             this.password = parts.length == 2 ? parts[1] : null;
-            this.possiblyToken = (parts.length == 1);
+            this.possiblyToken = parts.length == 1;
         }
     }
 
@@ -43,11 +44,19 @@ public class UrlUserInfo {
     }
 
     public static boolean hasUserInfo(String url) {
-        try {
-            return isNotBlank(new URI(url).getUserInfo());
-        } catch (URISyntaxException e) {
+        if (urlCannotHaveUserInfo(url)) {
             return false;
         }
+
+        try {
+            return isNotBlank(new URI(url).getUserInfo());
+        } catch (URISyntaxException ignore) {
+            return false;
+        }
+    }
+
+    static boolean urlCannotHaveUserInfo(String url) {
+        return url == null || !url.contains("@");
     }
 
     public String getUsername() {
@@ -56,6 +65,10 @@ public class UrlUserInfo {
 
     public String getPassword() {
         return password;
+    }
+
+    public boolean isPossiblyToken() {
+        return possiblyToken;
     }
 
     public String maskedUserInfo() {

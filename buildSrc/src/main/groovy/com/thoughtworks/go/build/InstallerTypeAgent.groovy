@@ -17,6 +17,7 @@
 package com.thoughtworks.go.build
 
 class InstallerTypeAgent implements InstallerType {
+  static instance = new InstallerTypeAgent()
 
   @Override
   String getBaseName() {
@@ -36,30 +37,39 @@ class InstallerTypeAgent implements InstallerType {
   @Override
   Map<String, String> getAdditionalEnvVars() {
     [
-      AGENT_STARTUP_ARGS: '-Xms128m -Xmx256m'
+      AGENT_STARTUP_ARGS: (agentStartupJvmArgs + jvmInternalAccessArgs).join(' ')
     ]
   }
 
   @Override
   Map<String, String> getAdditionalLinuxEnvVars() {
     [
-      AGENT_STARTUP_ARGS: '-Xms128m -Xmx256m -Dgocd.agent.log.dir=/var/log/go-agent'
+      AGENT_STARTUP_ARGS: (agentStartupJvmArgs + jvmInternalAccessArgs + linuxJvmArgs).join(' ')
     ]
   }
 
-  // Note that these apply to the launcher, but not necessarily the agent itself
-  @Override
-  List<String> getJvmModuleOpensArgs() {
-    []
+  @SuppressWarnings('GrMethodMayBeStatic')
+  List<String> getAgentStartupJvmArgs() {
+    [ '-Xms128m', '-Xmx256m' ]
   }
 
-  // Note that these apply to the launcher, but not necessarily the agent itself
+  // Note that these apply only to the agent start-up, but not the bootstrapper or launcher
+  @Override
+  List<String> getJvmInternalAccessArgs() {
+    [
+      '--enable-native-access=ALL-UNNAMED',    // JDK 25+: Needed by JNA used by OSHI library at least
+      '--sun-misc-unsafe-memory-access=allow', // JDK 25+: sun.misc.Unsafe needed by Felix SecureAction and probably others
+      '-XX:+IgnoreUnrecognizedVMOptions',      // JDK <25: Allow use of --sun-misc-unsafe-memory-access on older JVMs without errors
+    ]
+  }
+
+  // Note that these apply to the bootstrapper/launcher, but not necessarily the agent itself (see AGENT_STARTUP_ARGS for that)
   @Override
   List<String> getJvmArgs() {
     []
   }
 
-  // Note that these apply to the launcher, but not the agent itself
+  // Note that these apply to both the launcher/bootstrapper and the agent itself
   @Override
   List<String> getLinuxJvmArgs() {
     [
@@ -73,23 +83,23 @@ class InstallerTypeAgent implements InstallerType {
   }
 
   @Override
-  Map<String, Object> getDirectories() {
+  Map<String, Permission> getDirectories() {
     [
-      '/usr/share/doc/go-agent'           : [mode: 0755, owner: 'root', group: 'root', ownedByPackage: true],
-      '/usr/share/go-agent/wrapper-config': [mode: 0750, owner: 'root', group: 'go', ownedByPackage: true],
-      '/var/lib/go-agent'                 : [mode: 0750, owner: 'go', group: 'go', ownedByPackage: true],
-      '/var/lib/go-agent/run'             : [mode: 0750, owner: 'go', group: 'go', ownedByPackage: true],
-      '/var/log/go-agent'                 : [mode: 0750, owner: 'go', group: 'go', ownedByPackage: true],
-      '/var/run/go-agent'                 : [mode: 0750, owner: 'go', group: 'go', ownedByPackage: true],
-      '/var/go'                           : [mode: 0750, owner: 'go', group: 'go', ownedByPackage: true],
+      '/usr/share/doc/go-agent'           : perm(mode: 0755, owner: 'root', group: 'root'),
+      '/usr/share/go-agent/wrapper-config': perm(mode: 0750, owner: 'root', group: 'go'),
+      '/var/lib/go-agent'                 : perm(mode: 0750, owner: 'go',   group: 'go'),
+      '/var/lib/go-agent/run'             : perm(mode: 0750, owner: 'go',   group: 'go'),
+      '/var/log/go-agent'                 : perm(mode: 0750, owner: 'go',   group: 'go'),
+      '/var/run/go-agent'                 : perm(mode: 0750, owner: 'go',   group: 'go'),
+      '/var/go'                           : perm(mode: 0750, owner: 'go',   group: 'go'),
     ]
   }
 
   @Override
-  Map<String, Object> getConfigFiles() {
+  Map<String, Permission> getConfigFiles() {
     [
-      '/usr/share/go-agent/wrapper-config/wrapper.conf'           : [mode: 0640, owner: 'root', group: 'go', ownedByPackage: true, confFile: true],
-      '/usr/share/go-agent/wrapper-config/wrapper-properties.conf': [mode: 0640, owner: 'root', group: 'go', ownedByPackage: true, confFile: true],
+      '/usr/share/go-agent/wrapper-config/wrapper.conf'           : perm(mode: 0640, owner: 'root', group: 'go'),
+      '/usr/share/go-agent/wrapper-config/wrapper-properties.conf': perm(mode: 0640, owner: 'root', group: 'go'),
     ]
   }
 

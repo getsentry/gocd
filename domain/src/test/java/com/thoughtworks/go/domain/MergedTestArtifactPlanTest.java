@@ -16,7 +16,6 @@
 package com.thoughtworks.go.domain;
 
 import com.thoughtworks.go.work.GoPublisher;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -54,8 +54,8 @@ public class MergedTestArtifactPlanTest {
 
     @Test
     public void shouldNotThrowExceptionIfUserSpecifiesNonFolderFileThatExistsAsSrc() throws Exception {
-        Path testFile = testFolder.resolve("tempFolder/nonFolderFileThatExists");
-        FileUtils.writeStringToFile(testFile.toFile(), "", StandardCharsets.UTF_8);
+        Path testFile = Files.createDirectories(testFolder.resolve("tempFolder")).resolve("nonFolderFileThatExists");
+        Files.writeString(testFile, "", StandardCharsets.UTF_8);
         final ArtifactPlan compositeTestArtifact = new MergedTestArtifactPlan(
             new ArtifactPlan(ArtifactPlanType.unit, testFile.toString(), "testoutput")
         );
@@ -78,6 +78,6 @@ public class MergedTestArtifactPlanTest {
 
         verify(mockArtifactPublisher).upload(first, "logs/report");
         verify(mockArtifactPublisher).upload(second, "logs/test/a/b");
-        verify(mockArtifactPublisher, times(2)).upload(any(File.class), eq("testoutput"));
+        verify(mockArtifactPublisher, times(2)).upload(any(), eq("testoutput"));
     }
 }

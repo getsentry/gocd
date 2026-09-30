@@ -35,8 +35,10 @@ import com.thoughtworks.go.util.json.JsonHelper;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
+import static com.thoughtworks.go.config.CaseInsensitiveString.cis;
 import static com.thoughtworks.go.util.command.EnvironmentVariableContext.escapeEnvironmentVariable;
 import static java.lang.String.format;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
@@ -143,13 +145,13 @@ public class PackageMaterial extends AbstractMaterial implements SecretParamAwar
 
     @Override
     public MaterialInstance createMaterialInstance() {
-        return new PackageMaterialInstance(JsonHelper.toJsonString(this), UUID.randomUUID().toString());
+        return new PackageMaterialInstance(JsonHelper.toJsonExposeOnly(this), UUID.randomUUID().toString());
     }
 
     @Override
     public CaseInsensitiveString getName() {
-        if (((name == null) || isEmpty(name.toString())) && packageDefinition != null) {
-            return new CaseInsensitiveString(getPackageDefinition().getRepository().getName() + "_" + packageDefinition.getName());
+        if ((name == null || isEmpty(name.toString())) && packageDefinition != null) {
+            return cis(getPackageDefinition().getRepository().getName() + "_" + packageDefinition.getName());
         } else {
             return name;
         }
@@ -192,7 +194,7 @@ public class PackageMaterial extends AbstractMaterial implements SecretParamAwar
 
     @Override
     public String getDisplayName() {
-        return ((name == null || name.isBlank()) && getPackageDefinition().getRepository().getName() == null) ? getUriForDisplay() : getName().toString();
+        return (name == null || name.isEmpty()) && getPackageDefinition().getRepository().getName() == null ? getUriForDisplay() : getName().toString();
     }
 
     @Override
@@ -237,7 +239,7 @@ public class PackageMaterial extends AbstractMaterial implements SecretParamAwar
         if (modifications.isEmpty()) {
             return new NullRevision();
         }
-        Modification modification = modifications.get(0);
+        Modification modification = modifications.getFirst();
         return new PackageMaterialRevision(modification.getRevision(), modification.getModifiedTime());
     }
 
@@ -268,8 +270,7 @@ public class PackageMaterial extends AbstractMaterial implements SecretParamAwar
         }
 
         PackageMaterial that = (PackageMaterial) o;
-
-        return this.getFingerprint() != null ? this.getFingerprint().equals(that.getFingerprint()) : that.getFingerprint() == null;
+        return Objects.equals(this.getFingerprint(), that.getFingerprint());
     }
 
     @Override

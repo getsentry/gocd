@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.config.update;
 
-
 import com.thoughtworks.go.config.CruiseConfig;
 import com.thoughtworks.go.config.PipelineConfig;
 import com.thoughtworks.go.config.exceptions.EntityType;
@@ -30,8 +29,8 @@ import java.util.List;
 
 public class UpdateSCMConfigCommand extends SCMConfigCommand {
 
-    private String digest;
-    private EntityHashingService entityHashingService;
+    private final String digest;
+    private final EntityHashingService entityHashingService;
 
     public UpdateSCMConfigCommand(SCM globalScmConfig, PluggableScmService pluggableScmService, GoConfigService goConfigService,
                                   Username currentUser, LocalizedOperationResult result, String digest,

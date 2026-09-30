@@ -29,18 +29,21 @@ import com.thoughtworks.go.domain.config.Configuration;
 import com.thoughtworks.go.domain.config.ConfigurationProperty;
 import com.thoughtworks.go.domain.config.ConfigurationValue;
 import com.thoughtworks.go.domain.config.PluginConfiguration;
+import com.thoughtworks.go.plugin.access.packagematerial.PackageConfiguration;
 import com.thoughtworks.go.plugin.access.scm.SCMConfiguration;
 import com.thoughtworks.go.plugin.access.scm.SCMConfigurations;
 import com.thoughtworks.go.plugin.access.scm.SCMMetadataStore;
 import com.thoughtworks.go.plugin.api.config.Property;
-import com.thoughtworks.go.util.CachedDigestUtils;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.codec.digest.DigestUtils;
+import org.jetbrains.annotations.Nullable;
 
 import javax.annotation.PostConstruct;
 import java.io.Serializable;
 import java.util.*;
+import java.util.stream.Stream;
 
 import static java.lang.String.format;
+import static java.util.stream.Collectors.joining;
 import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 
@@ -93,11 +96,6 @@ public class SCM implements Serializable, Validatable, ConfigOriginTraceable, Se
 
     public String getId() {
         return id;
-    }
-
-    //used in erb as it cannot access id attribute as it treats 'id' as keyword
-    public String getSCMId() {
-        return getId();
     }
 
     public void setId(String id) {
@@ -168,20 +166,14 @@ public class SCM implements Serializable, Validatable, ConfigOriginTraceable, Se
 
         SCM that = (SCM) o;
 
-        if (id != null ? !id.equals(that.id) : that.id != null) {
-            return false;
-        }
-        if (name != null ? !name.equals(that.name) : that.name != null) {
-            return false;
-        }
-        if (pluginConfiguration != null ? !pluginConfiguration.equals(that.pluginConfiguration) : that.pluginConfiguration != null) {
-            return false;
-        }
-        if (configuration != null ? !configuration.equals(that.configuration) : that.configuration != null) {
-            return false;
-        }
+        return Objects.equals(id, that.id) &&
+            Objects.equals(name, that.name) &&
+            Objects.equals(pluginConfiguration, that.pluginConfiguration) &&
+            Objects.equals(configuration, that.configuration);
+    }
 
-        return true;
+    boolean equalsByIdOrFingerprint(SCM o) {
+        return getId().equals(o.getId()) || getFingerprint().equals(o.getFingerprint());
     }
 
     @Override
@@ -220,7 +212,7 @@ public class SCM implements Serializable, Validatable, ConfigOriginTraceable, Se
             Map<String, String> mapValue = new HashMap<>();
             mapValue.put(VALUE_KEY, property.getValue());
             if (!property.errors().isEmpty()) {
-                mapValue.put(ERRORS_KEY, StringUtils.join(property.errors().getAll(), ", "));
+                mapValue.put(ERRORS_KEY, property.errors().asString());
             }
             configMap.put(property.getConfigKeyName(), mapValue);
         }
@@ -289,31 +281,28 @@ public class SCM implements Serializable, Validatable, ConfigOriginTraceable, Se
     }
 
     public String getFingerprint() {
-        List<String> list = new ArrayList<>();
-        list.add(format("%s=%s", "plugin-id", getPluginId()));
-        handleSCMProperties(list);
-        String fingerprint = StringUtils.join(list, AbstractMaterialConfig.FINGERPRINT_DELIMITER);
         // CAREFUL! the hash algorithm has to be same as the one used in 47_create_new_materials.sql
-        return CachedDigestUtils.sha256Hex(fingerprint);
+        return DigestUtils.sha256Hex(
+            Stream.of(
+                    Stream.of(format("%s=%s", "plugin-id", getPluginId())),
+                    fingerprintsFrom(SCMMetadataStore.getInstance().getConfigurationMetadata(getPluginId()), configuration)
+                ).flatMap(s -> s)
+                .collect(joining(AbstractMaterialConfig.FINGERPRINT_DELIMITER))
+        );
     }
 
-    private void handleSCMProperties(List<String> list) {
-        SCMConfigurations metadata = SCMMetadataStore.getInstance().getConfigurationMetadata(getPluginId());
-        for (ConfigurationProperty configurationProperty : configuration) {
-            handleProperty(list, metadata, configurationProperty);
-        }
-    }
+    private Stream<String> fingerprintsFrom(@Nullable SCMConfigurations metadata, Collection<? extends ConfigurationProperty> configurationProperties) {
+        return configurationProperties.stream()
+            .flatMap(p -> {
 
-    private void handleProperty(List<String> list, SCMConfigurations metadata, ConfigurationProperty configurationProperty) {
-        SCMConfiguration scmConfiguration = null;
+                SCMConfiguration configuration = metadata == null ? null : metadata.get(p.getConfigurationKey().getName());
 
-        if (metadata != null) {
-            scmConfiguration = metadata.get(configurationProperty.getConfigurationKey().getName());
-        }
+                if (configuration == null || configuration.getOption(PackageConfiguration.PART_OF_IDENTITY)) {
+                    return Stream.of(p.forFingerprint());
+                }
 
-        if (scmConfiguration == null || scmConfiguration.getOption(SCMConfiguration.PART_OF_IDENTITY)) {
-            list.add(configurationProperty.forFingerprint());
-        }
+                return Stream.empty();
+            });
     }
 
     public boolean isNew() {
@@ -330,13 +319,9 @@ public class SCM implements Serializable, Validatable, ConfigOriginTraceable, Se
 
     @PostConstruct
     public void ensureIdExists() {
-        if (isBlank(getId())) {
+        if (getId() == null || getId().isBlank()) {
             setId(UUID.randomUUID().toString());
         }
-    }
-
-    public String getSCMType() {
-        return "pluggable_material_" + getPluginConfiguration().getId().replaceAll("[^a-zA-Z0-9_]", "_");
     }
 
     public boolean isLocal() {

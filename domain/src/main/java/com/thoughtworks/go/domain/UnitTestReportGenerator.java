@@ -15,7 +15,6 @@
  */
 package com.thoughtworks.go.domain;
 
-import com.thoughtworks.go.util.TestFileUtil;
 import com.thoughtworks.go.util.XpathUtils;
 import com.thoughtworks.go.work.GoPublisher;
 import org.apache.commons.io.FileUtils;
@@ -31,6 +30,7 @@ import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.text.MessageFormat;
 import java.util.regex.Pattern;
 
@@ -78,14 +78,13 @@ public class UnitTestReportGenerator {
             publisher.reportErrorMessage("Unable to publish test properties. Error was " + e.getMessage(), e);
         } finally {
             if (mergedResource != null) {
-                //noinspection ResultOfMethodCallIgnored
                 mergedResource.delete();
             }
         }
     }
 
     private File mergeAllTestResultToSingleFile(File[] allTestFiles) throws IOException {
-        File mergedResource = TestFileUtil.createUniqueTempFile("mergedFile.xml");
+        File mergedResource = Files.createTempFile("mergedFile", ".xml").toFile();
         try (FileOutputStream mergedResourcesStream = new FileOutputStream(mergedResource)) {
             merge(allTestFiles, mergedResourcesStream);
         }
@@ -120,7 +119,7 @@ public class UnitTestReportGenerator {
     private void pumpFileContent(File file, PrintStream out) throws IOException {
         try (BufferedReader bufferedReader = new BufferedReader(new FileReader(file))) {
             String line = bufferedReader.readLine();
-            out.println(RegExUtils.removeFirst(line, LINE_STARTING_WITH_XML_DECLARATION));
+            out.println(RegExUtils.replaceFirst((CharSequence) line, LINE_STARTING_WITH_XML_DECLARATION, ""));
             while ((line = bufferedReader.readLine()) != null) {
                 out.println(line);
             }
@@ -129,7 +128,7 @@ public class UnitTestReportGenerator {
 
     private boolean isValidXml(File file) {
         try {
-            boolean isTestFile = nodeExists(file, "//test-results") || nodeExists(file, "//testsuite");
+            boolean isTestFile = nodeExists(file, "//test-results | //testsuite");
 
             if (!isTestFile) {
                 publisher.consumeLine(MessageFormat.format("Ignoring file {0} - it is not a recognised test file.", file.getName()));

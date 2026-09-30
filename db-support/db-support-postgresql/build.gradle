@@ -15,28 +15,26 @@
  */
 
 dependencies {
-  implementation(project.deps.postgresql) {
+  implementation(rootProject.deps.postgresql) {
     exclude(module: 'checker-qual') // See https://github.com/pgjdbc/pgjdbc/pull/2262
   }
-  api project(path: ':db-support:db-support-base', configuration: 'runtimeElements')
-
-  annotationProcessor project.deps.lombok
-  compileOnly project.deps.lombok
-
-  testImplementation project(path: ':db-support:db-migration', configuration: 'runtimeElements')
-  testImplementation project(path: ':db-support:db-migration', configuration: 'testOutput')
-
-  testImplementation(project.deps.testcontainersJunit) {
-    exclude group: 'junit' // Test containers depends on legacy junit, see https://github.com/testcontainers/testcontainers-java/issues/970
-  }
-  testImplementation(project.deps.testcontainersPostgresql) {
-    exclude group: 'junit' // Test containers depends on legacy junit, see https://github.com/testcontainers/testcontainers-java/issues/970
+  implementation project(':db-support:db-support-base')
+  implementation rootProject.deps.ztExec
+  implementation(rootProject.deps.apacheAnt) {
+    exclude(module: 'ant-launcher')
   }
 
-  testImplementation project.deps.assertJ
-  testImplementation project.deps.junit5Api
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
+  annotationProcessor rootProject.deps.lombok
+  compileOnly rootProject.deps.lombok
+
+  testImplementation(testFixtures(project(":db-support:db-migration")))
+
+  testImplementation rootProject.deps.testcontainersJunit
+  testImplementation rootProject.deps.testcontainersPostgresql
+
+  testImplementation rootProject.deps.junit5Api
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
 }
 
 test.dependsOn ':docker:configureDockerRegistryMirror'

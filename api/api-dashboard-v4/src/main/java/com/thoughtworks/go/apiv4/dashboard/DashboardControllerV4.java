@@ -17,7 +17,7 @@ package com.thoughtworks.go.apiv4.dashboard;
 
 import com.thoughtworks.go.api.ApiController;
 import com.thoughtworks.go.api.ApiVersion;
-import com.thoughtworks.go.api.spring.ApiAuthenticationHelper;
+import com.thoughtworks.go.api.spring.ApiAuthorizationHelper;
 import com.thoughtworks.go.api.util.MessageJson;
 import com.thoughtworks.go.apiv4.dashboard.representers.DashboardFor;
 import com.thoughtworks.go.apiv4.dashboard.representers.DashboardRepresenter;
@@ -29,10 +29,10 @@ import com.thoughtworks.go.server.domain.user.PipelineSelections;
 import com.thoughtworks.go.server.service.GoDashboardService;
 import com.thoughtworks.go.server.service.PipelineSelectionsService;
 import com.thoughtworks.go.server.service.support.toggle.Toggles;
+import com.thoughtworks.go.spark.GlobalExceptionMapper;
 import com.thoughtworks.go.spark.Routes;
 import com.thoughtworks.go.spark.spring.SparkSpringController;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import spark.Request;
@@ -43,6 +43,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static com.thoughtworks.go.server.domain.user.DashboardFilter.DEFAULT_NAME;
+import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.commons.lang3.StringUtils.joinWith;
 import static spark.Spark.*;
 
 @Component
@@ -57,12 +59,12 @@ public class DashboardControllerV4 extends ApiController implements SparkSpringC
 
     private final PipelineSelectionsService pipelineSelectionsService;
     private final GoDashboardService goDashboardService;
-    private final ApiAuthenticationHelper apiAuthenticationHelper;
+    private final ApiAuthorizationHelper apiAuthorizationHelper;
 
     @Autowired
-    public DashboardControllerV4(ApiAuthenticationHelper apiAuthenticationHelper, PipelineSelectionsService pipelineSelectionsService, GoDashboardService goDashboardService) {
+    public DashboardControllerV4(ApiAuthorizationHelper apiAuthorizationHelper, PipelineSelectionsService pipelineSelectionsService, GoDashboardService goDashboardService) {
         super(ApiVersion.v4);
-        this.apiAuthenticationHelper = apiAuthenticationHelper;
+        this.apiAuthorizationHelper = apiAuthorizationHelper;
         this.pipelineSelectionsService = pipelineSelectionsService;
         this.goDashboardService = goDashboardService;
     }
@@ -73,11 +75,11 @@ public class DashboardControllerV4 extends ApiController implements SparkSpringC
     }
 
     @Override
-    public void setupRoutes() {
+    public void setupRoutes(GlobalExceptionMapper exceptionMapper) {
         path(controllerPath(), () -> {
             before("", mimeType, this::setContentType);
             before("", mimeType, this::verifyContentType);
-            before("", mimeType, apiAuthenticationHelper::checkUserAnd403);
+            before("", mimeType, apiAuthorizationHelper::checkUserAnd403);
 
             get("", mimeType, this::index);
         });
@@ -96,7 +98,7 @@ public class DashboardControllerV4 extends ApiController implements SparkSpringC
         final DashboardFilter filter = personalization.namedFilter(getViewName(request));
 
         final boolean allowEmpty = Toggles.isToggleOn(Toggles.ALLOW_EMPTY_PIPELINE_GROUPS_DASHBOARD) &&
-                "true".equalsIgnoreCase(request.queryParams("allowEmpty"));
+            "true".equalsIgnoreCase(request.queryParams("allowEmpty"));
 
         List<GoDashboardPipelineGroup> pipelineGroups = goDashboardService.allPipelineGroupsForDashboard(filter, userName, allowEmpty);
         List<GoDashboardEnvironment> environments = goDashboardService.allEnvironmentsForDashboard(filter, userName);
@@ -110,23 +112,23 @@ public class DashboardControllerV4 extends ApiController implements SparkSpringC
         setEtagHeader(response, etag);
 
         return writerForTopLevelObject(request, response, outputWriter ->
-                DashboardRepresenter.toJSON(
-                        outputWriter,
-                        new DashboardFor(pipelineGroups, environments, userName, personalization.etag())
-                )
+            DashboardRepresenter.toJSON(
+                outputWriter,
+                new DashboardFor(pipelineGroups, environments, userName, personalization.etag())
+            )
         );
     }
 
     private String calcEtag(Username username, List<GoDashboardPipelineGroup> pipelineGroups, List<GoDashboardEnvironment> environments) {
-        final String pipelineSegment = pipelineGroups.stream().
-                map(GoDashboardPipelineGroup::etag).collect(Collectors.joining(SEP_CHAR));
-        final String environmentSegment = environments.stream().
-                map(GoDashboardEnvironment::etag).collect(Collectors.joining(SEP_CHAR));
-        return DigestUtils.md5Hex(StringUtils.joinWith(SEP_CHAR, username.getUsername(), pipelineSegment, environmentSegment));
+        final String pipelineSegment = pipelineGroups.stream()
+            .map(GoDashboardPipelineGroup::etag).collect(Collectors.joining(SEP_CHAR));
+        final String environmentSegment = environments.stream()
+            .map(GoDashboardEnvironment::etag).collect(Collectors.joining(SEP_CHAR));
+        return DigestUtils.md5Hex(joinWith(SEP_CHAR, username.getUsername(), pipelineSegment, environmentSegment));
     }
 
     private String getViewName(Request request) {
         final String viewName = request.queryParams(VIEW_NAME);
-        return StringUtils.isBlank(viewName) ? DEFAULT_NAME : viewName;
+        return isBlank(viewName) ? DEFAULT_NAME : viewName;
     }
 }

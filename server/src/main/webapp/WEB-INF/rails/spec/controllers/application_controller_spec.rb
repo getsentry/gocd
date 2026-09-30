@@ -74,39 +74,6 @@ describe ApplicationController do
     end
   end
 
-  describe "default_as_empty_list" do
-    it "should default given params as empty list only if not given" do
-      @controller.params = HashWithIndifferentAccess.new
-      @controller.params[:default_as_empty_list] = ["foo", "bar>baz", "quux>bang>boom", "user>name", "hello"]
-      @controller.params[:hi] = "bye"
-      @controller.params[:hello] = "world"
-      @controller.params[:user] = {:name => "foo"}
-      expect(@controller.send(:default_as_empty_list)).to be_truthy
-      expect(@controller.params).to eq(HashWithIndifferentAccess.new({:hi => "bye", :hello => "world", :user => {:name => "foo"}, :foo => [], :bar => {:baz => []}, :quux => {:bang => {:boom => []}}}))
-    end
-
-    it "should always return true, because it needs to be used as a filter" do
-      expect(@controller.send(:default_as_empty_list)).to eq(true)
-      @controller.params[:default_as_empty_list] = ["foo", "bar>baz"]
-      @controller.params[:hello] = "world"
-      expect(@controller.send(:default_as_empty_list)).to eq(true)
-    end
-  end
-
-  describe "do for every request" do
-    controller do
-      def index
-        render plain: "Hello"
-      end
-    end
-
-    it "should populate the config file validity for every request" do
-      get :index
-
-      expect(assigns[:config_valid]).to eq(true)
-    end
-  end
-
   context "with license agent validity stubbed" do
     controller do
       def test_action
@@ -151,37 +118,6 @@ describe ApplicationController do
       controller.instance_variable_set('@user', "foo")
       expect(controller.current_user).to eq("foo")
     end
-
-    describe "requiring full path" do
-      before(:each) do
-        draw_test_controller_route
-      end
-
-      # Fake that part of a Rails model object that is needed by url_for.
-      class TestObject
-        include ActiveModel::Model
-
-        def id
-          self
-        end
-
-        def persisted?
-          true
-        end
-      end
-
-      it "should cache the url if options is an active-record object" do
-        obj = TestObject.new
-
-        def controller.test_object_url(*args)
-          raise 'should not invoke this, because it is stubbed!'
-        end
-
-        expect(controller).to receive(:test_object_url).with(obj).and_return("some-url")
-        expect(controller.url_for(obj)).to eq("some-url")
-      end
-    end
-
 
     describe "url cache" do
       before do

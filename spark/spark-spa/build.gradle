@@ -19,15 +19,27 @@ plugins {
 }
 
 dependencies {
-  implementation project(path: ':spark:spark-base', configuration: 'runtimeElements')
+  implementation project(':spark:spark-base')
+  implementation project(':server')
 
-  implementation project.deps.freemarker
-  implementation project.deps.guava
+  implementation rootProject.deps.gson
+  implementation rootProject.deps.freemarker
+  implementation rootProject.deps.commonsLang3
+  implementation rootProject.deps.springContext
+  implementation rootProject.deps.springContextSupport
+  implementation rootProject.deps.springTx
+  implementation rootProject.deps.springWeb
 
   testImplementation localGroovy()
-  testImplementation project(path: ':spark:spark-base', configuration: 'testOutput')
-  testImplementation project.deps.junit5Api
-  testRuntimeOnly project.deps.junit5Engine
-  testRuntimeOnly project.deps.junit5PlatformLauncher
-  testImplementation project.deps.logback
+  testImplementation(testFixtures(project(':test:test-utils')))
+  testImplementation(testFixtures(project(':spark:spark-base')))
+  testImplementation rootProject.deps.junit5Api
+  testRuntimeOnly rootProject.deps.junit5Engine
+  testRuntimeOnly rootProject.deps.junit5PlatformLauncher
+
+  testRuntimeOnly project(':jetty')
+
+  testImplementation rootProject.deps.mockitoCore
+  testImplementation rootProject.deps.mockitoJunit5
+  testImplementation rootProject.deps.assertJ
 }

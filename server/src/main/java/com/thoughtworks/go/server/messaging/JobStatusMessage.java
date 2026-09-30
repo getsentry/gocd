@@ -19,10 +19,12 @@ import com.thoughtworks.go.domain.JobIdentifier;
 import com.thoughtworks.go.domain.JobState;
 import com.thoughtworks.go.domain.StageIdentifier;
 
+import java.util.Objects;
+
 public class JobStatusMessage implements GoMessage {
-    private JobIdentifier jobIdentifier;
-    private JobState state;
-    private String agentUuid;
+    private final JobIdentifier jobIdentifier;
+    private final JobState state;
+    private final String agentUuid;
 
     public JobStatusMessage(JobIdentifier jobIdentifier, JobState state, String agentUuid) {
         this.jobIdentifier = jobIdentifier;
@@ -62,23 +64,15 @@ public class JobStatusMessage implements GoMessage {
 
         JobStatusMessage that = (JobStatusMessage) o;
 
-        if (agentUuid != null ? !agentUuid.equals(that.agentUuid) : that.agentUuid != null) {
-            return false;
-        }
-        if (jobIdentifier != null ? !jobIdentifier.equals(that.jobIdentifier) : that.jobIdentifier != null) {
-            return false;
-        }
-        if (state != that.state) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(agentUuid, that.agentUuid) &&
+            Objects.equals(jobIdentifier, that.jobIdentifier) &&
+            state == that.state;
     }
 
     @Override
     public int hashCode() {
         int result;
-        result = (jobIdentifier != null ? jobIdentifier.hashCode() : 0);
+        result = jobIdentifier != null ? jobIdentifier.hashCode() : 0;
         result = 31 * result + (state != null ? state.hashCode() : 0);
         result = 31 * result + (agentUuid != null ? agentUuid.hashCode() : 0);
         return result;
