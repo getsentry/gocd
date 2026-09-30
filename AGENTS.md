@@ -20,13 +20,19 @@ builds and runs as Sentry's deploy service (prod: `deploy.getsentry.net`).
 Toolchains are declared in `mise.toml` (JDK 25, Node 24). Java 21 is the runtime minimum. On macOS:
 
 ```sh
-brew install node@24 corepack openjdk@25 docker-buildx
+brew install node@24 openjdk@25 docker-buildx
 ```
 
 Gradle will not download a JDK (`org.gradle.java.installations.auto-download=false` in
-`gradle.properties`), so put JDK 25, Node 24, and Corepack first on `PATH`. Corepack selects
-Yarn 4.17.0 from the Rails `package.json`. If a global Yarn or pnpm installation conflicts with
-Homebrew linking Corepack, use its keg bin directory explicitly rather than replacing those tools.
+`gradle.properties`). Put JDK 25, Node 24 and Yarn 4.17.0 first on `PATH`. The builder
+uses Yarn's standalone executable; Corepack is not required. To install the same Yarn locally:
+
+```sh
+mkdir -p /tmp/gocd-build-tools
+curl -fsSL https://repo.yarnpkg.com/4.17.0/packages/yarnpkg-cli/bin/yarn.js -o /tmp/gocd-build-tools/yarn
+echo 'ea2af31ee4a6535e8559e3e1a6e34cb716112c9bed86edea71c3a5b36d472265  /tmp/gocd-build-tools/yarn' | shasum -a 256 -c -
+chmod +x /tmp/gocd-build-tools/yarn
+```
 
 Docker must be able to find the Homebrew buildx plugin. In `~/.docker/config.json`:
 
@@ -48,7 +54,7 @@ Build the server Docker image the same way Cloud Build does:
 
 ```sh
 JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home \
-PATH=/opt/homebrew/opt/openjdk@25/bin:/opt/homebrew/opt/node@24/bin:/opt/homebrew/opt/corepack/bin:$PATH \
+PATH=/tmp/gocd-build-tools:/opt/homebrew/opt/openjdk@25/bin:/opt/homebrew/opt/node@24/bin:$PATH \
   ./gradlew -PdockerBuildLocalZip :docker:gocd-server:debian-13:docker
 ```
 
@@ -100,6 +106,10 @@ Security:
   CVE-2023-26117's `$resource` path is not present in GoCD's AngularJS integration.
 - Rails' `yarn.lock` resolves js-yaml 4.x to 4.3.2 and 3.x to 3.15.2, the patched releases for the
   merge-source CPU and ordered-map CPU advisories. These remain transitive build dependencies.
+- Nokogiri 1.18.10 remains blocked by GHSA-c4rq-3m3g-8wgx. The first fixed version,
+  1.19.3, requires Ruby 3.2+ and drops JRuby 9.4 support; GoCD 26.1 pins Ruby 3.1 /
+  JRuby 9.4.15.0. Do not force an incompatible lockfile update or suppress the CI finding.
+  Remediation needs a separate supported-runtime upgrade.
 - An XXE fix in `GoConfigService` was merged (#18) and then reverted (#28). The revert gives no
   reason, so find out why before re-applying it.
 
@@ -159,7 +169,7 @@ at `../devinfra-deployment-service`. Snapshot as of its commit `0faabc727d` (202
   fires on pushes to devinfra-deployment-service, not to this repo. Each GCP project watches one
   branch: `prod` for prod, `staging` for prod-staging, and a personal branch for dev projects.
 - `cloudbuild.yaml` shallow-clones this repo's `prod` branch and builds it inside
-  `gocd_server_src_builder/Dockerfile` (JDK 25, Node 24, Corepack/Yarn). It then layers
+  `gocd_server_src_builder/Dockerfile` (JDK 25, Node 24, Yarn). It then layers
   `gocd_server/Dockerfile` on top and pushes
   `us-west1-docker.pkg.dev/<project>/gocd/server:<devinfra SHA>`. The image tag records the
   devinfra commit; the gocd commit is recorded only in the `gocd.git.sha` image label.

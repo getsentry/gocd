@@ -173,3 +173,18 @@ migration. Do not report all AngularJS alerts as resolved by this version bump.
 See the [AngularJS support policy](https://github.com/angular/angular.js/security/policy),
 [js-yaml merge-budget advisory](https://github.com/advisories/GHSA-2883-xcg3-v3hh)
 and [ordered-map advisory](https://github.com/advisories/GHSA-5p4m-2wfm-xmqj).
+
+
+GitHub dependency review also flags Nokogiri 1.18.10 for
+[GHSA-c4rq-3m3g-8wgx](https://github.com/advisories/GHSA-c4rq-3m3g-8wgx).
+The first fixed release, 1.19.3, requires Ruby 3.2+ and Nokogiri 1.19 drops JRuby 9.4
+support. GoCD 26.1 embeds JRuby 9.4.15.0 / Ruby 3.1.7 and its Gemfile requires Ruby
+`~> 3.1.0`; there is no patched 1.18.x backport. Retain the supported runtime for
+this upgrade and leave the dependency-review failure visible. A separate Ruby/JRuby
+upgrade is needed to resolve it. No direct CSS-selector API calls were found in
+GoCD's Rails sources, but this does not clear the dependency finding. See
+[Nokogiri's runtime change](https://github.com/sparklemotion/nokogiri/releases/tag/v1.19.0)
+and [the patched Java gem's Ruby requirement](https://rubygems.org/gems/nokogiri/versions/1.19.3-java).
+
+The deployment builder downloads Yarn 4.17.0 directly, with the SHA-256 declared
+in upstream's `package.json`. No separate Corepack installation or setup is required by the builder.
