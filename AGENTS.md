@@ -91,6 +91,15 @@ Security:
   Java dependencies now live in `build.gradle`; upstream supersedes the former Bouncy Castle
   and jruby-rack pins. Upstream webpack 5 removes the old svgo dependency and its resolution.
   The fork retains the 4096 MB webpack heap in `rails/package.json`.
+- The plugin configuration UI uses the locally vendored AngularJS core from
+  `server/src/main/webapp/WEB-INF/rails/node-vendor/angular`, updated to 1.8.3. This fixes the
+  AngularJS XSS advisories patched by 1.5.0-beta.1 and 1.8.0. AngularJS is end of life; CVE-2022-25869
+  and the CVE-2023-26117 / CVE-2023-26118 denial-of-service advisories have no patched AngularJS
+  version. CVE-2022-25869 depends on Internet Explorer's page-cache behavior; Internet Explorer is
+  not in GoCD's supported browser list. The `angular-resource` module is not bundled by this fork, so
+  CVE-2023-26117's `$resource` path is not present in GoCD's AngularJS integration.
+- Rails' `yarn.lock` resolves js-yaml 4.x to 4.3.2 and 3.x to 3.15.2, the patched releases for the
+  merge-source CPU and ordered-map CPU advisories. These remain transitive build dependencies.
 - An XXE fix in `GoConfigService` was merged (#18) and then reverted (#28). The revert gives no
   reason, so find out why before re-applying it.
 

@@ -19,6 +19,6 @@ describe("Rails view plugin angular Mounter utility", () => {
     expect(() => { require("../../../webpack/single_page_apps/angular_mounter"); }).not.toThrow(); // eslint-disable-line no-undef
 
     expect(() => { angular.noop(); }).not.toThrow();
-    expect(angular.version.full).toEqual("1.0.8");
+    expect(angular.version.full).toEqual("1.8.3");
   });
 });

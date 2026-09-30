@@ -19,6 +19,7 @@ import {DashboardViewModel as DashboardVM} from "views/dashboard/models/dashboar
 import {Dashboard} from "models/dashboard/dashboard";
 import {Pipelines} from "models/dashboard/pipelines";
 import {PipelineWidget} from "views/dashboard/pipeline_widget";
+import {SparkRoutes} from "helpers/spark_routes";
 import {timeFormatter} from "helpers/time_formatter";
 import _ from "lodash";
 import m from "mithril";
@@ -562,7 +563,7 @@ describe("Dashboard Pipeline Widget", () => {
       });
     });
 
-    describe("Trigger", () => {
+    describe("Manual trigger", () => {
       beforeEach(mount);
 
       afterEach(() => {
@@ -570,114 +571,9 @@ describe("Dashboard Pipeline Widget", () => {
         Modal.destroyAll();
       });
 
-      it("should render trigger pipeline button", () => {
-        expect(helper.q('.play')).toBeInDOM();
-      });
-
-      it('should disable trigger button for non admin users', () => {
-        helper.unmount();
-        mount(true, {}, {}, false, false);
-
-        expect(helper.q('.play')).toHaveClass('disabled');
-      });
-
-      it('should disable trigger button when first stage is in progress', () => {
-        helper.unmount();
-        pipelineInstances[0]._embedded.stages[0].status = 'Building';
-        mount();
-
-        expect(helper.q('.play')).toHaveClass('disabled');
-      });
-
-      it('should not add onclick handler when first stage is in progess', () => {
-        helper.unmount();
-        pipelineInstances[0]._embedded.stages[0].status = 'Building';
-        mount();
-
-        expect(_.isFunction(helper.q('.play').onclick)).toBe(false);
-      });
-
-      it('should disable trigger button when pipeline is locked', () => {
-        helper.unmount();
-        mount(true, undefined, {"locked": true});
-
-        expect(helper.q('.play')).toHaveClass('disabled');
-      });
-
-      it('should disable trigger button when pipeline is paused', () => {
-        helper.unmount();
-        mount(true, {
-          "paused":       true,
-          "paused_by":    "admin",
-          "pause_reason": "under construction"
-        });
-
-        expect(helper.q('.play')).toHaveClass('disabled');
-      });
-
-      it('should not add onclick handler pipeline is locked', () => {
-        helper.unmount();
-        mount(true, undefined, {"locked": true});
-
-        expect(_.isFunction(helper.q('.play').onclick)).toBe(false);
-      });
-
-      it('should not add onclick handler for non admin users', () => {
-        helper.unmount();
-        mount(true, {}, {}, false, false);
-
-        expect(_.isFunction(helper.q('.play').onclick)).toBe(false);
-      });
-
-      it("should trigger a pipeline", async () => {
-        const responseMessage = `Request for scheduling pipeline '${pipeline.name}' accepted successfully.`;
-        jasmine.Ajax.stubRequest(`/go/api/pipelines/${pipeline.name}/schedule`, undefined, 'POST').andReturn({
-          responseText:    JSON.stringify({"message": responseMessage}),
-          responseHeaders: {
-            'Content-Type': 'application/vnd.go.cd.v1+json'
-          },
-          status:          200
-        });
-
-        expect(pipeline.triggerDisabled()).toBe(false);
-
-        helper.click('.play');
-        await helper.delayRedraw();
-
-        expect(pipeline.triggerDisabled()).toBe(true);
-
-        expect(helper.text('.pipeline_message')).toContain(responseMessage);
-        expect(helper.q('.pipeline_message')).toHaveClass("success");
-      });
-
-      it("should show error when triggering a pipeline fails", async () => {
-        const responseMessage = `Can not trigger pipeline. Some stages of pipeline are in progress.`;
-        jasmine.Ajax.stubRequest(`/go/api/pipelines/${pipeline.name}/schedule`, undefined, 'POST').andReturn({
-          responseText:    JSON.stringify({"message": responseMessage}),
-          responseHeaders: {
-            'Content-Type': 'application/vnd.go.cd.v1+json'
-          },
-          status:          409
-        });
-
-        expect(pipeline.triggerDisabled()).toBe(false);
-
-        helper.click('.play');
-        await helper.delayRedraw();
-
-        expect(pipeline.triggerDisabled()).toBe(false);
-
-        expect(helper.text('.pipeline_message')).toContain(responseMessage);
-        expect(helper.q('.pipeline_message')).toHaveClass("error");
-      });
-
-      it("should have tooltips for trigger buttons when it is disabled", () => {
-        helper.unmount();
-        mount(true, {}, {}, true, false);
-        const playButton = helper.q('.pipeline_operations .play');
-        expect(playButton).toHaveAttr('data-tooltip-id');
-        const tooltipId = playButton.getAttribute('data-tooltip-id');
-        expect(helper.text(document.getElementById(tooltipId))).toBe("You do not have permission to trigger the pipeline");
+      it("should require the trigger options modal instead of a one-click trigger", () => {
+        expect(helper.q('.play')).not.toBeInDOM();
+        expect(helper.q('.play_with_options')).toBeInDOM();
       });
     });
 
@@ -808,6 +704,20 @@ describe("Dashboard Pipeline Widget", () => {
         expect(helper.text('.pipeline_options-heading', body)).toContain('Materials');
       });
 
+      it("should reject scheduling until a material revision is selected", async () => {
+        stubTriggerOptions(pipelineName);
+        helper.click('.play_with_options');
+        await helper.delay();
+
+        helper.click('.modal-buttons .button.save.primary', body);
+        await helper.delayRedraw();
+
+        expect(helper.text('.callout.alert', body)).toContain('You must select a revision/deployment');
+        expect(helper.q('.reveal', body)).toBeInDOM();
+        expect(pipeline.triggerDisabled()).toBe(false);
+        expect(jasmine.Ajax.requests.filter(`/go/api/pipelines/${pipeline.name}/schedule`).length).toBe(0);
+      });
+
       it("should trigger a pipeline", async () => {
         stubTriggerOptions(pipelineName);
         const responseMessage = `Request for scheduling pipeline '${pipeline.name}' accepted successfully.`;
@@ -823,6 +733,9 @@ describe("Dashboard Pipeline Widget", () => {
 
         helper.click('.play_with_options');
         await helper.delay();
+
+        helper.click('.commit_info li', body);
+        await helper.delayRedraw();
 
         helper.click('.modal-buttons .button.save.primary', body);
         await helper.delayRedraw();
@@ -848,6 +761,9 @@ describe("Dashboard Pipeline Widget", () => {
 
         helper.click('.play_with_options');
         await helper.delay();
+
+        helper.click('.commit_info li', body);
+        await helper.delayRedraw();
 
         helper.clickButtonOnActiveModal('.modal-buttons .button.save.primary');
         await helper.delayRedraw();
@@ -969,6 +885,15 @@ describe("Dashboard Pipeline Widget", () => {
   }
 
   function stubTriggerOptions(pipelineName) {
+    const fingerprint = '3dcc10e7943de637211a4742342fe456ffbe832577bb377173007499434fd819';
+    jasmine.Ajax.stubRequest(SparkRoutes.pipelineMaterialSearchPath(pipelineName, fingerprint, ""), undefined, 'GET').andReturn({
+      responseText: JSON.stringify([{
+        revision: 'a2d23c5505ac571d9512bdf08d6287e47dcb52d5',
+        user: 'GoCD Team', date: '2018-02-08T04:32:11Z', comment: 'Selected material revision'
+      }]),
+      responseHeaders: {'Content-Type': 'application/vnd.go.cd.v1+json'},
+      status: 200
+    });
     jasmine.Ajax.stubRequest(`/go/api/pipelines/${pipelineName}/trigger_options`, undefined, 'GET').andReturn({
       responseText:    JSON.stringify({
         variables: [], materials: [{

@@ -146,7 +146,7 @@ describe("Dashboard Pipeline Trigger With Options Modal Body", () => {
     expect(helper.q('.callout.alert')).toBeInDOM();
   });
 
-  function mount(triggerWithOptionsInfo, vm, errorMessage) {
+  function mount(triggerWithOptionsInfo, vm, errorMessage = Stream()) {
     const searchVM = {
       [json.materials[0].name]: {
         performSearch:         jasmine.createSpy('performSearch'),
