@@ -107,6 +107,15 @@ public class GitCommandTest {
         }
 
         @Test
+        void deepenFetchesCommitsPastTheCurrentShallowBoundary() {
+            FileUtils.deleteQuietly(this.gitLocalRepoDir);
+            git.clone(inMemoryConsumer(), repoUrl, 2);
+            git.deepen(inMemoryConsumer(), 2);
+            Assertions.assertTrue(git.containsRevisionInBranch(GitTestRepo.REVISION_1));
+            Assertions.assertFalse(git.containsRevisionInBranch(GitTestRepo.REVISION_0));
+        }
+
+        @Test
         void unshallowShouldNotResultInWorkingCopyCheckout() {
             FileUtils.deleteQuietly(this.gitLocalRepoDir);
             git.cloneWithNoCheckout(inMemoryConsumer(), repoUrl);
