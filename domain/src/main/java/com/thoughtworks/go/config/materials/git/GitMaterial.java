@@ -388,11 +388,11 @@ public class GitMaterial extends ScmMaterial implements PasswordAwareMaterial {
     }
 
     // Unshallow local repo to include a revision operating on via two step process:
-    // First try to fetch forward 100 level with "git fetch -depth 100". If revision still missing,
-    // unshallow the whole repo with "git fetch --2147483647".
+    // First try to fetch 100 more commits with "git fetch --deepen 100". If revision still missing,
+    // unshallow the whole repo with "git fetch --depth 2147483647".
     private void unshallowIfNeeded(GitCommand gitCommand, ConsoleOutputStreamConsumer streamConsumer, Revision revision) {
         if (gitCommand.isShallow() && !gitCommand.containsRevisionInBranch(revision)) {
-            gitCommand.unshallow(streamConsumer, UNSHALLOW_TRYOUT_STEP);
+            gitCommand.deepen(streamConsumer, UNSHALLOW_TRYOUT_STEP);
 
             if (gitCommand.isShallow() && !gitCommand.containsRevisionInBranch(revision)) {
                 fullyUnshallow(gitCommand, streamConsumer);

@@ -72,6 +72,12 @@ Deploy safety:
 
 - Git materials retry clone, fetch, and unshallow up to 3 times, 5 s apart:
   `SCMCommand.runWithRetries`, `SCMCommand.runCascadeWithRetries`, `GitCommand.MAX_RETRIES`.
+- When a shallow clone is missing the oldest revision of a build's change range, the first retry
+  fetches 100 more commits with `git fetch --deepen=100` instead of `--depth=100`. Clone depth
+  counts from the branch tip, so commits pushed after the revision being built leave the oldest
+  one out; `--depth=100` resets the clone to 100 commits from the tip (shallower than the clone
+  for ranges over ~100), so it always fell through to fetching the full history:
+  `GitCommand.deepen`, `GitMaterial.unshallowIfNeeded`.
 - The dashboard has no one-click "Trigger" button. "Trigger with Options" refuses to run until a
   material revision is selected, because otherwise GoCD re-runs the previous run's materials instead
   of the latest: `webpack/views/dashboard/pipeline_operations_widget.js.msx`,

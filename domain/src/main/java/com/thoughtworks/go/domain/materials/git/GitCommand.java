@@ -290,6 +290,19 @@ public class GitCommand extends SCMCommand {
         }
     }
 
+    // Fetch n more commits past the current shallow boundary with "git fetch --deepen n".
+    public void deepen(ConsoleOutputStreamConsumer outputStreamConsumer, int commits) {
+        log(outputStreamConsumer, "Deepening repository by %d commits", commits);
+        CommandLine gitFetch = gitWd()
+                .withArgs("fetch", "origin")
+                .withArg(format("--deepen=%d", commits));
+
+        int result = runWithRetries(gitFetch, outputStreamConsumer, MAX_RETRIES);
+        if (result != 0) {
+            throw new RuntimeException(format("Deepen repository failed for [%s]", this.workingRepositoryUrl()));
+        }
+    }
+
     @TestOnly
     public void init() {
         CommandLine gitCmd = gitWd().withArgs("init");
