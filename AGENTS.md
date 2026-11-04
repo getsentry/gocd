@@ -5,7 +5,8 @@ supply the GoCD server image that
 [`getsentry/devinfra-deployment-service`](https://github.com/getsentry/devinfra-deployment-service)
 builds and runs as Sentry's deploy service (prod: `deploy.getsentry.net`).
 
-- Default branch: `prod`. Whatever is on `prod` is what the next server image build ships.
+- Default branch: `prod`. The server image builds the commit pinned in devinfra-deployment-service's
+  `gocd_server/gocd-fork-commit`, not the tip of `prod`.
 - Forked from upstream at `647a5201b5` (2025-03-24). GoCD version 25.2.0 (`GO_VERSION_SEGMENTS`
   in `build.gradle`).
 - No CI runs here (`.github/` was removed). The build that matters runs in
@@ -170,14 +171,15 @@ at `../devinfra-deployment-service`. Snapshot as of its commit `0faabc727d` (202
 - Cloud Build trigger `build-gocd-server` (`terraform/module/cd-project/cloud-build/build/main.tf`)
   fires on pushes to devinfra-deployment-service, not to this repo. Each GCP project watches one
   branch: `prod` for prod, `staging` for prod-staging, and a personal branch for dev projects.
-- `cloudbuild.yaml` shallow-clones this repo's `prod` branch and builds its `Dockerfile` with a
-  registry layer cache (`us-west1-docker.pkg.dev/<project>/gocd/server-build-cache`). Every push
-  to devinfra-deployment-service rebuilds the server image, and most of them leave this repo
-  unchanged, so they reuse every layer and skip the Gradle build. `APT_REFRESH` is the ISO week,
-  so the Debian layer re-runs `apt-get upgrade` at least weekly. It then layers
-  `gocd_server/Dockerfile` on top and pushes
-  `us-west1-docker.pkg.dev/<project>/gocd/server:<devinfra SHA>`. The image tag records the
-  devinfra commit; the gocd commit is recorded only in the `gocd.git.sha` image label.
+- `cloudbuild.yaml` shallow-fetches the commit in `gocd_server/gocd-fork-commit`
+  (`gocd_server/cloudbuild-clone-gocd.sh`) and builds this repo's `Dockerfile` with a registry
+  layer cache (`us-west1-docker.pkg.dev/<project>/gocd/server-build-cache`). Most pushes to
+  devinfra-deployment-service leave that commit unchanged, so they reuse every layer and skip the
+  Gradle build. `APT_REFRESH` is the ISO week, so the Debian layer re-runs `apt-get upgrade` at
+  least weekly. It then layers `gocd_server/Dockerfile` on top and pushes
+  `us-west1-docker.pkg.dev/<project>/gocd/server:<tag>`. The tag that deploys use is the tree hash
+  of devinfra's `gocd_server/` (`git rev-parse HEAD:gocd_server`), which includes
+  `gocd-fork-commit`; the gocd commit is also in the `gocd.git.sha` image label.
 - `gocd_server/Dockerfile` adds:
   - `postgresql-client-16`, because GoCD's backup runs `pg_dump` against AlloyDB (PostgreSQL 16).
   - `python3` for the config and sync scripts, `cron`, `gosu`, and `jsonnet` 0.20.0 plus `jb`
@@ -282,12 +284,13 @@ contains:
 - Prod-staging GoCD runs `deploy-gocd-production`, which tracks `prod`
   (`gocd/staging/pipelines/deploy-prod.yaml`).
 - Stages: `checks` (GitHub check runs, plus the Cloud Build agent and server builds for that SHA) →
-  `terraform-plan` → manual approval → `terraform-apply`, wrapped in a Datadog downtime. Image tags
-  are the devinfra SHA.
+  `terraform-plan` → manual approval → `terraform-apply`, wrapped in a Datadog downtime. Image
+  tags are tree hashes of devinfra's `gocd_agent/` and `gocd_server/`.
 
-To ship a change from this fork: merge it to `prod` here. Then land a devinfra-deployment-service
-commit on `staging` so Cloud Build rebuilds the server image, and run `deploy-gocd-staging`. Repeat
-on devinfra's `prod` branch and run `deploy-gocd-production`.
+To ship a change from this fork: merge it to `prod` here. Then bump `gocd_server/gocd-fork-commit`
+in devinfra-deployment-service to the new commit, push it to `staging` so prod-staging builds the
+server image, and run `deploy-gocd-staging`. Repeat on devinfra's `prod` branch and run
+`deploy-gocd-production`. Each project builds its own image, from the same pinned commit.
 
 ## GoCD plugins in use
 
