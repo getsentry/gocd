@@ -178,8 +178,8 @@ at `../devinfra-deployment-service`. Snapshot as of its commit `0faabc727d` (202
   Gradle build. `APT_REFRESH` is the ISO week, so the Debian layer re-runs `apt-get upgrade` at
   least weekly. It then layers `gocd_server/Dockerfile` on top and pushes
   `us-west1-docker.pkg.dev/<project>/gocd/server:<tag>`. The tag that deploys use is the tree hash
-  of devinfra's `gocd_server/` (`git rev-parse HEAD:gocd_server`), which includes `gocd-fork-commit`;
-  the gocd commit is also in the `gocd.git.sha` image label.
+  of devinfra's `gocd_server/` (`git rev-parse HEAD:gocd_server`), which includes
+  `gocd-fork-commit`; the gocd commit is also in the `gocd.git.sha` image label.
 - `gocd_server/Dockerfile` adds:
   - `postgresql-client-16`, because GoCD's backup runs `pg_dump` against AlloyDB (PostgreSQL 16).
   - `python3` for the config and sync scripts, `cron`, `gosu`, and `jsonnet` 0.20.0 plus `jb`
@@ -284,8 +284,8 @@ contains:
 - Prod-staging GoCD runs `deploy-gocd-production`, which tracks `prod`
   (`gocd/staging/pipelines/deploy-prod.yaml`).
 - Stages: `checks` (GitHub check runs, plus the Cloud Build agent and server builds for that SHA) →
-  `terraform-plan` → manual approval → `terraform-apply`, wrapped in a Datadog downtime. Image tags are tree hashes of devinfra's
-  `gocd_agent/` and `gocd_server/`.
+  `terraform-plan` → manual approval → `terraform-apply`, wrapped in a Datadog downtime. Image
+  tags are tree hashes of devinfra's `gocd_agent/` and `gocd_server/`.
 
 To ship a change from this fork: merge it to `prod` here. Then bump `gocd_server/gocd-fork-commit`
 in devinfra-deployment-service to the new commit, push it to `staging` so prod-staging builds the
