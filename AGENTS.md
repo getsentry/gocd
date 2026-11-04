@@ -170,8 +170,9 @@ at `../devinfra-deployment-service`. Snapshot as of its commit `0faabc727d` (202
 
 - Cloud Build trigger `build-gocd-server` (`terraform/module/cd-project/cloud-build/build/main.tf`)
   fires on pushes to devinfra-deployment-service, not to this repo. prod-staging builds on
-  `staging` and dev projects on a personal branch. Prod builds nothing (`build_images = false`):
-  `deploy-gocd-production` copies prod-staging's images (`gocd/utils/promote-images.sh`).
+  `staging` and `prod`, and dev projects on a personal branch. Prod builds nothing
+  (`build_images = false`): `deploy-gocd-production` copies prod-staging's images
+  (`gocd/utils/promote-images.sh`), so a push straight to `prod` still deploys.
 - `cloudbuild.yaml` shallow-fetches the commit in `gocd_server/gocd-fork-commit`
   (`gocd_server/cloudbuild-clone-gocd.sh`) and builds this repo's `Dockerfile` with a registry
   layer cache (`us-west1-docker.pkg.dev/<project>/gocd/server-build-cache`). Most pushes to
