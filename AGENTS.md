@@ -169,10 +169,8 @@ at `../devinfra-deployment-service`. Snapshot as of its commit `0faabc727d` (202
 ### Building the server image
 
 - Cloud Build trigger `build-gocd-server` (`terraform/module/cd-project/cloud-build/build/main.tf`)
-  fires on pushes to devinfra-deployment-service, not to this repo. prod-staging builds on
-  `staging` and `prod`, and dev projects on a personal branch. Prod builds nothing
-  (`build_images = false`): `deploy-gocd-production` copies prod-staging's images
-  (`gocd/utils/promote-images.sh`), so a push straight to `prod` still deploys.
+  fires on pushes to devinfra-deployment-service, not to this repo. Each GCP project watches one
+  branch: `prod` for prod, `staging` for prod-staging, and a personal branch for dev projects.
 - `cloudbuild.yaml` shallow-fetches the commit in `gocd_server/gocd-fork-commit`
   (`gocd_server/cloudbuild-clone-gocd.sh`) and builds this repo's `Dockerfile` with a registry
   layer cache (`us-west1-docker.pkg.dev/<project>/gocd/server-build-cache`). Most pushes to
@@ -180,7 +178,7 @@ at `../devinfra-deployment-service`. Snapshot as of its commit `0faabc727d` (202
   Gradle build. `APT_REFRESH` is the ISO week, so the Debian layer re-runs `apt-get upgrade` at
   least weekly. It then layers `gocd_server/Dockerfile` on top and pushes
   `us-west1-docker.pkg.dev/<project>/gocd/server:<tag>`. The tag that deploys use is the tree hash
-  of devinfra's `gocd_server/` (`gocd_server/image-tag.sh`), which includes `gocd-fork-commit`;
+  of devinfra's `gocd_server/` (`git rev-parse HEAD:gocd_server`), which includes `gocd-fork-commit`;
   the gocd commit is also in the `gocd.git.sha` image label.
 - `gocd_server/Dockerfile` adds:
   - `postgresql-client-16`, because GoCD's backup runs `pg_dump` against AlloyDB (PostgreSQL 16).
@@ -285,15 +283,14 @@ contains:
   (`gocd/production/pipelines/deploy-staging.yaml`).
 - Prod-staging GoCD runs `deploy-gocd-production`, which tracks `prod`
   (`gocd/staging/pipelines/deploy-prod.yaml`).
-- Stages: `checks` (GitHub check runs, plus the Cloud Build agent and server builds for that SHA on
-  staging, or copying prod-staging's images on prod) → `terraform-plan` → manual approval →
-  `terraform-apply`, wrapped in a Datadog downtime. Image tags are tree hashes of devinfra's
+- Stages: `checks` (GitHub check runs, plus the Cloud Build agent and server builds for that SHA) →
+  `terraform-plan` → manual approval → `terraform-apply`, wrapped in a Datadog downtime. Image tags are tree hashes of devinfra's
   `gocd_agent/` and `gocd_server/`.
 
 To ship a change from this fork: merge it to `prod` here. Then bump `gocd_server/gocd-fork-commit`
 in devinfra-deployment-service to the new commit, push it to `staging` so prod-staging builds the
-server image, and run `deploy-gocd-staging`. Then push devinfra's `prod` branch and run
-`deploy-gocd-production`, which deploys the image prod-staging built.
+server image, and run `deploy-gocd-staging`. Repeat on devinfra's `prod` branch and run
+`deploy-gocd-production`. Each project builds its own image, from the same pinned commit.
 
 ## GoCD plugins in use
 
