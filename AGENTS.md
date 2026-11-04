@@ -41,18 +41,35 @@ Fastest loop for frontend (TypeScript/MSX) compile errors:
 cd server/src/main/webapp/WEB-INF/rails && yarn run webpack-watch
 ```
 
-Build the server Docker image the same way Cloud Build does:
+Build the server Docker image the same way Cloud Build does. Needs only Docker:
+
+```sh
+docker build -t gocd-server:latest --build-arg GOCD_GIT_REVISION=$(git rev-parse HEAD) .
+```
+
+- `Dockerfile` builds the server zip with Gradle in a builder stage and copies it onto Debian 12.
+  Its layers cache well: unchanged source skips Gradle, and changed source still reuses the
+  toolchain, Yarn cache, and bundled-gem layers. `.dockerignore` keeps the context to tracked
+  files (no `.git`), so `build.gradle` reads the revision from `GOCD_GIT_REVISION` and
+  `GOCD_DIST_VERSION` instead of git.
+- Its base images come from [`getsentry/image-mirror`](https://github.com/getsentry/image-mirror).
+  Add a base image there before using it here.
+- Result: local image `gocd-server:latest`, built for the host architecture (arm64 on Apple
+  Silicon; Cloud Build produces amd64). Nothing verifies the image automatically, so check it by
+  hand.
+
+The Gradle path still works when you have JDK 21 and Node 22 locally:
 
 ```sh
 PATH=/opt/homebrew/opt/openjdk@21/bin:/opt/homebrew/opt/node@22/bin:$PATH \
   ./gradlew -PdockerBuildLocalZip :docker:gocd-server:debian-12:docker
 ```
 
-- Template: `buildSrc/src/main/resources/gocd-docker-server/Dockerfile.server.ftl`
+- Template: `buildSrc/src/main/resources/gocd-docker-server/Dockerfile.server.ftl`. The runtime
+  stage of `Dockerfile` copies it for Debian 12, so change both together.
 - Rendered Dockerfile: `docker/gocd-server/target/debian-12/docker-gocd-server/Dockerfile`
-- Result: local image `gocd-server:latest`, built for the host architecture (arm64 on Apple
-  Silicon; Cloud Build produces amd64). Automated image verification is disabled in
-  `BuildDockerImageTask.groovy`, so check the image by hand.
+- It builds only the host architecture. Automated image verification is disabled in
+  `BuildDockerImageTask.groovy`.
 
 Tests are ordinary Gradle (JUnit) and Karma suites. Run the narrowest one that covers the change,
 for example:
@@ -98,7 +115,11 @@ Build:
 
 - The server image is Debian 12 and is tagged `gocd-server:latest` (`settings-docker.gradle`,
   `BuildDockerImageTask.getImageNameWithTag`). Upstream builds Wolfi and tags `v<version>`.
-- The built image is loaded into the local Docker daemon and kept, not verified and deleted.
+- The built image is loaded into the local Docker daemon and kept, not verified and deleted. The
+  Gradle task builds only the native platform; upstream also builds every platform into an
+  unused OCI tarball, under QEMU for the non-native ones.
+- `Dockerfile` builds the image without the Gradle Docker task, so Cloud Build can cache its
+  layers (see [Building the server image](#building-the-server-image)).
 - The Tanuki wrapper delta pack is fetched from the `sentry-dev-infra-build-assets` GCS mirror
   (`installers/tanuki.gradle`).
 
@@ -106,9 +127,9 @@ Build:
 
 Breaking any of these breaks GoCD's own deploy. Change both repos together.
 
-- **Build entry point.** `cloudbuild.yaml` runs
-  `./gradlew -PdockerBuildLocalZip :docker:gocd-server:debian-12:docker` and then builds
-  `FROM gocd-server:latest`.
+- **Build entry point.** `cloudbuild.yaml` runs `docker buildx build` on this repo's `Dockerfile`
+  with `GOCD_GIT_REVISION`, `GOCD_DIST_VERSION`, and `APT_REFRESH` build args, loads the result
+  as `gocd-server:latest`, and then builds `FROM gocd-server:latest`.
 - **Debian base.** The devinfra image layer uses `apt-get`, `lsb_release`, the PGDG apt repo, and
   the `go` user (UID 1000).
 - **Server entrypoint** (`buildSrc/src/main/resources/gocd-docker-server/docker-entrypoint.sh`).
@@ -149,8 +170,11 @@ at `../devinfra-deployment-service`. Snapshot as of its commit `0faabc727d` (202
 - Cloud Build trigger `build-gocd-server` (`terraform/module/cd-project/cloud-build/build/main.tf`)
   fires on pushes to devinfra-deployment-service, not to this repo. Each GCP project watches one
   branch: `prod` for prod, `staging` for prod-staging, and a personal branch for dev projects.
-- `cloudbuild.yaml` shallow-clones this repo's `prod` branch and builds it inside
-  `gocd_server_src_builder/Dockerfile` (JDK 21, Node 22, Yarn). It then layers
+- `cloudbuild.yaml` shallow-clones this repo's `prod` branch and builds its `Dockerfile` with a
+  registry layer cache (`us-west1-docker.pkg.dev/<project>/gocd/server-build-cache`). Every push
+  to devinfra-deployment-service rebuilds the server image, and most of them leave this repo
+  unchanged, so they reuse every layer and skip the Gradle build. `APT_REFRESH` is the ISO week,
+  so the Debian layer re-runs `apt-get upgrade` at least weekly. It then layers
   `gocd_server/Dockerfile` on top and pushes
   `us-west1-docker.pkg.dev/<project>/gocd/server:<devinfra SHA>`. The image tag records the
   devinfra commit; the gocd commit is recorded only in the `gocd.git.sha` image label.
