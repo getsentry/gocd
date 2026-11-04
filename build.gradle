@@ -90,8 +90,9 @@ def GO_VERSION_SEGMENTS = [year: 25, releaseInYear: 2, patch: 0]
 def GO_VERSION_NEXT = '25.3.0'
 
 def GO_VERSION = [GO_VERSION_SEGMENTS.year, GO_VERSION_SEGMENTS.releaseInYear, GO_VERSION_SEGMENTS.patch].join('.')
-def DIST_VERSION = determineReleaseRevision()
-def GIT_REVISION = determineGitRevision()
+// The Dockerfile build has no .git, so it passes these in.
+def DIST_VERSION = System.getenv('GOCD_DIST_VERSION') ?: determineReleaseRevision()
+def GIT_REVISION = System.getenv('GOCD_GIT_REVISION') ?: determineGitRevision()
 
 if (System.getenv().containsKey("GO_SERVER_URL")) {
   def separator = "=".multiply(72)

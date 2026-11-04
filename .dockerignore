@@ -1,0 +1,20 @@
+# Keep the context to tracked source, so identical source hits the layer cache.
+.git
+Dockerfile
+.dockerignore
+AGENTS.md
+**/.gradle
+**/target
+build
+buildSrc/build
+**/out
+**/resources-generated
+server/scripts
+server/src/main/webapp/WEB-INF/rails/.yarn/install-state.gz
+server/src/main/webapp/WEB-INF/rails/gems/jruby
+server/src/main/webapp/WEB-INF/rails/logs
+server/src/main/webapp/WEB-INF/rails/node_modules
+server/src/main/webapp/WEB-INF/rails/public/assets
+server/src/main/webapp/WEB-INF/rails/tmp
+server/src/main/webapp/WEB-INF/rails/webpack/gen
+server/src/main/webapp/WEB-INF/rails/yarn-license-report

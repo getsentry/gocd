@@ -92,21 +92,14 @@ class BuildDockerImageTask extends DefaultTask {
     writeTemplateToFile(templateFile(), dockerfile)
 
     if (!project.hasProperty('skipDockerBuild')) {
-      logger.lifecycle("Building ${distro} image for ${distro.supportedArchitectures}. (Current build architecture is ${Architecture.current()}).")
+      logger.lifecycle("Building ${distro} image for ${distro.dockerVerifyArchitecture}. (Current build architecture is ${Architecture.current()}).")
 
-      // build image
-      project.mkdir(imageTarFile.parentFile)
+      // Build only the native image and load it as gocd-server:latest (imageNameWithTag) for the
+      // Cloud Build steps that follow. Upstream also builds every platform into an OCI tarball,
+      // which nothing here uses and which builds the non-native platforms under QEMU.
+      // We skip verification for faster builds and verify our custom images by hand.
       executeInGitRepo("docker", "buildx", "build",
         "--pull",
-        "--platform", supportedPlatforms.join(","),
-        "--output", "type=oci,dest=${imageTarFile}",
-        ".",
-        "--tag", imageNameWithTag
-      )
-
-      // we skip verification here for faster builds and prefer to verify manually as we have custom images
-      // ...however we need this piece so gocd-server:latest (imageNameWithTag) is available to our cloudbuild for further steps
-      executeInGitRepo("docker", "buildx", "build",
         "--quiet",
         "--load",
         "--platform", "linux/${distro.dockerVerifyArchitecture.dockerAlias}",
